@@ -1,0 +1,82 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: tao-treasury-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tao_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tao_password}
+      POSTGRES_DB: ${POSTGRES_DB:-tao_treasury}
+    ports:
+      - "127.0.0.1:5435:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tao_user} -d ${POSTGRES_DB:-tao_treasury}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: tao-treasury-redis
+    ports:
+      - "127.0.0.1:6381:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: tao-treasury-backend
+    ports:
+      - "127.0.0.1:8050:8050"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-tao_user}:${POSTGRES_PASSWORD:-tao_password}@postgres:5432/${POSTGRES_DB:-tao_treasury}
+      - REDIS_URL=redis://redis:6379/0
+      - TAOSTATS_API_KEY=${TAOSTATS_API_KEY}
+      - WALLET_ADDRESS=${WALLET_ADDRESS}
+      - COINGECKO_API_KEY=${COINGECKO_API_KEY:-}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - DEBUG=${DEBUG:-true}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8050/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: tao-treasury-frontend
+    ports:
+      - "127.0.0.1:3050:3050"
+    environment:
+      - VITE_API_URL=http://localhost:8050
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
