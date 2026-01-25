@@ -53,10 +53,19 @@ class StakeTransaction(Base):
         Numeric(20, 9), nullable=False, default=Decimal("0")
     )  # Amount staked/unstaked in TAO
 
+    alpha_amount: Mapped[Decimal] = mapped_column(
+        Numeric(20, 9), nullable=True
+    )  # Alpha tokens received (stake) or sold (unstake)
+
+    # USD value at time of transaction
+    usd_value: Mapped[Decimal] = mapped_column(
+        Numeric(20, 2), nullable=True
+    )  # USD value at time of trade
+
     # Pricing
     limit_price: Mapped[Decimal] = mapped_column(
         Numeric(20, 9), nullable=True
-    )  # Price limit from transaction (alpha per TAO)
+    )  # Effective price (TAO per alpha)
     execution_price: Mapped[Decimal] = mapped_column(
         Numeric(20, 9), nullable=True
     )  # Actual execution price if available

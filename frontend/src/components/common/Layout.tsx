@@ -6,7 +6,8 @@ import {
   Globe,
   AlertTriangle,
   ArrowRightLeft,
-  RefreshCw
+  RefreshCw,
+  Shield
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../services/api'
@@ -19,6 +20,7 @@ const navItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/positions', label: 'Positions', icon: Wallet },
   { path: '/subnets', label: 'Subnets', icon: Globe },
+  { path: '/strategy', label: 'Strategy', icon: Shield },
   { path: '/alerts', label: 'Alerts', icon: AlertTriangle },
   { path: '/recommendations', label: 'Rebalance', icon: ArrowRightLeft },
 ]

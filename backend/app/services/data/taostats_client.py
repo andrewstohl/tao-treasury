@@ -313,11 +313,21 @@ class TaoStatsClient:
             netuid: Subnet ID
             amount: Amount in TAO
             action: 'stake' (buy alpha) or 'unstake' (sell alpha)
+
+        Note: The API requires:
+            - input_tokens in rao (1 TAO = 1e9 rao)
+            - direction: 'AlphaToTao' (unstake/sell) or 'TaoToAlpha' (stake/buy)
         """
+        # Convert TAO to rao for the API
+        input_tokens = int(amount * Decimal("1000000000"))
+
+        # Map action to API direction (API expects lowercase snake_case)
+        direction = "alpha_to_tao" if action == "unstake" else "tao_to_alpha"
+
         params = {
             "netuid": netuid,
-            "amount": str(amount),
-            "action": action,
+            "input_tokens": str(input_tokens),
+            "direction": direction,
             "network": network,
         }
         # Short cache for slippage - it changes frequently
@@ -414,6 +424,89 @@ class TaoStatsClient:
             cache_key=f"price_history:{timestamp_start}:{timestamp_end}",
             cache_ttl=timedelta(minutes=5),
         )
+
+    # ==================== dTAO Trade Endpoints ====================
+
+    async def get_trades(
+        self,
+        coldkey: str,
+        page: int = 1,
+        limit: int = 50,
+        network: str = "finney"
+    ) -> Dict[str, Any]:
+        """Get dTAO trades (stake/unstake) for a wallet.
+
+        Endpoint: GET /api/dtao/trade/v1
+
+        Returns trades with:
+        - from_name/to_name: TAO or subnet name (e.g., SN19)
+        - from_amount/to_amount: amounts in rao
+        - tao_value: TAO value of the trade
+        - usd_value: USD value at time of trade
+        """
+        params = {
+            "coldkey": coldkey,
+            "network": network,
+            "limit": limit,
+            "page": page,
+        }
+
+        # Don't cache trade data - we want fresh data
+        return await self._request(
+            "GET",
+            "/api/dtao/trade/v1",
+            params=params,
+            cache_key=None,
+            cache_ttl=None,
+        )
+
+    async def get_all_trades(
+        self,
+        coldkey: str,
+        max_pages: int = 100,
+        network: str = "finney"
+    ) -> List[Dict[str, Any]]:
+        """Fetch all dTAO trades for a wallet across multiple pages.
+
+        Args:
+            coldkey: Wallet address
+            max_pages: Maximum pages to fetch (safety limit)
+            network: Network name
+
+        Returns:
+            List of all trades
+        """
+        all_trades = []
+        page = 1
+
+        while page <= max_pages:
+            response = await self.get_trades(
+                coldkey=coldkey,
+                page=page,
+                limit=50,
+                network=network,
+            )
+
+            data = response.get("data", [])
+            if not data:
+                break
+
+            all_trades.extend(data)
+
+            # Check pagination
+            pagination = response.get("pagination", {})
+            total_pages = pagination.get("total_pages", 1)
+
+            if page >= total_pages:
+                break
+
+            page += 1
+
+            # Rate limit protection
+            await asyncio.sleep(0.1)
+
+        logger.info("Fetched all trades", count=len(all_trades), pages=page)
+        return all_trades
 
     # ==================== Extrinsic/Transaction Endpoints ====================
 

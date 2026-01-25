@@ -1,7 +1,12 @@
-"""Transaction sync service for fetching and storing stake transactions."""
+"""Transaction sync service for fetching and storing stake transactions.
+
+Uses the TaoStats dtao/trade/v1 endpoint which provides clean trade data
+including TAO and USD values at time of trade.
+"""
 
 from datetime import datetime, timezone
 from decimal import Decimal
+import re
 from typing import Dict, List, Optional, Any
 
 import structlog
@@ -25,36 +30,25 @@ def rao_to_tao(rao: str | int | Decimal) -> Decimal:
     return Decimal(str(rao)) / RAO_PER_TAO
 
 
-# Staking-related call names
-STAKE_CALLS = {
-    "SubtensorModule.add_stake",
-    "SubtensorModule.add_stake_limit",
-    "SubtensorModule.add_stake_multiple",
-}
-
-UNSTAKE_CALLS = {
-    "SubtensorModule.remove_stake",
-    "SubtensorModule.remove_stake_limit",
-    "SubtensorModule.unstake_all",
-    "SubtensorModule.unstake_all_alpha",
-}
-
-
-def parse_hotkey(hotkey_data: Any) -> Optional[str]:
-    """Extract hotkey SS58 address from various formats."""
-    if hotkey_data is None:
+def extract_netuid_from_name(name: str) -> Optional[int]:
+    """Extract netuid from subnet name like 'SN19' or 'SN120'."""
+    if name == "TAO":
         return None
-    if isinstance(hotkey_data, str):
-        # Already a string (hex or ss58)
-        return hotkey_data
-    if isinstance(hotkey_data, dict):
-        # Nested structure like {"__kind": "Id", "value": "0x..."}
-        return hotkey_data.get("value") or hotkey_data.get("ss58")
+    match = re.match(r"SN(\d+)", name)
+    if match:
+        return int(match.group(1))
     return None
 
 
 class TransactionSyncService:
-    """Service for syncing stake transactions from TaoStats."""
+    """Service for syncing stake transactions from TaoStats.
+
+    Uses the dtao/trade/v1 endpoint which provides:
+    - from_name/to_name: TAO or subnet name (e.g., SN19)
+    - from_amount/to_amount: amounts in rao
+    - tao_value: TAO value of the trade
+    - usd_value: USD value at time of trade
+    """
 
     def __init__(self):
         self.wallet_address = settings.wallet_address
@@ -85,35 +79,30 @@ class TransactionSyncService:
             if not full_sync:
                 last_block = await self._get_last_synced_block()
 
-            # Fetch extrinsics from TaoStats
-            extrinsics = await taostats_client.get_all_extrinsics(
-                address=self.wallet_address,
-                max_pages=500 if full_sync else 50,
+            # Fetch trades from TaoStats using the trade endpoint
+            trades = await taostats_client.get_all_trades(
+                coldkey=self.wallet_address,
+                max_pages=100,
             )
 
-            results["total_fetched"] = len(extrinsics)
-            logger.info("Fetched extrinsics", count=len(extrinsics))
+            results["total_fetched"] = len(trades)
+            logger.info("Fetched trades", count=len(trades))
 
-            # Filter and process staking transactions
+            # Process trades
             async with get_db_context() as db:
-                for ex in extrinsics:
-                    # Skip if already synced
-                    block_num = ex.get("block_number", 0)
+                for trade in trades:
+                    # Skip if already synced (by block number)
+                    block_num = trade.get("block_number", 0)
                     if block_num <= last_block and not full_sync:
                         continue
 
-                    # Check if this is a staking transaction
-                    call_name = ex.get("full_name", "")
-                    if call_name in STAKE_CALLS:
-                        tx = await self._process_stake_transaction(db, ex, "stake")
-                        if tx:
+                    tx = await self._process_trade(db, trade)
+                    if tx:
+                        results["new_transactions"] += 1
+                        if tx.tx_type == "stake":
                             results["stake_transactions"] += 1
-                            results["new_transactions"] += 1
-                    elif call_name in UNSTAKE_CALLS:
-                        tx = await self._process_stake_transaction(db, ex, "unstake")
-                        if tx:
+                        else:
                             results["unstake_transactions"] += 1
-                            results["new_transactions"] += 1
 
                 await db.commit()
 
@@ -136,14 +125,26 @@ class TransactionSyncService:
             last_block = result.scalar()
             return last_block or 0
 
-    async def _process_stake_transaction(
+    async def _process_trade(
         self,
         db: AsyncSession,
-        extrinsic: Dict,
-        tx_type: str
+        trade: Dict
     ) -> Optional[StakeTransaction]:
-        """Process and store a stake/unstake transaction."""
-        extrinsic_id = extrinsic.get("id")
+        """Process and store a trade as a stake transaction.
+
+        Trade format from API:
+        - from_name: 'TAO' or 'SN##'
+        - to_name: 'TAO' or 'SN##'
+        - from_amount: amount in rao
+        - to_amount: amount in rao
+        - tao_value: TAO value of trade in rao
+        - usd_value: USD value at time of trade
+        - extrinsic_id: unique identifier
+        - block_number: block number
+        - timestamp: ISO timestamp
+        - coldkey: wallet address
+        """
+        extrinsic_id = trade.get("extrinsic_id")
         if not extrinsic_id:
             return None
 
@@ -154,63 +155,79 @@ class TransactionSyncService:
         if existing:
             return None  # Already synced
 
-        # Parse transaction data
-        call_args = extrinsic.get("call_args", {})
-        call_name = extrinsic.get("full_name", "")
+        # Determine transaction type and netuid
+        from_name = trade.get("from_name", "")
+        to_name = trade.get("to_name", "")
 
-        # Extract netuid
-        netuid = call_args.get("netuid")
+        if from_name == "TAO":
+            # TAO -> SN## = stake (buying alpha)
+            tx_type = "stake"
+            netuid = extract_netuid_from_name(to_name)
+            # Amount is TAO spent
+            amount_tao = rao_to_tao(trade.get("from_amount", 0))
+            # Alpha received
+            alpha_amount = rao_to_tao(trade.get("to_amount", 0))
+            # Effective price = TAO / Alpha
+            if alpha_amount > 0:
+                effective_price = amount_tao / alpha_amount
+            else:
+                effective_price = None
+        else:
+            # SN## -> TAO = unstake (selling alpha)
+            tx_type = "unstake"
+            netuid = extract_netuid_from_name(from_name)
+            # Amount is TAO received
+            amount_tao = rao_to_tao(trade.get("tao_value", 0))
+            # Alpha sold
+            alpha_amount = rao_to_tao(trade.get("from_amount", 0))
+            # Effective price = TAO / Alpha
+            if alpha_amount > 0:
+                effective_price = amount_tao / alpha_amount
+            else:
+                effective_price = None
+
         if netuid is None:
-            # Some calls might have it nested
+            logger.warning("Could not extract netuid from trade", trade=trade)
             return None
 
-        # Extract amount
-        if tx_type == "stake":
-            amount_rao = call_args.get("amountStaked", 0) or call_args.get("amount", 0) or 0
-        else:
-            amount_rao = call_args.get("amountUnstaked", 0) or call_args.get("amount", 0) or 0
-
-        amount_tao = rao_to_tao(amount_rao)
-
-        # Extract hotkey
-        hotkey = parse_hotkey(call_args.get("hotkey"))
-
-        # Extract limit price (price per alpha in some unit)
-        limit_price_raw = call_args.get("limitPrice")
-        limit_price = None
-        if limit_price_raw is not None:
-            # Convert from raw units - typically needs to be divided by 1e9
-            limit_price = Decimal(str(limit_price_raw)) / RAO_PER_TAO
-
         # Parse timestamp
-        timestamp_str = extrinsic.get("timestamp")
+        timestamp_str = trade.get("timestamp")
         if timestamp_str:
             timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
         else:
             timestamp = datetime.now(timezone.utc)
 
-        # Extract fee
-        fee_rao = int(extrinsic.get("fee", 0) or 0)
-        fee_tao = rao_to_tao(fee_rao)
+        # Get USD value
+        usd_value_str = trade.get("usd_value", "0")
+        try:
+            usd_value = Decimal(str(usd_value_str))
+        except:
+            usd_value = Decimal("0")
+
+        # Extract hotkey if available
+        coldkey_data = trade.get("coldkey", {})
+        hotkey = coldkey_data.get("ss58") if isinstance(coldkey_data, dict) else None
 
         # Create transaction record
         tx = StakeTransaction(
             wallet_address=self.wallet_address,
             extrinsic_id=extrinsic_id,
-            block_number=extrinsic.get("block_number", 0),
+            block_number=trade.get("block_number", 0),
             timestamp=timestamp,
-            tx_hash=extrinsic.get("hash"),
+            tx_hash=None,  # Trade API doesn't provide hash
             tx_type=tx_type,
-            call_name=call_name,
+            call_name=f"dtao.{'stake' if tx_type == 'stake' else 'unstake'}",
             netuid=netuid,
             hotkey=hotkey,
             amount_tao=amount_tao,
-            limit_price=limit_price,
-            fee_rao=fee_rao,
-            fee_tao=fee_tao,
-            success=extrinsic.get("success", True),
-            error_message=extrinsic.get("error"),
-            raw_args=call_args,
+            alpha_amount=alpha_amount,
+            limit_price=effective_price,
+            usd_value=usd_value,
+            fee_rao=0,
+            fee_tao=Decimal("0"),
+            success=True,
+            error_message=None,
+            raw_args=trade,
         )
 
         db.add(tx)
@@ -218,8 +235,9 @@ class TransactionSyncService:
             "Added stake transaction",
             type=tx_type,
             netuid=netuid,
-            amount=amount_tao,
-            price=limit_price,
+            amount_tao=float(amount_tao),
+            alpha_amount=float(alpha_amount),
+            price=float(effective_price) if effective_price else None,
         )
 
         return tx

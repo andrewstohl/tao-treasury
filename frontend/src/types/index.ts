@@ -131,3 +131,78 @@ export interface Recommendation {
   expires_at: string | null
   created_at: string
 }
+
+// Strategy types
+export interface StrategyAnalysis {
+  analyzed_at: string
+  data_as_of: string | null
+  portfolio_state: 'healthy' | 'caution' | 'risk_off' | 'emergency'
+  state_reason: string
+  regime_summary: Record<string, number>
+  portfolio_regime: string
+  total_subnets: number
+  eligible_subnets: number
+  positions_analyzed: number
+  overweight_count: number
+  underweight_count: number
+  positions_to_exit: number
+  concentration_ok: boolean
+  category_caps_ok: boolean
+  turnover_budget_remaining_pct: number
+  pending_recommendations: number
+  urgent_recommendations: number
+  explanation: string
+}
+
+export interface ConstraintViolation {
+  constraint: string
+  severity: 'critical' | 'warning' | 'info'
+  current: string
+  limit: string
+  utilization_pct: number
+  explanation: string
+  action_required: string
+  netuid: number | null
+  category: string | null
+}
+
+export interface ConstraintStatus {
+  checked_at: string
+  all_constraints_ok: boolean
+  total_checked: number
+  violation_count: number
+  warning_count: number
+  summary: string
+  violations: ConstraintViolation[]
+  warnings: ConstraintViolation[]
+}
+
+export interface EligibleSubnet {
+  netuid: number
+  name: string
+  is_eligible: boolean
+  reasons: string[]
+  score: number | null
+}
+
+export interface PositionLimit {
+  netuid: number
+  subnet_name: string
+  exitability_cap_tao: number
+  concentration_cap_tao: number
+  category_cap_tao: number
+  max_position_tao: number
+  binding_constraint: string
+  current_position_tao: number
+  available_headroom_tao: number
+  explanation: string
+}
+
+export interface RebalanceResult {
+  recommendation_count: number
+  total_buys_tao: number
+  total_sells_tao: number
+  turnover_pct: number
+  constrained_by_turnover: boolean
+  summary: string
+}

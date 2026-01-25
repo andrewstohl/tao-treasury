@@ -88,4 +88,51 @@ export const api = {
     const { data } = await client.post('/api/v1/tasks/refresh')
     return data
   },
+
+  // Strategy
+  getStrategyAnalysis: async () => {
+    const { data } = await client.get('/api/v1/strategy/analysis')
+    return data
+  },
+
+  getConstraintStatus: async () => {
+    const { data } = await client.get('/api/v1/strategy/constraints')
+    return data
+  },
+
+  getEligibleUniverse: async () => {
+    const { data } = await client.get('/api/v1/strategy/eligible')
+    return data
+  },
+
+  getPositionLimits: async () => {
+    const { data } = await client.get('/api/v1/strategy/position-limits')
+    return data
+  },
+
+  triggerWeeklyRebalance: async () => {
+    const { data } = await client.post('/api/v1/strategy/rebalance/weekly')
+    return data
+  },
+
+  triggerEventRebalance: async (eventType: string, netuids?: number[]) => {
+    const params = new URLSearchParams({ event_type: eventType })
+    if (netuids && netuids.length > 0) {
+      params.append('netuids', netuids.join(','))
+    }
+    const { data } = await client.post(`/api/v1/strategy/rebalance/event?${params}`)
+    return data
+  },
+
+  checkTradeAllowed: async (netuid: number, direction: 'buy' | 'sell', sizeTao: number) => {
+    const { data } = await client.get('/api/v1/strategy/check-trade', {
+      params: { netuid, direction, size_tao: sizeTao }
+    })
+    return data
+  },
+
+  getRecommendationSummary: async () => {
+    const { data } = await client.get('/api/v1/strategy/recommendation-summary')
+    return data
+  },
 }

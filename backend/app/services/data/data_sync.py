@@ -188,8 +188,8 @@ class DataSyncService:
         subnet.owner_address = subnet_data.get("owner", {}).get("ss58") if isinstance(subnet_data.get("owner"), dict) else subnet_data.get("owner")
         subnet.owner_take = Decimal(str(subnet_data.get("owner_take", 0) or 0))
 
-        # Registration date and age
-        registered = subnet_data.get("registered_at") or subnet_data.get("created_at")
+        # Registration date and age - API uses registration_timestamp
+        registered = subnet_data.get("registration_timestamp") or subnet_data.get("registered_at") or subnet_data.get("created_at")
         if registered:
             try:
                 if isinstance(registered, str):
@@ -198,12 +198,25 @@ class DataSyncService:
             except (ValueError, TypeError):
                 pass
 
-        # Emission share
-        subnet.emission_share = Decimal(str(subnet_data.get("emission_share", 0) or 0))
+        # Emission - API returns raw emission, we store as proportion of total (converted later)
+        # For now store raw emission value, eligibility gate will handle thresholds
+        raw_emission = subnet_data.get("emission", 0) or subnet_data.get("projected_emission", 0) or 0
+        # Emission is in rao, convert to TAO proportion (rough estimate)
+        subnet.emission_share = Decimal(str(raw_emission)) / Decimal("1e18") if raw_emission else Decimal("0")
         subnet.total_stake_tao = rao_to_tao(subnet_data.get("total_stake", 0) or 0)
 
-        # Holder count
-        subnet.holder_count = int(subnet_data.get("holder_count", 0) or 0)
+        # Taoflow metrics from API - net_flow fields are already in TAO
+        flow_1d = subnet_data.get("net_flow_1_day", 0) or 0
+        flow_7d = subnet_data.get("net_flow_7_days", 0) or 0
+        flow_30d = subnet_data.get("net_flow_30_days", 0) or 0
+        # Store as proportional change (rough estimate based on pool size or fixed scale)
+        # These are absolute TAO values, convert to approximate proportion
+        subnet.taoflow_1d = Decimal(str(flow_1d)) / Decimal("1e9") if flow_1d else Decimal("0")
+        subnet.taoflow_7d = Decimal(str(flow_7d)) / Decimal("1e9") if flow_7d else Decimal("0")
+        subnet.taoflow_14d = Decimal(str(flow_30d)) / Decimal("2e9") if flow_30d else Decimal("0")  # Use 30d/2 as proxy for 14d
+
+        # Holder count - not in subnet API, may come from different endpoint
+        subnet.holder_count = int(subnet_data.get("holder_count", 0) or subnet_data.get("active_keys", 0) or 100)
 
         subnet.updated_at = now
         return subnet
@@ -245,9 +258,14 @@ class DataSyncService:
         if subnet is None:
             return None
 
-        # Pool metrics
-        subnet.pool_tao_reserve = rao_to_tao(pool_data.get("tao_reserve", 0) or 0)
-        subnet.pool_alpha_reserve = rao_to_tao(pool_data.get("alpha_reserve", 0) or 0)
+        # Pool API has the actual subnet name
+        pool_name = pool_data.get("subnet_name") or pool_data.get("name")
+        if pool_name:
+            subnet.name = pool_name
+
+        # Pool metrics - API returns total_tao, total_alpha (in rao)
+        subnet.pool_tao_reserve = rao_to_tao(pool_data.get("total_tao", 0) or pool_data.get("tao_reserve", 0) or 0)
+        subnet.pool_alpha_reserve = rao_to_tao(pool_data.get("total_alpha", 0) or pool_data.get("alpha_reserve", 0) or 0)
         subnet.alpha_price_tao = Decimal(str(pool_data.get("price", 0) or 0))
 
         subnet.updated_at = datetime.now(timezone.utc)
@@ -264,8 +282,8 @@ class DataSyncService:
             netuid=netuid,
             timestamp=datetime.now(timezone.utc),
             alpha_price_tao=Decimal(str(pool_data.get("price", 0) or 0)),
-            pool_tao_reserve=rao_to_tao(pool_data.get("tao_reserve", 0) or 0),
-            pool_alpha_reserve=rao_to_tao(pool_data.get("alpha_reserve", 0) or 0),
+            pool_tao_reserve=rao_to_tao(pool_data.get("total_tao", 0) or pool_data.get("tao_reserve", 0) or 0),
+            pool_alpha_reserve=rao_to_tao(pool_data.get("total_alpha", 0) or pool_data.get("alpha_reserve", 0) or 0),
             emission_share=subnet.emission_share if subnet else Decimal("0"),
             holder_count=subnet.holder_count if subnet else 0,
             flow_regime=subnet.flow_regime if subnet else "neutral",
