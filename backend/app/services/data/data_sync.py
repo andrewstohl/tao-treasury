@@ -221,11 +221,14 @@ class DataSyncService:
             except (ValueError, TypeError):
                 pass
 
-        # Emission - API returns raw emission, we store as proportion of total (converted later)
-        # For now store raw emission value, eligibility gate will handle thresholds
-        raw_emission = subnet_data.get("emission", 0) or subnet_data.get("projected_emission", 0) or 0
-        # Emission is in rao, convert to TAO proportion (rough estimate)
-        subnet.emission_share = Decimal(str(raw_emission)) / Decimal("1e18") if raw_emission else Decimal("0")
+        # Emission share - projected_emission is already a decimal proportion (0.01 = 1%)
+        # Use projected_emission if available, otherwise fall back to emission/1e18
+        projected = subnet_data.get("projected_emission")
+        if projected and float(projected) > 0:
+            subnet.emission_share = Decimal(str(projected))
+        else:
+            raw_emission = subnet_data.get("emission", 0) or 0
+            subnet.emission_share = Decimal(str(raw_emission)) / Decimal("1e18") if raw_emission else Decimal("0")
         subnet.total_stake_tao = rao_to_tao(subnet_data.get("total_stake", 0) or 0)
 
         # Taoflow metrics from API - net_flow fields are already in TAO
