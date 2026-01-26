@@ -71,7 +71,7 @@ export default function Alerts() {
               'bg-blue-600/20 text-blue-400'
             }`}
           >
-            {count} {severity}
+            {String(count)} {severity}
           </div>
         ))}
       </div>
