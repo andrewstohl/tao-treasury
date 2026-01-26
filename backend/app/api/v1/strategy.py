@@ -24,6 +24,8 @@ from app.services.strategy import (
     position_sizer,
     FlowRegime,
     TriggerType,
+    macro_regime_detector,
+    MacroRegime,
 )
 
 router = APIRouter()
@@ -61,6 +63,32 @@ class EligibilityResponse(BaseModel):
     score: Optional[int] = None
 
 
+class ExitabilityPositionResponse(BaseModel):
+    """Exitability status for a single position."""
+    netuid: int
+    subnet_name: str
+    level: str  # pass, warning, block_buy, force_trim
+    slippage_50pct: float
+    slippage_100pct: float
+    current_size_tao: float
+    reason: str
+    safe_size_tao: Optional[float] = None
+    trim_amount_tao: Optional[float] = None
+    trim_pct: Optional[float] = None
+
+
+class ExitabilityResponse(BaseModel):
+    """Full exitability check response."""
+    feature_enabled: bool
+    total_positions: int
+    warnings_count: int
+    force_trims_count: int
+    total_trim_tao: float
+    positions: List[ExitabilityPositionResponse]
+    warnings: List[ExitabilityPositionResponse]
+    force_trims: List[ExitabilityPositionResponse]
+
+
 class PositionLimitResponse(BaseModel):
     """Position limit response."""
     netuid: int
@@ -75,6 +103,15 @@ class PositionLimitResponse(BaseModel):
     explanation: str
 
 
+class MacroRegimeSummary(BaseModel):
+    """Summary of macro regime for dashboard."""
+    regime: str
+    confidence: str
+    sleeve_modifier: float
+    new_positions_allowed: bool
+    description: str
+
+
 class StrategyAnalysisResponse(BaseModel):
     """Full strategy analysis response."""
     analyzed_at: datetime
@@ -83,6 +120,7 @@ class StrategyAnalysisResponse(BaseModel):
     state_reason: str
     regime_summary: dict
     portfolio_regime: str
+    macro_regime: Optional[MacroRegimeSummary] = None
     total_subnets: int
     eligible_subnets: int
     positions_analyzed: int
@@ -114,6 +152,17 @@ class TradeCheckResponse(BaseModel):
     available_capacity: Optional[dict] = None
 
 
+class MacroRegimeResponse(BaseModel):
+    """TAO macro regime detection response."""
+    regime: str  # bull, accumulation, neutral, distribution, bear, capitulation
+    confidence: str  # high, medium, low
+    reason: str
+    signals: dict
+    policy: dict
+    feature_enabled: bool
+    timestamp: datetime
+
+
 # Endpoints
 
 @router.get("/analysis", response_model=StrategyAnalysisResponse)
@@ -125,11 +174,25 @@ async def get_strategy_analysis(
     Returns comprehensive analysis including:
     - Portfolio state (healthy/caution/risk_off/emergency)
     - Regime distribution across positions
+    - Macro regime (TAO market-wide conditions)
     - Position weight analysis
     - Constraint status
     - Recommendation counts
     """
     analysis = await strategy_engine.run_full_analysis()
+
+    # Get macro regime if enabled
+    macro_regime_summary = None
+    if macro_regime_detector.enabled:
+        macro_result = await macro_regime_detector.detect_regime()
+        macro_policy = macro_regime_detector.get_regime_policy(macro_result.regime)
+        macro_regime_summary = MacroRegimeSummary(
+            regime=macro_result.regime.value,
+            confidence=macro_result.confidence,
+            sleeve_modifier=float(macro_policy["sleeve_modifier"]),
+            new_positions_allowed=macro_policy["new_positions_allowed"],
+            description=macro_policy["description"],
+        )
 
     return StrategyAnalysisResponse(
         analyzed_at=analysis.analyzed_at,
@@ -138,6 +201,7 @@ async def get_strategy_analysis(
         state_reason=analysis.state_reason,
         regime_summary=analysis.regime_summary,
         portfolio_regime=analysis.portfolio_regime,
+        macro_regime=macro_regime_summary,
         total_subnets=analysis.total_subnets,
         eligible_subnets=analysis.eligible_subnets,
         positions_analyzed=analysis.positions_analyzed,
@@ -227,6 +291,49 @@ async def get_eligible_universe(
         )
         for e in eligible
     ]
+
+
+@router.get("/exitability", response_model=ExitabilityResponse)
+async def check_exitability(
+    db: AsyncSession = Depends(get_db),
+) -> ExitabilityResponse:
+    """Check exitability for all current positions.
+
+    Returns slippage risk assessment for each position:
+    - PASS: Slippage acceptable
+    - WARNING: 100% exit > 7.5%, monitor closely
+    - BLOCK_BUY: 50% exit > 5%, cannot enter (eligibility check)
+    - FORCE_TRIM: 100% exit > 10%, must reduce position
+
+    When enable_exitability_gate=True, FORCE_TRIM positions will
+    automatically generate trim recommendations.
+    """
+    result = await strategy_engine.check_exitability(db)
+
+    def format_position(p: dict) -> ExitabilityPositionResponse:
+        return ExitabilityPositionResponse(
+            netuid=p["netuid"],
+            subnet_name=p["subnet_name"],
+            level=p["level"],
+            slippage_50pct=p["slippage_50pct"],
+            slippage_100pct=p["slippage_100pct"],
+            current_size_tao=p["current_size_tao"],
+            reason=p["reason"],
+            safe_size_tao=p.get("safe_size_tao"),
+            trim_amount_tao=p.get("trim_amount_tao"),
+            trim_pct=p.get("trim_pct"),
+        )
+
+    return ExitabilityResponse(
+        feature_enabled=result["feature_enabled"],
+        total_positions=len(result["positions"]),
+        warnings_count=len(result["warnings"]),
+        force_trims_count=len(result["force_trims"]),
+        total_trim_tao=result["total_trim_tao"],
+        positions=[format_position(p) for p in result["positions"]],
+        warnings=[format_position(p) for p in result["warnings"]],
+        force_trims=[format_position(p) for p in result["force_trims"]],
+    )
 
 
 @router.get("/position-limits", response_model=List[PositionLimitResponse])
@@ -370,3 +477,62 @@ async def get_recommendation_summary(
     Returns counts, totals, and top recommendations.
     """
     return await strategy_engine.get_recommendation_summary()
+
+
+@router.get("/sleeve-sizing")
+async def get_sleeve_sizing(
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Get dynamic sleeve sizing based on macro regime.
+
+    Returns full context for sleeve allocation including:
+    - Current macro regime and confidence
+    - Target sleeve percentage and TAO amount
+    - Sleeve bounds (min/max)
+    - Policy flags (new_positions_allowed, aggressive_rebalancing)
+    - Root bias for capital allocation
+
+    This endpoint is used by the dashboard and rebalancer to
+    determine optimal sleeve size based on market conditions.
+    """
+    return await macro_regime_detector.get_sleeve_sizing_context()
+
+
+@router.get("/macro-regime", response_model=MacroRegimeResponse)
+async def get_macro_regime(
+    db: AsyncSession = Depends(get_db),
+) -> MacroRegimeResponse:
+    """Get current TAO macro market regime.
+
+    Returns the detected macro regime for portfolio-level strategy:
+    - BULL: Strong positive flows, expand sleeve to upper bound
+    - ACCUMULATION: Bottoming zone, good DCA opportunity
+    - NEUTRAL: Mixed signals, maintain current allocations
+    - DISTRIBUTION: Topping signs, elevated caution, no new positions
+    - BEAR: Defensive posture, shrink sleeve toward minimum
+    - CAPITULATION: Max defensive, preserve capital
+
+    Also returns the policy adjustments for the current regime:
+    - sleeve_modifier: Multiplier for max sleeve size (0.25 to 1.0)
+    - new_positions_allowed: Whether to allow new positions
+    - root_bias: Additional preference for root stake
+    """
+    result = await macro_regime_detector.detect_regime()
+    policy = macro_regime_detector.get_regime_policy(result.regime)
+
+    return MacroRegimeResponse(
+        regime=result.regime.value,
+        confidence=result.confidence,
+        reason=result.reason,
+        signals=result.signals,
+        policy={
+            "sleeve_target": policy["sleeve_target"],
+            "sleeve_modifier": float(policy["sleeve_modifier"]),
+            "new_positions_allowed": policy["new_positions_allowed"],
+            "aggressive_rebalancing": policy["aggressive_rebalancing"],
+            "root_bias": float(policy["root_bias"]),
+            "description": policy["description"],
+        },
+        feature_enabled=macro_regime_detector.enabled,
+        timestamp=result.timestamp,
+    )

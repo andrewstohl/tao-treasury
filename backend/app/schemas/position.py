@@ -50,6 +50,14 @@ class PositionResponse(BaseModel):
     flow_regime: Optional[str] = None
     emission_share: Optional[Decimal] = None
 
+    # Yield metrics
+    current_apy: Optional[Decimal] = None
+    daily_yield_tao: Optional[Decimal] = None
+
+    # Health scoring
+    health_status: str = "green"  # green, yellow, red
+    health_reason: Optional[str] = None
+
     # Timestamps
     created_at: datetime
     updated_at: datetime

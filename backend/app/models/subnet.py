@@ -63,6 +63,11 @@ class Subnet(Base):
     flow_regime_since: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     flow_regime_days: Mapped[int] = mapped_column(Integer, default=0)
 
+    # Regime persistence tracking (anti-whipsaw)
+    # Stores the "candidate" regime that would be assigned without persistence requirement
+    regime_candidate: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    regime_candidate_days: Mapped[int] = mapped_column(Integer, default=0)
+
     # Validator info
     top_validator_hotkey: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     validator_apy: Mapped[Decimal] = mapped_column(Numeric(10, 6), default=Decimal("0"))

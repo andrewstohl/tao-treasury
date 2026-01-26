@@ -1,6 +1,6 @@
 """Data synchronization service for pulling and storing TaoStats data."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from typing import Dict, List, Optional, Any
 
@@ -15,6 +15,7 @@ from app.models.position import Position, PositionSnapshot
 from app.models.portfolio import PortfolioSnapshot
 from app.models.slippage import SlippageSurface
 from app.models.validator import Validator
+from app.models.transaction import DelegationEvent, PositionYieldHistory
 from app.services.data.taostats_client import taostats_client, TaoStatsError
 
 settings = get_settings()
@@ -54,6 +55,8 @@ class DataSyncService:
             "validators": 0,
             "slippage_surfaces": 0,
             "transactions": 0,
+            "delegation_events": 0,
+            "yield_history_records": 0,
             "cost_basis_computed": False,
             "nav_computed": False,
             "risk_check": False,
@@ -77,6 +80,26 @@ class DataSyncService:
             # Sync validators
             validator_count = await self.sync_validators()
             results["validators"] = validator_count
+
+            # Sync yield data to positions (uses validator APY data)
+            yield_count = await self.sync_position_yields()
+            results["positions_with_yield"] = yield_count
+
+            # Sync delegation events for historical income tracking
+            try:
+                delegation_count = await self.sync_delegation_events()
+                results["delegation_events"] = delegation_count
+            except Exception as e:
+                logger.warning("Delegation events sync failed", error=str(e))
+                results["delegation_events"] = 0
+
+            # Sync stake balance history for actual yield calculation
+            try:
+                yield_history_count = await self.sync_stake_balance_history(days=30)
+                results["yield_history_records"] = yield_history_count
+            except Exception as e:
+                logger.warning("Stake balance history sync failed", error=str(e))
+                results["yield_history_records"] = 0
 
             # Create portfolio snapshot
             await self.create_portfolio_snapshot()
@@ -415,29 +438,53 @@ class DataSyncService:
         return snapshot
 
     async def sync_validators(self) -> int:
-        """Sync validator data from TaoStats."""
-        logger.info("Syncing validators")
+        """Sync validator yield data from TaoStats.
+
+        Uses the validator/yield endpoint which provides per-subnet APY data.
+        Fetches validators specifically for subnets we have positions in.
+        """
+        logger.info("Syncing validators with yield data")
 
         try:
-            response = await taostats_client.get_validators()
-            validators_data = response.get("data", [])
-
             async with get_db_context() as db:
-                count = 0
-                for val_data in validators_data:
-                    await self._upsert_validator(db, val_data)
-                    count += 1
+                # First, get the list of netuids we have positions in
+                pos_stmt = select(Position.netuid).where(
+                    Position.wallet_address == self.wallet_address
+                ).distinct()
+                pos_result = await db.execute(pos_stmt)
+                position_netuids = [row[0] for row in pos_result.fetchall()]
+
+            logger.info("Fetching validators for position netuids", netuids=position_netuids)
+
+            total_count = 0
+            async with get_db_context() as db:
+                # Fetch validators for each netuid we have positions in
+                for netuid in position_netuids:
+                    try:
+                        response = await taostats_client.get_validator_yield(
+                            netuid=netuid,
+                            limit=50  # Get top 50 validators per subnet
+                        )
+                        validators_data = response.get("data", [])
+
+                        for val_data in validators_data:
+                            await self._upsert_validator(db, val_data)
+                            total_count += 1
+
+                    except TaoStatsError as e:
+                        logger.warning("Failed to fetch validators for netuid", netuid=netuid, error=str(e))
+                        continue
 
                 await db.commit()
-                logger.info("Validators synced", count=count)
-                return count
+                logger.info("Validators synced", count=total_count)
+                return total_count
 
         except Exception as e:
             logger.error("Failed to sync validators", error=str(e))
             raise
 
     async def _upsert_validator(self, db: AsyncSession, val_data: Dict) -> Validator:
-        """Insert or update validator record."""
+        """Insert or update validator record from yield endpoint data."""
         hotkey = val_data.get("hotkey", {}).get("ss58") if isinstance(val_data.get("hotkey"), dict) else val_data.get("hotkey")
         netuid = val_data.get("netuid")
 
@@ -462,15 +509,92 @@ class DataSyncService:
             db.add(validator)
 
         validator.name = val_data.get("name")
-        validator.coldkey = val_data.get("coldkey", {}).get("ss58") if isinstance(val_data.get("coldkey"), dict) else val_data.get("coldkey")
-        validator.vtrust = Decimal(str(val_data.get("vtrust", 0) or 0))
         validator.stake_tao = rao_to_tao(val_data.get("stake", 0) or 0)
-        validator.take_rate = Decimal(str(val_data.get("take", 0) or 0))
-        validator.apy = Decimal(str(val_data.get("apy", 0) or 0))
-        validator.is_active = val_data.get("is_active", True)
+
+        # APY data from yield endpoint - these are actual percentages (0.35 = 35%)
+        one_day_apy = val_data.get("one_day_apy", 0) or 0
+        seven_day_apy = val_data.get("seven_day_apy", 0) or 0
+        thirty_day_apy = val_data.get("thirty_day_apy", 0) or 0
+
+        # Store as percentages (multiply by 100)
+        validator.apy = Decimal(str(one_day_apy)) * Decimal("100")
+        validator.apy_30d_avg = Decimal(str(thirty_day_apy)) * Decimal("100")
+
+        # Also store 7-day APY if we have the field
+        if hasattr(validator, 'apy_7d'):
+            validator.apy_7d = Decimal(str(seven_day_apy)) * Decimal("100")
+
+        # Epoch participation shows validator reliability
+        validator.is_active = val_data.get("one_day_epoch_participation", 1.0) > 0.5
         validator.updated_at = now
 
         return validator
+
+    async def sync_position_yields(self) -> int:
+        """Sync yield data to positions from validator APY data.
+
+        Maps validator APY to each position based on validator_hotkey,
+        calculates unrealized P&L and estimated daily/weekly yields.
+        """
+        logger.info("Syncing position yields")
+
+        async with get_db_context() as db:
+            # Get all positions
+            pos_stmt = select(Position).where(Position.wallet_address == self.wallet_address)
+            pos_result = await db.execute(pos_stmt)
+            positions = pos_result.scalars().all()
+
+            # Build a lookup of validators by (hotkey, netuid)
+            val_stmt = select(Validator)
+            val_result = await db.execute(val_stmt)
+            validators = val_result.scalars().all()
+
+            validator_lookup = {}
+            for v in validators:
+                validator_lookup[(v.hotkey, v.netuid)] = v
+
+            count = 0
+            for position in positions:
+                # Find matching validator
+                validator = validator_lookup.get((position.validator_hotkey, position.netuid))
+
+                if validator:
+                    # Use validator's APY (prefer 30d average if available)
+                    apy = validator.apy_30d_avg if validator.apy_30d_avg > 0 else validator.apy
+                    position.current_apy = apy
+                    position.apy_30d_avg = validator.apy_30d_avg
+
+                    # Calculate estimated yields based on position TAO value
+                    # Daily yield = position_value * (APY/100) / 365
+                    if apy > 0 and position.tao_value_mid > 0:
+                        daily_yield = position.tao_value_mid * (apy / Decimal("100")) / Decimal("365")
+                        position.daily_yield_tao = daily_yield
+                        position.weekly_yield_tao = daily_yield * Decimal("7")
+                    else:
+                        position.daily_yield_tao = Decimal("0")
+                        position.weekly_yield_tao = Decimal("0")
+                else:
+                    # No validator data - zero out yields
+                    position.current_apy = Decimal("0")
+                    position.apy_30d_avg = Decimal("0")
+                    position.daily_yield_tao = Decimal("0")
+                    position.weekly_yield_tao = Decimal("0")
+
+                # Calculate unrealized P&L
+                if position.cost_basis_tao > 0:
+                    position.unrealized_pnl_tao = position.tao_value_mid - position.cost_basis_tao
+                    position.unrealized_pnl_pct = (
+                        (position.unrealized_pnl_tao / position.cost_basis_tao) * Decimal("100")
+                    )
+                else:
+                    position.unrealized_pnl_tao = Decimal("0")
+                    position.unrealized_pnl_pct = Decimal("0")
+
+                count += 1
+
+            await db.commit()
+            logger.info("Position yields synced", count=count)
+            return count
 
     async def sync_slippage_surfaces(self, netuids: Optional[List[int]] = None) -> int:
         """Compute and cache slippage surfaces for subnets.
@@ -573,6 +697,23 @@ class DataSyncService:
             dtao_value_mid = sum(p.tao_value_mid for p in positions)
             nav_mid = tao_balance + root_stake + dtao_value_mid
 
+            # Calculate yield aggregates from positions
+            total_daily_yield = sum(p.daily_yield_tao for p in positions)
+            total_weekly_yield = sum(p.weekly_yield_tao for p in positions)
+            total_monthly_yield = total_daily_yield * Decimal("30")
+
+            # Calculate weighted average APY across positions
+            total_value = sum(p.tao_value_mid for p in positions)
+            if total_value > 0:
+                weighted_apy = sum(p.tao_value_mid * p.current_apy for p in positions) / total_value
+            else:
+                weighted_apy = Decimal("0")
+
+            # P&L aggregates
+            total_unrealized_pnl = sum(p.unrealized_pnl_tao for p in positions)
+            total_realized_pnl = sum(p.realized_pnl_tao for p in positions)
+            total_cost_basis = sum(p.cost_basis_tao for p in positions)
+
             snapshot = PortfolioSnapshot(
                 wallet_address=self.wallet_address,
                 timestamp=datetime.now(timezone.utc),
@@ -586,12 +727,290 @@ class DataSyncService:
                 dtao_allocation_tao=dtao_value_mid,
                 unstaked_buffer_tao=tao_balance,
                 active_positions=len(positions),
+                # Yield aggregates
+                portfolio_apy=weighted_apy,
+                daily_yield_tao=total_daily_yield,
+                weekly_yield_tao=total_weekly_yield,
+                monthly_yield_tao=total_monthly_yield,
+                # P&L aggregates
+                total_unrealized_pnl_tao=total_unrealized_pnl,
+                total_realized_pnl_tao=total_realized_pnl,
+                total_cost_basis_tao=total_cost_basis,
             )
             db.add(snapshot)
             await db.commit()
 
             logger.info("Portfolio snapshot created", nav_mid=nav_mid, positions=len(positions))
             return snapshot
+
+    async def sync_delegation_events(self) -> int:
+        """Sync delegation events (staking/unstaking history) from TaoStats.
+
+        Fetches all historical delegation events and stores them for
+        accurate yield and income tracking.
+        """
+        logger.info("Syncing delegation events", wallet=self.wallet_address)
+
+        try:
+            events = await taostats_client.get_all_delegation_events(
+                coldkey=self.wallet_address,
+                max_pages=50,
+            )
+
+            async with get_db_context() as db:
+                count = 0
+                for event_data in events:
+                    # Generate unique event ID
+                    block = event_data.get("block_number", 0)
+                    extrinsic_idx = event_data.get("extrinsic_index", 0)
+                    event_id = f"{block}-{extrinsic_idx}"
+
+                    # Check if already exists
+                    stmt = select(DelegationEvent).where(DelegationEvent.event_id == event_id)
+                    result = await db.execute(stmt)
+                    if result.scalar_one_or_none():
+                        continue
+
+                    # Parse event type
+                    action = event_data.get("action", "") or event_data.get("call_name", "")
+                    if "add_stake" in action.lower() or "stake" in action.lower() and "unstake" not in action.lower():
+                        event_type = "stake"
+                    elif "remove_stake" in action.lower() or "unstake" in action.lower():
+                        event_type = "unstake"
+                    else:
+                        event_type = "other"
+
+                    # Parse timestamp
+                    ts = event_data.get("timestamp")
+                    if isinstance(ts, str):
+                        timestamp = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                    elif isinstance(ts, (int, float)):
+                        timestamp = datetime.fromtimestamp(ts, tz=timezone.utc)
+                    else:
+                        timestamp = datetime.now(timezone.utc)
+
+                    # Extract amounts
+                    amount_rao = int(event_data.get("amount", 0) or event_data.get("tao_amount", 0) or 0)
+                    amount_tao = rao_to_tao(amount_rao)
+                    alpha_amount = rao_to_tao(event_data.get("alpha_amount", 0) or 0)
+
+                    # Extract hotkey
+                    hotkey_data = event_data.get("hotkey")
+                    if isinstance(hotkey_data, dict):
+                        hotkey = hotkey_data.get("ss58")
+                    else:
+                        hotkey = hotkey_data
+
+                    delegation_event = DelegationEvent(
+                        wallet_address=self.wallet_address,
+                        event_id=event_id,
+                        block_number=block,
+                        timestamp=timestamp,
+                        event_type=event_type,
+                        action=action[:64] if action else "unknown",
+                        netuid=int(event_data.get("netuid", 0) or 0),
+                        hotkey=hotkey,
+                        amount_rao=amount_rao,
+                        amount_tao=amount_tao,
+                        alpha_amount=alpha_amount if alpha_amount > 0 else None,
+                        tao_price_usd=Decimal(str(event_data.get("tao_price_usd", 0) or 0)) or None,
+                        usd_value=Decimal(str(event_data.get("usd_value", 0) or 0)) or None,
+                        is_reward=False,
+                        raw_data=event_data,
+                    )
+                    db.add(delegation_event)
+                    count += 1
+
+                await db.commit()
+                logger.info("Delegation events synced", count=count)
+                return count
+
+        except Exception as e:
+            logger.error("Failed to sync delegation events", error=str(e))
+            return 0
+
+    async def sync_stake_balance_history(self, days: int = 30) -> int:
+        """Sync historical stake balance data for yield calculation.
+
+        Uses daily stake balance snapshots to compute actual yield received.
+        Note: The TaoStats stake_balance/history API requires a hotkey parameter,
+        so we use the validator_hotkey from each position.
+        """
+        logger.info("Syncing stake balance history", wallet=self.wallet_address, days=days)
+
+        try:
+            # Calculate timestamp range
+            now = datetime.now(timezone.utc)
+            timestamp_start = int((now - timedelta(days=days)).timestamp())
+
+            # Get all positions with their hotkeys
+            async with get_db_context() as db:
+                pos_stmt = select(Position).where(Position.wallet_address == self.wallet_address)
+                pos_result = await db.execute(pos_stmt)
+                positions = pos_result.scalars().all()
+
+            total_records = 0
+            for position in positions:
+                netuid = position.netuid
+                hotkey = position.validator_hotkey
+
+                if not hotkey:
+                    logger.debug("Skipping position without hotkey", netuid=netuid)
+                    continue
+
+                try:
+                    # Use the dtao stake balance history with hotkey
+                    response = await taostats_client.get_stake_balance_history(
+                        coldkey=self.wallet_address,
+                        hotkey=hotkey,
+                        netuid=netuid,
+                        timestamp_start=timestamp_start,
+                        limit=days + 5,
+                    )
+                    history_data = response.get("data", [])
+
+                    if len(history_data) < 2:
+                        continue
+
+                    # Process consecutive days to compute yield
+                    async with get_db_context() as db:
+                        # Sort by timestamp ascending
+                        history_data.sort(key=lambda x: x.get("timestamp", 0))
+
+                        for i in range(1, len(history_data)):
+                            prev = history_data[i - 1]
+                            curr = history_data[i]
+
+                            # Parse date
+                            curr_ts = curr.get("timestamp")
+                            if isinstance(curr_ts, str):
+                                date = datetime.fromisoformat(curr_ts.replace("Z", "+00:00"))
+                            elif isinstance(curr_ts, (int, float)):
+                                date = datetime.fromtimestamp(curr_ts, tz=timezone.utc)
+                            else:
+                                continue
+
+                            # Check if already exists
+                            check_stmt = select(PositionYieldHistory).where(
+                                PositionYieldHistory.wallet_address == self.wallet_address,
+                                PositionYieldHistory.netuid == netuid,
+                                PositionYieldHistory.date == date,
+                            )
+                            check_result = await db.execute(check_stmt)
+                            if check_result.scalar_one_or_none():
+                                continue
+
+                            # Extract balances
+                            alpha_start = rao_to_tao(prev.get("balance", 0) or 0)
+                            alpha_end = rao_to_tao(curr.get("balance", 0) or 0)
+                            tao_start = rao_to_tao(prev.get("balance_as_tao", 0) or 0)
+                            tao_end = rao_to_tao(curr.get("balance_as_tao", 0) or 0)
+
+                            # Get staking activity for this day from delegation events
+                            day_start = date.replace(hour=0, minute=0, second=0, microsecond=0)
+                            day_end = day_start + timedelta(days=1)
+
+                            stake_stmt = select(DelegationEvent).where(
+                                DelegationEvent.wallet_address == self.wallet_address,
+                                DelegationEvent.netuid == netuid,
+                                DelegationEvent.timestamp >= day_start,
+                                DelegationEvent.timestamp < day_end,
+                            )
+                            stake_result = await db.execute(stake_stmt)
+                            day_events = stake_result.scalars().all()
+
+                            # Calculate net staking (positive = added, negative = removed)
+                            net_stake = Decimal("0")
+                            for evt in day_events:
+                                if evt.event_type == "stake":
+                                    net_stake += evt.amount_tao
+                                elif evt.event_type == "unstake":
+                                    net_stake -= evt.amount_tao
+
+                            # Yield = change in alpha balance - net staking
+                            # If alpha increased without staking, it's yield
+                            yield_alpha = alpha_end - alpha_start
+                            # Adjust for staking activity (rough estimate)
+                            # This is simplified - actual yield would need alpha price at stake time
+
+                            # Compute yield in TAO terms (change in TAO value - net stake)
+                            yield_tao = tao_end - tao_start - net_stake
+
+                            # Compute daily APY (annualized)
+                            # Clamp to reasonable range (max 9999% to avoid DB overflow)
+                            if tao_start > Decimal("0.1") and yield_tao > 0:
+                                daily_return = yield_tao / tao_start
+                                daily_apy = min(daily_return * Decimal("365") * Decimal("100"), Decimal("9999"))
+                            else:
+                                daily_apy = Decimal("0")
+
+                            yield_record = PositionYieldHistory(
+                                wallet_address=self.wallet_address,
+                                netuid=netuid,
+                                date=date,
+                                alpha_balance_start=alpha_start,
+                                alpha_balance_end=alpha_end,
+                                tao_value_start=tao_start,
+                                tao_value_end=tao_end,
+                                yield_alpha=yield_alpha,
+                                yield_tao=max(yield_tao, Decimal("0")),  # Clamp negative
+                                net_stake_tao=net_stake,
+                                daily_apy=max(min(daily_apy, Decimal("9999")), Decimal("0")),  # Clamp to 0-9999%
+                            )
+                            db.add(yield_record)
+                            total_records += 1
+
+                        await db.commit()
+
+                except Exception as e:
+                    logger.warning("Failed to sync stake history for netuid", netuid=netuid, error=str(e))
+                    continue
+
+            logger.info("Stake balance history synced", records=total_records)
+            return total_records
+
+        except Exception as e:
+            logger.error("Failed to sync stake balance history", error=str(e))
+            return 0
+
+    async def get_actual_yield_summary(self, days: int = 30) -> Dict[str, Any]:
+        """Get actual yield summary from historical data.
+
+        Returns actual realized yield based on balance history,
+        not just estimated yield from APY.
+        """
+        async with get_db_context() as db:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+            stmt = select(PositionYieldHistory).where(
+                PositionYieldHistory.wallet_address == self.wallet_address,
+                PositionYieldHistory.date >= cutoff,
+            )
+            result = await db.execute(stmt)
+            history = result.scalars().all()
+
+            if not history:
+                return {
+                    "total_yield_tao": Decimal("0"),
+                    "avg_daily_yield_tao": Decimal("0"),
+                    "avg_apy": Decimal("0"),
+                    "days_tracked": 0,
+                }
+
+            total_yield = sum(h.yield_tao for h in history)
+            days_tracked = len(set((h.netuid, h.date.date()) for h in history))
+
+            # Average APY weighted by position value
+            total_weighted_apy = sum(h.tao_value_start * h.daily_apy for h in history)
+            total_value = sum(h.tao_value_start for h in history)
+            avg_apy = total_weighted_apy / total_value if total_value > 0 else Decimal("0")
+
+            return {
+                "total_yield_tao": total_yield,
+                "avg_daily_yield_tao": total_yield / Decimal(str(days)) if days > 0 else Decimal("0"),
+                "avg_apy": avg_apy,
+                "days_tracked": days_tracked,
+            }
 
     @property
     def last_sync(self) -> Optional[datetime]:

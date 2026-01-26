@@ -45,6 +45,16 @@ class Position(Base):
     # Realized PnL tracking
     realized_pnl_tao: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0"))
 
+    # Unrealized PnL (computed: tao_value_mid - cost_basis_tao)
+    unrealized_pnl_tao: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0"))
+    unrealized_pnl_pct: Mapped[Decimal] = mapped_column(Numeric(10, 4), default=Decimal("0"))
+
+    # Yield metrics (from validator data)
+    current_apy: Mapped[Decimal] = mapped_column(Numeric(10, 4), default=Decimal("0"))
+    apy_30d_avg: Mapped[Decimal] = mapped_column(Numeric(10, 4), default=Decimal("0"))
+    daily_yield_tao: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0"))
+    weekly_yield_tao: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0"))
+
     # Slippage estimates (computed from slippage surfaces)
     exit_slippage_50pct: Mapped[Decimal] = mapped_column(Numeric(10, 6), default=Decimal("0"))
     exit_slippage_100pct: Mapped[Decimal] = mapped_column(Numeric(10, 6), default=Decimal("0"))

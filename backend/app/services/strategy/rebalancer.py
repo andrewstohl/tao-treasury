@@ -27,6 +27,7 @@ from app.models.slippage import SlippageSurface
 from app.services.strategy.regime_calculator import FlowRegime
 from app.services.strategy.eligibility_gate import eligibility_gate
 from app.services.strategy.position_sizer import position_sizer
+from app.services.strategy.macro_regime_detector import macro_regime_detector, MacroRegime
 
 settings = get_settings()
 logger = structlog.get_logger()
@@ -71,14 +72,30 @@ class Rebalancer:
         This is the primary rebalance mode, running weekly to:
         1. Exit ineligible positions
         2. Trim overweight positions
-        3. Add to underweight positions in eligible universe
-        4. Enter new attractive positions
+        3. Apply macro regime sleeve sizing (shrink/grow sleeve)
+        4. Add to underweight positions in eligible universe
+        5. Enter new attractive positions (if macro regime allows)
         """
         logger.info("Generating weekly rebalance recommendations")
 
         recommendations = []
         total_buys = Decimal("0")
         total_sells = Decimal("0")
+
+        # Get macro regime context for dynamic sleeve sizing
+        macro_regime_result = await macro_regime_detector.detect_regime()
+        macro_policy = macro_regime_detector.get_regime_policy(macro_regime_result.regime)
+        new_positions_allowed = macro_policy["new_positions_allowed"]
+        sleeve_modifier = macro_policy["sleeve_modifier"]
+        root_bias = macro_policy["root_bias"]
+
+        logger.info(
+            "Macro regime context for rebalance",
+            regime=macro_regime_result.regime.value,
+            new_positions_allowed=new_positions_allowed,
+            sleeve_modifier=float(sleeve_modifier),
+            root_bias=float(root_bias),
+        )
 
         async with get_db_context() as db:
             # Get current portfolio state
@@ -87,7 +104,22 @@ class Rebalancer:
                 return self._empty_result("No portfolio snapshot available")
 
             portfolio_nav = snapshot.nav_mid
-            sleeve_nav = snapshot.dtao_allocation_tao
+            current_sleeve_nav = snapshot.dtao_allocation_tao
+
+            # Compute target sleeve based on macro regime
+            target_sleeve_pct, target_sleeve_tao, sleeve_explanation = (
+                macro_regime_detector.compute_target_sleeve_allocation(
+                    macro_regime_result.regime, portfolio_nav
+                )
+            )
+            sleeve_nav = target_sleeve_tao  # Use target for position sizing
+
+            logger.info(
+                "Dynamic sleeve sizing",
+                current_sleeve_tao=float(current_sleeve_nav),
+                target_sleeve_tao=float(target_sleeve_tao),
+                explanation=sleeve_explanation,
+            )
 
             # Get current positions
             positions = await self._get_positions(db)
@@ -148,6 +180,44 @@ class Rebalancer:
                             recommendations.append(rec)
                             total_sells += rec.size_tao
 
+            # Step 3.5: Apply macro regime sleeve reduction if needed
+            # If current sleeve exceeds target by more than 5%, reduce proportionally
+            if current_sleeve_nav > target_sleeve_tao * Decimal("1.05"):
+                sleeve_excess = current_sleeve_nav - target_sleeve_tao
+                excess_pct = sleeve_excess / current_sleeve_nav
+
+                logger.info(
+                    "Sleeve reduction triggered by macro regime",
+                    regime=macro_regime_result.regime.value,
+                    current_sleeve=float(current_sleeve_nav),
+                    target_sleeve=float(target_sleeve_tao),
+                    excess_tao=float(sleeve_excess),
+                    excess_pct=float(excess_pct),
+                )
+
+                # Reduce all positions proportionally to shrink sleeve
+                for pos in positions:
+                    if pos.netuid in eligible_netuids:
+                        # Don't double-count positions already being trimmed
+                        already_selling = sum(
+                            r.size_tao for r in recommendations
+                            if r.netuid == pos.netuid and r.direction == "sell"
+                        )
+                        remaining_pos = pos.tao_value_mid - already_selling
+
+                        if remaining_pos > Decimal("0"):
+                            trim_for_sleeve = remaining_pos * excess_pct
+                            if trim_for_sleeve > portfolio_nav * Decimal("0.005"):  # > 0.5% of portfolio
+                                rec = await self._create_sell_recommendation(
+                                    db, pos, trim_for_sleeve, TriggerType.REGIME_SHIFT,
+                                    f"Macro regime {macro_regime_result.regime.value}: "
+                                    f"reducing sleeve from {float(current_sleeve_nav / portfolio_nav * 100):.1f}% "
+                                    f"to target {float(target_sleeve_tao / portfolio_nav * 100):.1f}%"
+                                )
+                                if rec:
+                                    recommendations.append(rec)
+                                    total_sells += rec.size_tao
+
             # Step 4: Identify entry opportunities
             # Available capital = current sells + any unstaked buffer above minimum
             available_capital = total_sells + max(
@@ -155,28 +225,52 @@ class Rebalancer:
                 snapshot.unstaked_buffer_tao - portfolio_nav * settings.unstaked_buffer_min
             )
 
-            # Score eligible subnets for entry
-            entry_candidates = []
-            for e in eligible:
-                if e.netuid not in position_map or position_map[e.netuid].tao_value_mid < Decimal("1"):
-                    # New entry or very small existing position
-                    target, explanation = await position_sizer.get_target_position_size(
-                        netuid=e.netuid,
-                        portfolio_nav_tao=portfolio_nav,
-                        sleeve_nav_tao=sleeve_nav,
-                        category_allocations=category_allocs,
-                    )
-                    if target > Decimal("0"):
-                        entry_candidates.append({
-                            "netuid": e.netuid,
-                            "name": e.name,
-                            "score": e.score or 0,
-                            "target_tao": target,
-                        })
+            # Apply root_bias: Reserve portion of available capital for root stake
+            # root_bias is 0.0 (BULL) to 0.25 (CAPITULATION)
+            capital_for_sleeve = available_capital * (Decimal("1") - root_bias)
+            capital_for_root = available_capital * root_bias
 
-            # Sort by score and allocate capital
+            if capital_for_root > Decimal("0"):
+                logger.info(
+                    "Root bias applied",
+                    regime=macro_regime_result.regime.value,
+                    root_bias=float(root_bias),
+                    capital_for_root=float(capital_for_root),
+                    capital_for_sleeve=float(capital_for_sleeve),
+                )
+
+            # Check if new positions are allowed by macro regime
+            if not new_positions_allowed:
+                logger.info(
+                    "New positions blocked by macro regime",
+                    regime=macro_regime_result.regime.value,
+                    available_capital=float(capital_for_sleeve),
+                )
+                # Don't add any new positions - capital goes to root or existing adds only
+                entry_candidates = []
+            else:
+                # Score eligible subnets for entry
+                entry_candidates = []
+                for e in eligible:
+                    if e.netuid not in position_map or position_map[e.netuid].tao_value_mid < Decimal("1"):
+                        # New entry or very small existing position
+                        target, explanation = await position_sizer.get_target_position_size(
+                            netuid=e.netuid,
+                            portfolio_nav_tao=portfolio_nav,
+                            sleeve_nav_tao=sleeve_nav,
+                            category_allocations=category_allocs,
+                        )
+                        if target > Decimal("0"):
+                            entry_candidates.append({
+                                "netuid": e.netuid,
+                                "name": e.name,
+                                "score": e.score or 0,
+                                "target_tao": target,
+                            })
+
+            # Sort by score and allocate capital (respecting macro regime)
             entry_candidates.sort(key=lambda x: x["score"], reverse=True)
-            remaining_capital = available_capital
+            remaining_capital = capital_for_sleeve  # Only use sleeve portion
 
             for candidate in entry_candidates:
                 if remaining_capital <= Decimal("0"):
@@ -187,7 +281,8 @@ class Rebalancer:
                     rec = await self._create_buy_recommendation(
                         db, candidate["netuid"], entry_size, TriggerType.OPPORTUNITY_ENTRY,
                         f"Attractive entry opportunity (score: {candidate['score']}) - "
-                        f"target {float(entry_size):,.1f} TAO"
+                        f"target {float(entry_size):,.1f} TAO "
+                        f"[macro: {macro_regime_result.regime.value}]"
                     )
                     if rec:
                         recommendations.append(rec)

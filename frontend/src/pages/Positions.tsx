@@ -22,6 +22,24 @@ function getRegimeColor(regime: string | null): string {
   }
 }
 
+function getHealthColor(status: string): string {
+  switch (status) {
+    case 'green': return 'bg-green-500'
+    case 'yellow': return 'bg-yellow-500'
+    case 'red': return 'bg-red-500'
+    default: return 'bg-gray-500'
+  }
+}
+
+function getHealthBgColor(status: string): string {
+  switch (status) {
+    case 'green': return 'bg-green-600/10 border-green-600/30'
+    case 'yellow': return 'bg-yellow-600/10 border-yellow-600/30'
+    case 'red': return 'bg-red-600/10 border-red-600/30'
+    default: return ''
+  }
+}
+
 export default function Positions() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['positions'],
@@ -65,46 +83,55 @@ export default function Positions() {
           <table className="w-full">
             <thead className="bg-gray-900/50">
               <tr className="text-left text-sm text-gray-400">
+                <th className="p-4"></th>
                 <th className="p-4">Subnet</th>
-                <th className="p-4">Alpha Balance</th>
-                <th className="p-4">TAO Value (Mid)</th>
+                <th className="p-4">TAO Value</th>
                 <th className="p-4">Weight</th>
+                <th className="p-4">APY / Daily Yield</th>
                 <th className="p-4">Unrealized P&L</th>
-                <th className="p-4">Exit Slippage</th>
                 <th className="p-4">Flow Regime</th>
                 <th className="p-4">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-700">
               {positions.map((pos) => (
-                <tr key={pos.id} className="hover:bg-gray-700/30">
+                <tr key={pos.id} className={`hover:bg-gray-700/30 ${getHealthBgColor(pos.health_status)}`}>
+                  {/* Health indicator */}
+                  <td className="p-4 w-4">
+                    <div
+                      className={`w-3 h-3 rounded-full ${getHealthColor(pos.health_status)}`}
+                      title={pos.health_reason || 'Healthy'}
+                    />
+                  </td>
                   <td className="p-4">
                     <div className="font-medium">{pos.subnet_name || `SN${pos.netuid}`}</div>
                     <div className="text-xs text-gray-500">netuid: {pos.netuid}</div>
                   </td>
-                  <td className="p-4 font-mono">{formatTao(pos.alpha_balance)}</td>
-                  <td className="p-4 font-mono">{formatTao(pos.tao_value_mid)}</td>
+                  <td className="p-4">
+                    <div className="font-mono">{formatTao(pos.tao_value_mid)} τ</div>
+                    <div className="text-xs text-gray-500">{formatTao(pos.alpha_balance)} α</div>
+                  </td>
                   <td className="p-4 font-mono">{parseFloat(pos.weight_pct).toFixed(1)}%</td>
                   <td className="p-4">
+                    {pos.current_apy ? (
+                      <>
+                        <div className="font-mono text-green-400">
+                          {parseFloat(pos.current_apy).toFixed(1)}% APY
+                        </div>
+                        <div className="text-xs text-gray-400">
+                          +{pos.daily_yield_tao ? parseFloat(pos.daily_yield_tao).toFixed(4) : '0'} τ/day
+                        </div>
+                      </>
+                    ) : (
+                      <span className="text-gray-500">-</span>
+                    )}
+                  </td>
+                  <td className="p-4">
                     <span className={`font-mono ${parseFloat(pos.unrealized_pnl_tao) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                      {formatTao(pos.unrealized_pnl_tao)}
+                      {formatTao(pos.unrealized_pnl_tao)} τ
                     </span>
                     <div className={`text-xs ${parseFloat(pos.unrealized_pnl_pct) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                       {formatPercent(pos.unrealized_pnl_pct)}
-                    </div>
-                  </td>
-                  <td className="p-4">
-                    <div className="text-sm">
-                      <span className="text-gray-400">50%:</span>{' '}
-                      <span className={parseFloat(pos.exit_slippage_50pct) > 5 ? 'text-red-400' : ''}>
-                        {parseFloat(pos.exit_slippage_50pct).toFixed(2)}%
-                      </span>
-                    </div>
-                    <div className="text-sm">
-                      <span className="text-gray-400">100%:</span>{' '}
-                      <span className={parseFloat(pos.exit_slippage_100pct) > 10 ? 'text-red-400' : ''}>
-                        {parseFloat(pos.exit_slippage_100pct).toFixed(2)}%
-                      </span>
                     </div>
                   </td>
                   <td className="p-4">
@@ -113,7 +140,11 @@ export default function Positions() {
                     </span>
                   </td>
                   <td className="p-4">
-                    {pos.recommended_action ? (
+                    {pos.health_reason ? (
+                      <div className="text-xs text-gray-400 max-w-[200px]" title={pos.health_reason}>
+                        {pos.health_reason}
+                      </div>
+                    ) : pos.recommended_action ? (
                       <div>
                         <span className={`px-2 py-1 rounded text-xs font-medium ${
                           pos.recommended_action === 'sell' ? 'bg-red-600/20 text-red-400' :
@@ -122,14 +153,9 @@ export default function Positions() {
                         }`}>
                           {pos.recommended_action}
                         </span>
-                        {pos.action_reason && (
-                          <div className="text-xs text-gray-500 mt-1 max-w-[200px] truncate" title={pos.action_reason}>
-                            {pos.action_reason}
-                          </div>
-                        )}
                       </div>
                     ) : (
-                      <span className="text-gray-500">-</span>
+                      <span className="text-green-400 text-sm">Healthy</span>
                     )}
                   </td>
                 </tr>

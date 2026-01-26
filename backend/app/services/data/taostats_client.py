@@ -591,6 +591,168 @@ class TaoStatsClient:
         logger.info("Fetched all extrinsics", count=len(all_extrinsics), pages=page)
         return all_extrinsics
 
+    # ==================== Delegation/Staking Events ====================
+
+    async def get_delegation_events(
+        self,
+        coldkey: str,
+        page: int = 1,
+        limit: int = 50,
+        network: str = "finney"
+    ) -> Dict[str, Any]:
+        """Get staking/delegation events for a wallet.
+
+        Endpoint: GET /api/delegation/v1
+
+        Returns events including:
+        - Stake additions (add_stake, add_stake_limit)
+        - Stake removals (remove_stake, unstake_all)
+        - Timestamps and amounts
+        """
+        params = {
+            "coldkey": coldkey,
+            "network": network,
+            "limit": limit,
+            "page": page,
+        }
+
+        return await self._request(
+            "GET",
+            "/api/delegation/v1",
+            params=params,
+            cache_key=None,
+            cache_ttl=None,
+        )
+
+    async def get_all_delegation_events(
+        self,
+        coldkey: str,
+        max_pages: int = 100,
+        network: str = "finney"
+    ) -> List[Dict[str, Any]]:
+        """Fetch all delegation events for a wallet across multiple pages.
+
+        Args:
+            coldkey: Wallet address
+            max_pages: Maximum pages to fetch (safety limit)
+            network: Network name
+
+        Returns:
+            List of all delegation events
+        """
+        all_events = []
+        page = 1
+
+        while page <= max_pages:
+            response = await self.get_delegation_events(
+                coldkey=coldkey,
+                page=page,
+                limit=50,
+                network=network,
+            )
+
+            data = response.get("data", [])
+            if not data:
+                break
+
+            all_events.extend(data)
+
+            # Check pagination
+            pagination = response.get("pagination", {})
+            total_pages = pagination.get("total_pages", 1)
+
+            if page >= total_pages:
+                break
+
+            page += 1
+            await asyncio.sleep(0.1)
+
+        logger.info("Fetched all delegation events", count=len(all_events), pages=page)
+        return all_events
+
+    # ==================== Emissions Endpoints ====================
+
+    async def get_hotkey_emissions(
+        self,
+        hotkey: str,
+        netuid: Optional[int] = None,
+        timestamp_start: Optional[int] = None,
+        timestamp_end: Optional[int] = None,
+        limit: int = 50,
+        network: str = "finney"
+    ) -> Dict[str, Any]:
+        """Get emissions data for a hotkey.
+
+        Endpoint: GET /api/hotkey/emission/v1
+
+        Returns emission data including:
+        - Daily emissions in rao
+        - Subnet breakdown
+        - Timestamp of emission
+        """
+        params = {
+            "hotkey": hotkey,
+            "network": network,
+            "limit": limit,
+        }
+        if netuid is not None:
+            params["netuid"] = netuid
+        if timestamp_start:
+            params["timestamp_start"] = timestamp_start
+        if timestamp_end:
+            params["timestamp_end"] = timestamp_end
+
+        return await self._request(
+            "GET",
+            "/api/hotkey/emission/v1",
+            params=params,
+            cache_key=f"emissions:{hotkey}:{netuid}:{timestamp_start}:{timestamp_end}",
+            cache_ttl=timedelta(minutes=30),
+        )
+
+    async def get_stake_balance_history(
+        self,
+        coldkey: str,
+        hotkey: Optional[str] = None,
+        netuid: Optional[int] = None,
+        timestamp_start: Optional[int] = None,
+        timestamp_end: Optional[int] = None,
+        limit: int = 50,
+        network: str = "finney"
+    ) -> Dict[str, Any]:
+        """Get historical stake balance for a wallet (daily snapshots).
+
+        Endpoint: GET /api/dtao/stake_balance/history/v1
+
+        Note: The API requires a hotkey parameter for stake balance history.
+
+        Returns daily stake balance snapshots with:
+        - balance: Alpha balance at that time
+        - balance_as_tao: TAO value at that time
+        - timestamp: Daily snapshot time (midnight UTC)
+        """
+        params = {
+            "coldkey": coldkey,
+            "network": network,
+            "limit": limit,
+        }
+        if hotkey:
+            params["hotkey"] = hotkey
+        if netuid is not None:
+            params["netuid"] = netuid
+        if timestamp_start:
+            params["timestamp_start"] = timestamp_start
+        if timestamp_end:
+            params["timestamp_end"] = timestamp_end
+
+        return await self._request(
+            "GET",
+            "/api/dtao/stake_balance/history/v1",
+            params=params,
+            cache_key=f"stake_balance_history:{coldkey}:{netuid}:{timestamp_start}:{timestamp_end}",
+            cache_ttl=timedelta(minutes=30),
+        )
+
     # ==================== Utility Methods ====================
 
     async def health_check(self) -> bool:

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { TrendingUp, TrendingDown, AlertTriangle, ArrowRightLeft } from 'lucide-react'
+import { TrendingUp, TrendingDown, AlertTriangle, ArrowRightLeft, Coins, DollarSign, Activity, CheckCircle, XCircle } from 'lucide-react'
 import { api } from '../services/api'
 import { Dashboard as DashboardType } from '../types'
 
@@ -8,9 +8,19 @@ function formatTao(value: string | number): string {
   return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })
 }
 
+function formatTaoShort(value: string | number): string {
+  const num = typeof value === 'string' ? parseFloat(value) : value
+  return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 function formatPercent(value: string | number): string {
   const num = typeof value === 'string' ? parseFloat(value) : value
   return `${num >= 0 ? '+' : ''}${num.toFixed(2)}%`
+}
+
+function formatApy(value: string | number): string {
+  const num = typeof value === 'string' ? parseFloat(value) : value
+  return `${num.toFixed(1)}%`
 }
 
 function formatUsd(value: string | number): string {
@@ -41,7 +51,7 @@ export default function Dashboard() {
     )
   }
 
-  const { portfolio, alerts } = data
+  const { portfolio, alerts, portfolio_health, action_items } = data
 
   return (
     <div className="space-y-6">
@@ -52,8 +62,82 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Portfolio Health Banner */}
+      {portfolio_health && (
+        <div className={`rounded-lg p-4 border flex items-center justify-between ${
+          portfolio_health.status === 'red' ? 'bg-red-900/20 border-red-700' :
+          portfolio_health.status === 'yellow' ? 'bg-yellow-900/20 border-yellow-700' :
+          'bg-green-900/20 border-green-700'
+        }`}>
+          <div className="flex items-center gap-4">
+            <div className={`p-3 rounded-full ${
+              portfolio_health.status === 'red' ? 'bg-red-600/30' :
+              portfolio_health.status === 'yellow' ? 'bg-yellow-600/30' :
+              'bg-green-600/30'
+            }`}>
+              {portfolio_health.status === 'red' ? <XCircle className="text-red-400 w-8 h-8" /> :
+               portfolio_health.status === 'yellow' ? <AlertTriangle className="text-yellow-400 w-8 h-8" /> :
+               <CheckCircle className="text-green-400 w-8 h-8" />}
+            </div>
+            <div>
+              <div className="text-lg font-semibold">
+                Portfolio Health: <span className={
+                  portfolio_health.status === 'red' ? 'text-red-400' :
+                  portfolio_health.status === 'yellow' ? 'text-yellow-400' :
+                  'text-green-400'
+                }>{portfolio_health.status === 'red' ? 'ACTION REQUIRED' :
+                   portfolio_health.status === 'yellow' ? 'NEEDS ATTENTION' : 'GOOD'}</span>
+              </div>
+              {portfolio_health.top_issue && (
+                <div className="text-sm text-gray-400">{portfolio_health.top_issue}</div>
+              )}
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-3xl font-bold">{portfolio_health.score}</div>
+            <div className="text-xs text-gray-500">Health Score</div>
+          </div>
+        </div>
+      )}
+
+      {/* Action Items */}
+      {action_items && action_items.length > 0 && (
+        <div className="bg-gray-800 rounded-lg border border-gray-700">
+          <div className="px-6 py-4 border-b border-gray-700 flex items-center justify-between">
+            <h3 className="text-lg font-semibold flex items-center gap-2">
+              <Activity className="w-5 h-5" />
+              Action Items
+            </h3>
+            <span className="text-sm text-gray-500">{action_items.length} items</span>
+          </div>
+          <div className="divide-y divide-gray-700">
+            {action_items.slice(0, 5).map((item, idx) => (
+              <div key={idx} className="px-6 py-4 flex items-start gap-4">
+                <div className={`px-2 py-1 rounded text-xs font-semibold ${
+                  item.priority === 'high' ? 'bg-red-600/20 text-red-400' :
+                  item.priority === 'medium' ? 'bg-yellow-600/20 text-yellow-400' :
+                  'bg-blue-600/20 text-blue-400'
+                }`}>
+                  {item.priority.toUpperCase()}
+                </div>
+                <div className="flex-1">
+                  <div className="font-medium">{item.title}</div>
+                  <div className="text-sm text-gray-400">{item.description}</div>
+                </div>
+                {item.potential_gain_tao && (
+                  <div className="text-right text-sm">
+                    <div className="text-green-400">+{parseFloat(item.potential_gain_tao).toFixed(2)} τ</div>
+                    <div className="text-xs text-gray-500">potential</div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* NAV Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
           <div className="text-sm text-gray-400 mb-1">Total NAV (TAO)</div>
           <div className="text-3xl font-bold text-white">{formatTao(portfolio.nav_mid)}</div>
@@ -61,15 +145,31 @@ export default function Dashboard() {
         </div>
 
         <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-          <div className="text-sm text-gray-400 mb-1">Executable NAV (50%)</div>
-          <div className="text-2xl font-bold text-white">{formatTao(portfolio.nav_exec_50pct)}</div>
-          <div className="text-sm text-gray-500 mt-1">Primary risk metric</div>
+          <div className="flex items-center gap-2 text-sm text-gray-400 mb-1">
+            <Coins className="w-4 h-4" />
+            <span>Daily Yield</span>
+          </div>
+          <div className="text-2xl font-bold text-green-400">+{formatTaoShort(portfolio.yield_summary?.daily_yield_tao || 0)} τ</div>
+          <div className="text-sm text-gray-500 mt-1">APY: {formatApy(portfolio.yield_summary?.portfolio_apy || 0)}</div>
         </div>
 
         <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-          <div className="text-sm text-gray-400 mb-1">Executable NAV (100%)</div>
-          <div className="text-2xl font-bold text-white">{formatTao(portfolio.nav_exec_100pct)}</div>
-          <div className="text-sm text-gray-500 mt-1">Full exit valuation</div>
+          <div className="flex items-center gap-2 text-sm text-gray-400 mb-1">
+            <DollarSign className="w-4 h-4" />
+            <span>Unrealized P&L</span>
+          </div>
+          <div className={`text-2xl font-bold ${parseFloat(portfolio.pnl_summary?.total_unrealized_pnl_tao || '0') >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+            {formatPercent(portfolio.pnl_summary?.unrealized_pnl_pct || 0)}
+          </div>
+          <div className="text-sm text-gray-500 mt-1">
+            {parseFloat(portfolio.pnl_summary?.total_unrealized_pnl_tao || '0') >= 0 ? '+' : ''}{formatTaoShort(portfolio.pnl_summary?.total_unrealized_pnl_tao || 0)} τ
+          </div>
+        </div>
+
+        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+          <div className="text-sm text-gray-400 mb-1">Weekly Yield</div>
+          <div className="text-2xl font-bold text-green-400">+{formatTaoShort(portfolio.yield_summary?.weekly_yield_tao || 0)} τ</div>
+          <div className="text-sm text-gray-500 mt-1">~{formatTaoShort(portfolio.yield_summary?.monthly_yield_tao || 0)} τ/month</div>
         </div>
       </div>
 
@@ -200,6 +300,82 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* All Positions Table */}
+      {data.top_positions && data.top_positions.length > 0 && (
+        <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-700 flex items-center justify-between">
+            <h3 className="text-lg font-semibold">All Positions</h3>
+            <span className="text-sm text-gray-500">{data.top_positions.length} positions</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-900/50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider"></th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Subnet</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">Value (τ)</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">Weight</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">APY</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">Daily Yield</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">P&L</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-700">
+                {data.top_positions.map((position) => (
+                  <tr key={position.netuid} className={`hover:bg-gray-700/30 ${
+                    position.health_status === 'red' ? 'bg-red-600/5' :
+                    position.health_status === 'yellow' ? 'bg-yellow-600/5' : ''
+                  }`}>
+                    <td className="px-4 py-3">
+                      <div
+                        className={`w-3 h-3 rounded-full ${
+                          position.health_status === 'red' ? 'bg-red-500' :
+                          position.health_status === 'yellow' ? 'bg-yellow-500' : 'bg-green-500'
+                        }`}
+                        title={position.health_reason || 'Healthy'}
+                      />
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center">
+                        <span className="text-xs text-gray-500 mr-2">SN{position.netuid}</span>
+                        <span className="font-medium text-white">{position.subnet_name}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono">
+                      {formatTaoShort(position.tao_value_mid)}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-gray-400">
+                      {parseFloat(position.weight_pct).toFixed(1)}%
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-green-400">
+                      {formatApy(position.current_apy)}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-green-400">
+                      +{formatTaoShort(position.daily_yield_tao)} τ
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <span className={`font-mono ${parseFloat(position.unrealized_pnl_pct) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {formatPercent(position.unrealized_pnl_pct)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {position.health_reason ? (
+                        <span className="text-xs text-gray-400" title={position.health_reason}>
+                          {position.health_reason.length > 30 ? position.health_reason.substring(0, 30) + '...' : position.health_reason}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-green-400">Healthy</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

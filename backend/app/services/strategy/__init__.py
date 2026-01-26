@@ -45,6 +45,13 @@ from app.services.strategy.strategy_engine import (
     StrategyEngine,
     strategy_engine,
 )
+from app.services.strategy.macro_regime_detector import (
+    MacroRegime,
+    MacroRegimeResult,
+    MacroSignals,
+    MacroRegimeDetector,
+    macro_regime_detector,
+)
 
 __all__ = [
     # Regime
@@ -76,4 +83,10 @@ __all__ = [
     "ConstraintCheck",
     "StrategyEngine",
     "strategy_engine",
+    # Macro regime (Phase 2A)
+    "MacroRegime",
+    "MacroRegimeResult",
+    "MacroSignals",
+    "MacroRegimeDetector",
+    "macro_regime_detector",
 ]

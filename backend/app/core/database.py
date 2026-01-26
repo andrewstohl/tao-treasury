@@ -14,14 +14,29 @@ from app.core.config import get_settings
 
 settings = get_settings()
 
+
+def _create_engine():
+    """Create async engine with appropriate settings for the database type."""
+    database_url = settings.database_url
+
+    # Base engine options
+    engine_options = {
+        "echo": settings.debug,
+    }
+
+    # SQLite doesn't support connection pool options
+    if not database_url.startswith("sqlite"):
+        engine_options.update({
+            "pool_pre_ping": True,
+            "pool_size": 10,
+            "max_overflow": 20,
+        })
+
+    return create_async_engine(database_url, **engine_options)
+
+
 # Create async engine
-engine = create_async_engine(
-    settings.database_url,
-    echo=settings.debug,
-    pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
-)
+engine = _create_engine()
 
 # Session factory
 async_session_factory = async_sessionmaker(

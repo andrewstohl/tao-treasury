@@ -157,3 +157,128 @@ class PositionCostBasis(Base):
 
     def __repr__(self) -> str:
         return f"<PositionCostBasis SN{self.netuid} avg_price={self.weighted_avg_entry_price}>"
+
+
+class DelegationEvent(Base):
+    """Delegation event record from TaoStats delegation API.
+
+    Tracks staking/unstaking events with their associated yields.
+    Used for:
+    - Accurate yield tracking (actual rewards received)
+    - Historical income analysis
+    - Cost basis validation
+    """
+
+    __tablename__ = "delegation_events"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
+    # Event identification
+    wallet_address: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    event_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    block_number: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+
+    # Event type
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)  # 'stake', 'unstake', 'reward'
+    action: Mapped[str] = mapped_column(String(64), nullable=False)  # Full action name
+
+    # Position details
+    netuid: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    hotkey: Mapped[str] = mapped_column(String(64), nullable=True)
+
+    # Amounts
+    amount_rao: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    amount_tao: Mapped[Decimal] = mapped_column(
+        Numeric(20, 9), nullable=False, default=Decimal("0")
+    )
+    alpha_amount: Mapped[Decimal] = mapped_column(
+        Numeric(20, 9), nullable=True
+    )
+
+    # Value at time of event
+    tao_price_usd: Mapped[Decimal] = mapped_column(
+        Numeric(20, 4), nullable=True
+    )
+    usd_value: Mapped[Decimal] = mapped_column(
+        Numeric(20, 2), nullable=True
+    )
+
+    # Yield/reward info (for reward events)
+    is_reward: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    reward_source: Mapped[str] = mapped_column(String(32), nullable=True)  # 'emission', 'dividend', etc.
+
+    # Raw data
+    raw_data: Mapped[dict] = mapped_column(JSONB, nullable=True)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_delegation_events_wallet_netuid", "wallet_address", "netuid"),
+        Index("ix_delegation_events_wallet_type", "wallet_address", "event_type"),
+        Index("ix_delegation_events_timestamp", "timestamp"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<DelegationEvent {self.event_type} {self.amount_tao} TAO on SN{self.netuid}>"
+
+
+class PositionYieldHistory(Base):
+    """Daily yield history for a position.
+
+    Tracks actual yield received per position per day.
+    Computed from stake balance history changes.
+    """
+
+    __tablename__ = "position_yield_history"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+
+    wallet_address: Mapped[str] = mapped_column(String(64), nullable=False)
+    netuid: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    # Balance at start and end of day
+    alpha_balance_start: Mapped[Decimal] = mapped_column(
+        Numeric(20, 9), nullable=False, default=Decimal("0")
+    )
+    alpha_balance_end: Mapped[Decimal] = mapped_column(
+        Numeric(20, 9), nullable=False, default=Decimal("0")
+    )
+
+    # TAO values
+    tao_value_start: Mapped[Decimal] = mapped_column(
+        Numeric(20, 9), nullable=False, default=Decimal("0")
+    )
+    tao_value_end: Mapped[Decimal] = mapped_column(
+        Numeric(20, 9), nullable=False, default=Decimal("0")
+    )
+
+    # Computed yield for the day
+    yield_alpha: Mapped[Decimal] = mapped_column(
+        Numeric(20, 9), nullable=False, default=Decimal("0")
+    )  # Alpha tokens earned
+    yield_tao: Mapped[Decimal] = mapped_column(
+        Numeric(20, 9), nullable=False, default=Decimal("0")
+    )  # TAO value of yield
+
+    # Net staking activity (positive = added, negative = removed)
+    net_stake_tao: Mapped[Decimal] = mapped_column(
+        Numeric(20, 9), nullable=False, default=Decimal("0")
+    )
+
+    # Annualized yield for this day
+    daily_apy: Mapped[Decimal] = mapped_column(
+        Numeric(10, 4), nullable=False, default=Decimal("0")
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_position_yield_wallet_netuid_date", "wallet_address", "netuid", "date", unique=True),
+    )

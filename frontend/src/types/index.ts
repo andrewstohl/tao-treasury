@@ -1,3 +1,50 @@
+export interface YieldSummary {
+  portfolio_apy: string
+  daily_yield_tao: string
+  weekly_yield_tao: string
+  monthly_yield_tao: string
+}
+
+export interface PnLSummary {
+  total_unrealized_pnl_tao: string
+  total_realized_pnl_tao: string
+  total_cost_basis_tao: string
+  unrealized_pnl_pct: string
+}
+
+export interface PositionSummary {
+  netuid: number
+  subnet_name: string
+  tao_value_mid: string
+  alpha_balance: string
+  weight_pct: string
+  current_apy: string
+  daily_yield_tao: string
+  cost_basis_tao: string
+  unrealized_pnl_tao: string
+  unrealized_pnl_pct: string
+  health_status: 'green' | 'yellow' | 'red'
+  health_reason: string | null
+  validator_hotkey: string | null
+  recommended_action: string | null
+}
+
+export interface ActionItem {
+  priority: 'high' | 'medium' | 'low'
+  action_type: string
+  title: string
+  description: string
+  subnet_id: number | null
+  potential_gain_tao: string | null
+}
+
+export interface PortfolioHealth {
+  status: 'green' | 'yellow' | 'red'
+  score: number
+  top_issue: string | null
+  issues_count: number
+}
+
 export interface Portfolio {
   wallet_address: string
   nav_mid: string
@@ -13,6 +60,8 @@ export interface Portfolio {
     unstaked_tao: string
     unstaked_pct: string
   }
+  yield_summary: YieldSummary
+  pnl_summary: PnLSummary
   executable_drawdown_pct: string
   drawdown_from_ath_pct: string
   nav_ath: string
@@ -26,6 +75,9 @@ export interface Portfolio {
 
 export interface Dashboard {
   portfolio: Portfolio
+  portfolio_health: PortfolioHealth
+  top_positions: PositionSummary[]
+  action_items: ActionItem[]
   alerts: {
     critical: number
     warning: number
@@ -61,6 +113,12 @@ export interface Position {
   subnet_name: string | null
   flow_regime: string | null
   emission_share: string | null
+  // Yield fields
+  current_apy: string | null
+  daily_yield_tao: string | null
+  // Health scoring
+  health_status: 'green' | 'yellow' | 'red'
+  health_reason: string | null
   created_at: string
   updated_at: string
 }
@@ -142,6 +200,7 @@ export interface StrategyAnalysis {
   portfolio_regime: string
   total_subnets: number
   eligible_subnets: number
+  ineligible_reasons: Record<string, number>
   positions_analyzed: number
   overweight_count: number
   underweight_count: number

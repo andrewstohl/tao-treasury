@@ -59,6 +59,17 @@ class PortfolioSnapshot(Base):
     daily_turnover: Mapped[Decimal] = mapped_column(Numeric(10, 6), default=Decimal("0"))
     weekly_turnover: Mapped[Decimal] = mapped_column(Numeric(10, 6), default=Decimal("0"))
 
+    # Yield aggregates (sum of position yields)
+    portfolio_apy: Mapped[Decimal] = mapped_column(Numeric(10, 4), default=Decimal("0"))
+    daily_yield_tao: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0"))
+    weekly_yield_tao: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0"))
+    monthly_yield_tao: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0"))
+
+    # P&L aggregates
+    total_unrealized_pnl_tao: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0"))
+    total_realized_pnl_tao: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0"))
+    total_cost_basis_tao: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0"))
+
     __table_args__ = (
         Index("ix_portfolio_snapshots_wallet_ts", "wallet_address", "timestamp"),
     )

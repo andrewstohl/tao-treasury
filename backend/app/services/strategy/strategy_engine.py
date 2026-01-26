@@ -28,7 +28,12 @@ from app.models.portfolio import PortfolioSnapshot
 from app.models.trade import TradeRecommendation
 from app.models.alert import Alert
 from app.services.strategy.regime_calculator import regime_calculator, FlowRegime
-from app.services.strategy.eligibility_gate import eligibility_gate, EligibilityResult
+from app.services.strategy.eligibility_gate import (
+    eligibility_gate,
+    EligibilityResult,
+    ExitabilityLevel,
+    ExitabilityResult,
+)
 from app.services.strategy.position_sizer import position_sizer, PositionLimit
 from app.services.strategy.rebalancer import rebalancer, RebalanceResult, TriggerType
 
@@ -234,6 +239,97 @@ class StrategyEngine:
     async def get_eligible_universe(self) -> List[EligibilityResult]:
         """Get current eligible investment universe."""
         return await eligibility_gate.get_eligible_universe()
+
+    async def check_exitability(self, db: AsyncSession) -> Dict[str, Any]:
+        """Check exitability for all current positions.
+
+        Args:
+            db: Database session (passed from DI)
+
+        Returns structured assessment of position slippage risk,
+        including any that need WARNING attention or FORCE_TRIM action.
+
+        This is used to:
+        1. Surface exitability issues in the UI
+        2. Generate trim recommendations when enable_exitability_gate=True
+        """
+        result = await eligibility_gate.check_all_positions_exitability(db)
+
+        # If feature enabled and we have force_trims, generate recommendations
+        if result["feature_enabled"] and result["force_trims"]:
+            await self._generate_exitability_trim_recommendations(db, result["force_trims"])
+
+        return result
+
+    async def _generate_exitability_trim_recommendations(
+        self,
+        db: AsyncSession,
+        force_trim_positions: List[Dict[str, Any]],
+    ) -> None:
+        """Generate trim recommendations for positions failing exitability.
+
+        Args:
+            db: Database session (passed from DI)
+            force_trim_positions: Positions requiring FORCE_TRIM
+        """
+        logger.info("Generating exitability trim recommendations",
+                   count=len(force_trim_positions))
+
+        for pos_data in force_trim_positions:
+            netuid = pos_data["netuid"]
+            trim_amount = pos_data.get("trim_amount_tao", 0)
+            trim_pct = pos_data.get("trim_pct", 0)
+
+            if trim_amount <= 0:
+                continue
+
+            # Check for existing pending recommendation
+            existing_stmt = select(TradeRecommendation).where(
+                TradeRecommendation.wallet_address == self.wallet_address,
+                TradeRecommendation.netuid == netuid,
+                TradeRecommendation.status == "pending",
+                TradeRecommendation.trigger_type == "exitability_trim",
+            )
+            existing = await db.execute(existing_stmt)
+            if existing.scalar_one_or_none():
+                continue  # Already have a pending recommendation
+
+            # Create trim recommendation
+            rec = TradeRecommendation(
+                wallet_address=self.wallet_address,
+                netuid=netuid,
+                direction="sell",
+                size_tao=Decimal(str(trim_amount)),
+                trigger_type="exitability_trim",
+                reason=f"Exit slippage {pos_data['slippage_100pct']:.1%} exceeds 10% threshold. "
+                       f"Trim {trim_pct:.0f}% to restore safe exitability.",
+                priority=2,  # High priority but not emergency
+                is_urgent=True,
+                status="pending",
+                estimated_slippage_pct=Decimal(str(pos_data["slippage_100pct"])),
+                total_estimated_cost_tao=Decimal(str(trim_amount)) * Decimal(str(pos_data["slippage_100pct"])),
+            )
+            db.add(rec)
+
+            # Create alert
+            alert = Alert(
+                wallet_address=self.wallet_address,
+                category="exitability",
+                severity="warning",
+                title=f"Exitability Warning: {pos_data['subnet_name']}",
+                message=f"Position exit slippage is {pos_data['slippage_100pct']:.1%}, "
+                        f"exceeding the 10% threshold. Recommended trim: {trim_amount:.2f} TAO ({trim_pct:.0f}%).",
+                netuid=netuid,
+                threshold_value=Decimal("0.10"),
+                actual_value=Decimal(str(pos_data["slippage_100pct"])),
+                is_active=True,
+            )
+            db.add(alert)
+
+        await db.commit()
+
+        logger.info("Exitability trim recommendations created",
+                   count=len(force_trim_positions))
 
     async def check_constraints(self) -> List[ConstraintCheck]:
         """Check all portfolio constraints and return status."""
@@ -567,7 +663,7 @@ class StrategyEngine:
             return "High owner take"
         if "flow" in reason_lower or "regime" in reason_lower:
             return "Negative flow"
-        if "slippage" in reason_lower:
+        if "blocked" in reason_lower or "slippage" in reason_lower:
             return "High slippage"
         if "validator" in reason_lower:
             return "Validator quality"

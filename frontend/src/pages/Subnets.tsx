@@ -107,7 +107,7 @@ export default function Subnets() {
                     </span>
                   </td>
                   <td className="p-4 font-mono text-sm">
-                    {(parseFloat(subnet.validator_apy) * 100).toFixed(1)}%
+                    {parseFloat(subnet.validator_apy).toFixed(1)}%
                   </td>
                   <td className="p-4">
                     {subnet.is_eligible ? (

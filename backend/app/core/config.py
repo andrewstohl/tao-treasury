@@ -63,11 +63,21 @@ class Settings(BaseSettings):
     # Slippage Caps (per spec: 5% for 50% exit, 10% for full exit)
     max_exit_slippage_50pct: Decimal = Field(
         default=Decimal("0.05"),
-        description="Max slippage for 50% position exit (5%)"
+        description="Max slippage for 50% position exit (5%) - blocks new buys"
     )
     max_exit_slippage_100pct: Decimal = Field(
         default=Decimal("0.10"),
-        description="Max slippage for 100% position exit (10%)"
+        description="Max slippage for 100% position exit (10%) - forces trim"
+    )
+    exitability_warning_threshold: Decimal = Field(
+        default=Decimal("0.075"),
+        description="Warning tier for 100% exit slippage (7.5%) - flags for monitoring"
+    )
+
+    # Feature Flags
+    enable_exitability_gate: bool = Field(
+        default=False,
+        description="Enable hard exitability gate (blocks buys at 5%, forces trims at 10%)"
     )
 
     # Position Constraints
@@ -78,6 +88,14 @@ class Settings(BaseSettings):
     default_position_concentration: Decimal = Field(
         default=Decimal("0.10"),
         description="Default target position size (10-12%)"
+    )
+    min_position_pct: Decimal = Field(
+        default=Decimal("0.03"),
+        description="Minimum meaningful position size as % of portfolio (3%)"
+    )
+    min_position_tao: Decimal = Field(
+        default=Decimal("50"),
+        description="Minimum meaningful position size in TAO (absolute floor)"
     )
     min_positions: int = Field(
         default=8,
@@ -144,6 +162,84 @@ class Settings(BaseSettings):
     quarantine_flow_threshold: Decimal = Field(
         default=Decimal("-0.15"),
         description="Net flow threshold for Quarantine regime"
+    )
+
+    # Regime Persistence (anti-whipsaw)
+    enable_regime_persistence: bool = Field(
+        default=False,
+        description="Enable regime persistence requirement (anti-whipsaw)"
+    )
+    regime_persistence_risk_on: int = Field(
+        default=2,
+        description="Consecutive days required to transition TO Risk-On"
+    )
+    regime_persistence_risk_off: int = Field(
+        default=2,
+        description="Consecutive days required to transition TO Risk-Off"
+    )
+    regime_persistence_quarantine: int = Field(
+        default=3,
+        description="Consecutive days required to transition TO Quarantine"
+    )
+    regime_persistence_dead: int = Field(
+        default=2,
+        description="Consecutive days required to transition TO Dead"
+    )
+
+    # Emissions Collapse Detection (Phase 1B)
+    enable_emissions_collapse_detection: bool = Field(
+        default=False,
+        description="Enable emissions collapse detection as regime gate"
+    )
+    emissions_collapse_warning_threshold: Decimal = Field(
+        default=Decimal("0.30"),
+        description="7d emissions drop threshold for warning (30% drop -> Risk-Off)"
+    )
+    emissions_collapse_severe_threshold: Decimal = Field(
+        default=Decimal("0.50"),
+        description="7d emissions drop threshold for severe action (50% drop -> Quarantine)"
+    )
+    emissions_near_zero_threshold: Decimal = Field(
+        default=Decimal("0.0001"),
+        description="Emissions share threshold for near-zero detection (0.01% -> Dead)"
+    )
+    emissions_lookback_days: int = Field(
+        default=7,
+        description="Days to look back for emissions delta calculation"
+    )
+
+    # TAO Macro Regime Detection (Phase 2A)
+    enable_macro_regime_detection: bool = Field(
+        default=False,
+        description="Enable TAO macro regime detection for portfolio-level strategy"
+    )
+    macro_bull_flow_threshold: Decimal = Field(
+        default=Decimal("0.03"),
+        description="Aggregate 7d flow threshold for BULL regime (3% net inflow)"
+    )
+    macro_bear_flow_threshold: Decimal = Field(
+        default=Decimal("-0.03"),
+        description="Aggregate 7d flow threshold for BEAR regime (-3% net outflow)"
+    )
+    macro_accumulation_drawdown_min: Decimal = Field(
+        default=Decimal("0.10"),
+        description="Min drawdown for ACCUMULATION zone (10% - bottoming)"
+    )
+    macro_accumulation_drawdown_max: Decimal = Field(
+        default=Decimal("0.25"),
+        description="Max drawdown for ACCUMULATION zone (25% - not capitulation)"
+    )
+    macro_capitulation_drawdown: Decimal = Field(
+        default=Decimal("0.25"),
+        description="Drawdown threshold for CAPITULATION regime (25%+ from ATH)"
+    )
+    macro_capitulation_flow_threshold: Decimal = Field(
+        default=Decimal("-0.10"),
+        description="Aggregate flow threshold for CAPITULATION (-10% severe outflow)"
+    )
+    macro_regime_lookback_days: int = Field(
+        default=7,
+        description="Days to look back for macro regime flow aggregation"
     )
 
     # Scheduler Intervals
