@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Dict, List, Optional, Any
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -340,6 +340,18 @@ class DataSyncService:
 
             async with get_db_context() as db:
                 count = 0
+
+                # Get current netuids from API
+                api_netuids = set(stakes_by_netuid.keys())
+
+                # Delete positions that no longer exist in the API
+                delete_stmt = delete(Position).where(
+                    Position.wallet_address == self.wallet_address,
+                    Position.netuid.notin_(api_netuids) if api_netuids else True
+                )
+                result = await db.execute(delete_stmt)
+                if result.rowcount > 0:
+                    logger.info("Removed stale positions", count=result.rowcount)
 
                 for netuid, stake_data in stakes_by_netuid.items():
                     await self._upsert_position(db, stake_data)
