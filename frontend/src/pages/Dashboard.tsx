@@ -1,7 +1,42 @@
+import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { TrendingUp, TrendingDown, AlertTriangle, ArrowRightLeft, Coins, DollarSign, Activity, CheckCircle, XCircle } from 'lucide-react'
+import { TrendingUp, TrendingDown, AlertTriangle, ArrowRightLeft, Coins, DollarSign, Activity, CheckCircle, XCircle, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
 import { api } from '../services/api'
 import { Dashboard as DashboardType } from '../types'
+
+type SortDirection = 'asc' | 'desc' | null
+type SortKey = 'subnet_name' | 'tao_value_mid' | 'weight_pct' | 'current_apy' | 'daily_yield_tao' | 'unrealized_pnl_pct' | 'health_status' | null
+
+interface SortableHeaderProps {
+  label: string
+  sortKey: SortKey
+  currentSortKey: SortKey
+  currentDirection: SortDirection
+  onSort: (key: SortKey) => void
+  align?: 'left' | 'right'
+}
+
+function SortableHeader({ label, sortKey, currentSortKey, currentDirection, onSort, align = 'left' }: SortableHeaderProps) {
+  const isActive = currentSortKey === sortKey
+
+  return (
+    <th
+      className={`px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-700/50 select-none ${align === 'right' ? 'text-right' : 'text-left'}`}
+      onClick={() => onSort(sortKey)}
+    >
+      <div className={`flex items-center gap-1 ${align === 'right' ? 'justify-end' : ''}`}>
+        <span>{label}</span>
+        <span className="text-gray-500">
+          {isActive ? (
+            currentDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+          ) : (
+            <ChevronsUpDown className="w-3 h-3 opacity-50" />
+          )}
+        </span>
+      </div>
+    </th>
+  )
+}
 
 function formatTao(value: string | number): string {
   const num = typeof value === 'string' ? parseFloat(value) : value
@@ -29,11 +64,82 @@ function formatUsd(value: string | number): string {
 }
 
 export default function Dashboard() {
+  const [sortKey, setSortKey] = useState<SortKey>('tao_value_mid')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
+
   const { data, isLoading, error } = useQuery<DashboardType>({
     queryKey: ['dashboard'],
     queryFn: api.getDashboard,
     refetchInterval: 30000,
   })
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      if (sortDirection === 'desc') {
+        setSortDirection('asc')
+      } else if (sortDirection === 'asc') {
+        setSortKey(null)
+        setSortDirection(null)
+      }
+    } else {
+      setSortKey(key)
+      setSortDirection('desc')
+    }
+  }
+
+  const sortedPositions = useMemo(() => {
+    const positions = data?.top_positions || []
+    if (!sortKey || !sortDirection) return positions
+
+    return [...positions].sort((a, b) => {
+      let aVal: number | string
+      let bVal: number | string
+
+      switch (sortKey) {
+        case 'subnet_name':
+          aVal = a.subnet_name || `SN${a.netuid}`
+          bVal = b.subnet_name || `SN${b.netuid}`
+          break
+        case 'tao_value_mid':
+          aVal = parseFloat(a.tao_value_mid)
+          bVal = parseFloat(b.tao_value_mid)
+          break
+        case 'weight_pct':
+          aVal = parseFloat(a.weight_pct)
+          bVal = parseFloat(b.weight_pct)
+          break
+        case 'current_apy':
+          aVal = parseFloat(a.current_apy || '0')
+          bVal = parseFloat(b.current_apy || '0')
+          break
+        case 'daily_yield_tao':
+          aVal = parseFloat(a.daily_yield_tao || '0')
+          bVal = parseFloat(b.daily_yield_tao || '0')
+          break
+        case 'unrealized_pnl_pct':
+          aVal = parseFloat(a.unrealized_pnl_pct)
+          bVal = parseFloat(b.unrealized_pnl_pct)
+          break
+        case 'health_status':
+          const statusOrder = { red: 0, yellow: 1, green: 2 }
+          aVal = statusOrder[a.health_status as keyof typeof statusOrder] ?? 2
+          bVal = statusOrder[b.health_status as keyof typeof statusOrder] ?? 2
+          break
+        default:
+          return 0
+      }
+
+      if (typeof aVal === 'string' && typeof bVal === 'string') {
+        return sortDirection === 'asc'
+          ? aVal.localeCompare(bVal)
+          : bVal.localeCompare(aVal)
+      }
+
+      return sortDirection === 'asc'
+        ? (aVal as number) - (bVal as number)
+        : (bVal as number) - (aVal as number)
+    })
+  }, [data?.top_positions, sortKey, sortDirection])
 
   if (isLoading) {
     return (
@@ -302,28 +408,75 @@ export default function Dashboard() {
       </div>
 
       {/* All Positions Table */}
-      {data.top_positions && data.top_positions.length > 0 && (
+      {sortedPositions.length > 0 && (
         <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-700 flex items-center justify-between">
             <h3 className="text-lg font-semibold">All Positions</h3>
-            <span className="text-sm text-gray-500">{data.top_positions.length} positions</span>
+            <span className="text-sm text-gray-500">{sortedPositions.length} positions</span>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-900/50">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider"></th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Subnet</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">Value (τ)</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">Weight</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">APY</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">Daily Yield</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">P&L</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status</th>
+                  <SortableHeader
+                    label="Subnet"
+                    sortKey="subnet_name"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={handleSort}
+                  />
+                  <SortableHeader
+                    label="Value (τ)"
+                    sortKey="tao_value_mid"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={handleSort}
+                    align="right"
+                  />
+                  <SortableHeader
+                    label="Weight"
+                    sortKey="weight_pct"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={handleSort}
+                    align="right"
+                  />
+                  <SortableHeader
+                    label="APY"
+                    sortKey="current_apy"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={handleSort}
+                    align="right"
+                  />
+                  <SortableHeader
+                    label="Daily Yield"
+                    sortKey="daily_yield_tao"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={handleSort}
+                    align="right"
+                  />
+                  <SortableHeader
+                    label="P&L"
+                    sortKey="unrealized_pnl_pct"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={handleSort}
+                    align="right"
+                  />
+                  <SortableHeader
+                    label="Status"
+                    sortKey="health_status"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={handleSort}
+                  />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-700">
-                {data.top_positions.map((position) => (
+                {sortedPositions.map((position) => (
                   <tr key={position.netuid} className={`hover:bg-gray-700/30 ${
                     position.health_status === 'red' ? 'bg-red-600/5' :
                     position.health_status === 'yellow' ? 'bg-yellow-600/5' : ''
