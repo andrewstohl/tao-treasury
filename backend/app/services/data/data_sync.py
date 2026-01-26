@@ -525,7 +525,8 @@ class DataSyncService:
             validator.apy_7d = Decimal(str(seven_day_apy)) * Decimal("100")
 
         # Epoch participation shows validator reliability
-        validator.is_active = val_data.get("one_day_epoch_participation", 1.0) > 0.5
+        epoch_participation = val_data.get("one_day_epoch_participation")
+        validator.is_active = (epoch_participation or 1.0) > 0.5
         validator.updated_at = now
 
         return validator
