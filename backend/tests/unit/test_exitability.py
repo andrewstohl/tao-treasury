@@ -243,15 +243,23 @@ class TestCheckExitabilityAsync:
         assert result.netuid == 1
 
     async def test_check_exitability_warning(self):
-        """Test exitability check returns WARNING for 7.5-10% slippage."""
+        """Test exitability check returns WARNING for 7.5-10% slippage at 100% exit.
+
+        WARNING requires:
+        - 50% exit slippage <= 5% (not BLOCK_BUY)
+        - 100% exit slippage > 7.5% and <= 10% (WARNING tier, not FORCE_TRIM)
+        """
         gate = EligibilityGate()
 
         mock_db = AsyncMock()
         mock_result = MagicMock()
+        # Carefully chosen values so that:
+        # - 50% exit (500 TAO) = 4% slippage (< 5%, not BLOCK_BUY)
+        # - 100% exit (1000 TAO) = 8.5% slippage (> 7.5%, < 10%, WARNING)
         mock_result.scalars.return_value.all.return_value = [
-            MagicMock(size_tao=Decimal("100"), slippage_pct=Decimal("0.04")),
-            MagicMock(size_tao=Decimal("500"), slippage_pct=Decimal("0.08")),
-            MagicMock(size_tao=Decimal("1000"), slippage_pct=Decimal("0.09")),
+            MagicMock(size_tao=Decimal("100"), slippage_pct=Decimal("0.02")),
+            MagicMock(size_tao=Decimal("500"), slippage_pct=Decimal("0.04")),
+            MagicMock(size_tao=Decimal("1000"), slippage_pct=Decimal("0.085")),
         ]
         mock_db.execute.return_value = mock_result
 
@@ -261,7 +269,8 @@ class TestCheckExitabilityAsync:
             position_size_tao=Decimal("1000"),
         )
 
-        # 100% exit at 1000 TAO = 9% slippage (> 7.5%, < 10%) => WARNING
+        # 50% exit at 500 TAO = 4% (< 5%, not BLOCK_BUY)
+        # 100% exit at 1000 TAO = 8.5% (> 7.5%, < 10%) => WARNING
         assert result.level == ExitabilityLevel.WARNING
 
     async def test_check_exitability_block_buy(self):

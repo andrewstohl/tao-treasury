@@ -457,9 +457,12 @@ class TestUpdateAllRegimesWithEmissions:
             mock_result.scalars.return_value.all.return_value = [mock_subnet]
             mock_db.execute.return_value = mock_result
 
-            # Mock emissions collapse check
+            # Mock emissions collapse check and compute_portfolio_regime
+            # (compute_portfolio_regime makes additional DB queries that need separate mocking)
             with patch.object(calc, 'check_emissions_collapse', return_value=collapse_result):
-                results = await calc.update_all_regimes()
+                with patch.object(calc, 'compute_portfolio_regime',
+                                  return_value=(FlowRegime.NEUTRAL, "Mocked", {"neutral": 1})):
+                    results = await calc.update_all_regimes()
 
         # Verify emissions tracking in results
         assert results["emissions_collapse_enabled"] is True

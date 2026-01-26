@@ -241,8 +241,16 @@ class TestExitabilityEndpointIntegration:
 
     @pytest.mark.asyncio
     async def test_endpoint_with_warning_positions(self, test_session, app_with_test_db):
-        """Test endpoint correctly identifies WARNING level positions."""
-        # Seed data with WARNING slippage (100% exit > 7.5%)
+        """Test endpoint correctly identifies WARNING level positions.
+
+        WARNING requires:
+        - 50% exit slippage <= 5% (not BLOCK_BUY)
+        - 100% exit slippage > 7.5% and <= 10% (WARNING tier)
+        """
+        # Seed data with WARNING slippage
+        # Position size = 1000 TAO
+        # 50% exit = 500 TAO -> 4% (< 5%, not BLOCK_BUY)
+        # 100% exit = 1000 TAO -> 8.5% (> 7.5%, < 10%, WARNING)
         await seed_test_data(
             test_session,
             positions=[
@@ -252,10 +260,9 @@ class TestExitabilityEndpointIntegration:
                 {"netuid": 2, "name": "Warning Subnet"},
             ],
             slippage_surfaces=[
-                # Use slippage values that will definitely trigger WARNING (7.5%-10% at full exit)
-                {"netuid": 2, "size_tao": Decimal("500"), "slippage_pct": Decimal("0.05")},
-                {"netuid": 2, "size_tao": Decimal("1000"), "slippage_pct": Decimal("0.085")},  # 8.5% at full exit
-                {"netuid": 2, "size_tao": Decimal("2000"), "slippage_pct": Decimal("0.095")},  # Still under 10%
+                {"netuid": 2, "size_tao": Decimal("100"), "slippage_pct": Decimal("0.02")},
+                {"netuid": 2, "size_tao": Decimal("500"), "slippage_pct": Decimal("0.04")},  # 4% at 50% exit
+                {"netuid": 2, "size_tao": Decimal("1000"), "slippage_pct": Decimal("0.085")},  # 8.5% at 100% exit
             ],
         )
 
@@ -268,18 +275,19 @@ class TestExitabilityEndpointIntegration:
         assert response.status_code == 200
         data = response.json()
 
-        # Should have warning (slippage between 7.5% and 10%)
+        # Strict assertions
         assert data["total_positions"] == 1
-        # The position should be either warning or pass (depending on interpolation)
-        # Main test: verify response structure is correct
-        assert isinstance(data["warnings_count"], int)
-        assert isinstance(data["force_trims_count"], int)
+        assert data["warnings_count"] == 1
+        assert data["force_trims_count"] == 0
 
-        # Verify position data is present
+        # Verify position is WARNING level
         assert len(data["positions"]) == 1
         pos = data["positions"][0]
         assert pos["netuid"] == 2
-        assert pos["slippage_100pct"] > 0  # Has slippage data
+        assert pos["level"] == "warning"
+        assert pos["slippage_50pct"] <= 0.05  # <= 5%
+        assert pos["slippage_100pct"] > 0.075  # > 7.5%
+        assert pos["slippage_100pct"] <= 0.10  # <= 10%
 
     @pytest.mark.asyncio
     async def test_endpoint_with_force_trim_positions(self, test_session, app_with_test_db):
@@ -326,14 +334,19 @@ class TestExitabilityEndpointIntegration:
 
     @pytest.mark.asyncio
     async def test_endpoint_with_mixed_positions(self, test_session, app_with_test_db):
-        """Test endpoint handles multiple positions with different exitability levels."""
-        # Seed data with mixed slippage levels
+        """Test endpoint handles multiple positions with different exitability levels.
+
+        Position layout:
+        - netuid 1: PASS (1000 TAO, 2% at full exit)
+        - netuid 2: BLOCK_BUY (1000 TAO, 6% at 50% exit > 5%)
+        - netuid 3: FORCE_TRIM (3000 TAO, 15% at full exit > 10%)
+        """
         await seed_test_data(
             test_session,
             positions=[
                 {"netuid": 1, "tao_value_mid": Decimal("1000")},  # PASS
-                {"netuid": 2, "tao_value_mid": Decimal("500")},   # Lower value for warning
-                {"netuid": 3, "tao_value_mid": Decimal("3000")},  # FORCE_TRIM
+                {"netuid": 2, "tao_value_mid": Decimal("1000")},  # BLOCK_BUY (50% exit > 5%)
+                {"netuid": 3, "tao_value_mid": Decimal("3000")},  # FORCE_TRIM (100% exit > 10%)
             ],
             subnets=[
                 {"netuid": 1, "name": "Good Subnet"},
@@ -341,15 +354,13 @@ class TestExitabilityEndpointIntegration:
                 {"netuid": 3, "name": "Bad Subnet"},
             ],
             slippage_surfaces=[
-                # PASS surfaces for netuid 1 (low slippage)
+                # PASS: netuid 1 (all slippage < 5%)
                 {"netuid": 1, "size_tao": Decimal("500"), "slippage_pct": Decimal("0.01")},
                 {"netuid": 1, "size_tao": Decimal("1000"), "slippage_pct": Decimal("0.02")},
-                {"netuid": 1, "size_tao": Decimal("2000"), "slippage_pct": Decimal("0.03")},
-                # Medium slippage for netuid 2
-                {"netuid": 2, "size_tao": Decimal("250"), "slippage_pct": Decimal("0.04")},
+                # BLOCK_BUY: netuid 2 (50% exit at 500 TAO = 6% > 5%)
                 {"netuid": 2, "size_tao": Decimal("500"), "slippage_pct": Decimal("0.06")},
                 {"netuid": 2, "size_tao": Decimal("1000"), "slippage_pct": Decimal("0.08")},
-                # FORCE_TRIM surfaces for netuid 3 (high slippage > 10%)
+                # FORCE_TRIM: netuid 3 (100% exit at 3000 TAO = 15% > 10%)
                 {"netuid": 3, "size_tao": Decimal("1000"), "slippage_pct": Decimal("0.08")},
                 {"netuid": 3, "size_tao": Decimal("2000"), "slippage_pct": Decimal("0.11")},
                 {"netuid": 3, "size_tao": Decimal("3000"), "slippage_pct": Decimal("0.15")},
@@ -365,17 +376,20 @@ class TestExitabilityEndpointIntegration:
         assert response.status_code == 200
         data = response.json()
 
-        # Assert all positions are analyzed
+        # Strict count assertions
         assert data["total_positions"] == 3
+        assert data["force_trims_count"] == 1
 
-        # Should have at least one force_trim (netuid 3 has 15% slippage)
-        assert data["force_trims_count"] >= 1
+        # Verify position levels by netuid
+        positions_by_netuid = {p["netuid"]: p for p in data["positions"]}
+        assert positions_by_netuid[1]["level"] == "pass"
+        assert positions_by_netuid[2]["level"] == "block_buy"
+        assert positions_by_netuid[3]["level"] == "force_trim"
 
-        # Verify all positions present
-        netuids = [p["netuid"] for p in data["positions"]]
-        assert 1 in netuids
-        assert 2 in netuids
-        assert 3 in netuids
+        # Verify force_trims array
+        assert len(data["force_trims"]) == 1
+        assert data["force_trims"][0]["netuid"] == 3
+        assert data["force_trims"][0]["slippage_100pct"] >= 0.10
 
     @pytest.mark.asyncio
     async def test_endpoint_with_no_positions(self, test_session, app_with_test_db):
