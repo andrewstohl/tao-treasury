@@ -16,7 +16,6 @@ from app.core.database import get_db_context
 from app.models.transaction import StakeTransaction, PositionCostBasis
 from app.models.position import Position
 
-settings = get_settings()
 logger = structlog.get_logger()
 
 
@@ -24,6 +23,7 @@ class CostBasisService:
     """Service for computing cost basis and P&L from transaction history."""
 
     def __init__(self):
+        settings = get_settings()
         self.wallet_address = settings.wallet_address
 
     async def compute_all_cost_basis(self) -> Dict[str, Any]:
@@ -287,5 +287,23 @@ class CostBasisService:
                 }
 
 
-# Singleton instance
-cost_basis_service = CostBasisService()
+# Lazy singleton instance
+_cost_basis_service: CostBasisService | None = None
+
+
+def get_cost_basis_service() -> CostBasisService:
+    """Get or create the cost basis service singleton."""
+    global _cost_basis_service
+    if _cost_basis_service is None:
+        _cost_basis_service = CostBasisService()
+    return _cost_basis_service
+
+
+class _LazyCostBasisService:
+    """Lazy proxy for backwards compatibility."""
+
+    def __getattr__(self, name):
+        return getattr(get_cost_basis_service(), name)
+
+
+cost_basis_service = _LazyCostBasisService()

@@ -18,7 +18,6 @@ from app.models.validator import Validator
 from app.models.transaction import DelegationEvent, PositionYieldHistory
 from app.services.data.taostats_client import taostats_client, TaoStatsError
 
-settings = get_settings()
 logger = structlog.get_logger()
 
 # Standard slippage test sizes per spec
@@ -37,6 +36,7 @@ class DataSyncService:
     """Service for synchronizing data from TaoStats to local database."""
 
     def __init__(self):
+        settings = get_settings()
         self.wallet_address = settings.wallet_address
         self._last_sync: Optional[datetime] = None
         self._last_sync_results: Dict[str, Any] = {}
@@ -1037,9 +1037,31 @@ class DataSyncService:
         """Check if data is stale."""
         if self._last_sync is None:
             return True
+        settings = get_settings()
         age_minutes = (datetime.now(timezone.utc) - self._last_sync).total_seconds() / 60
         return age_minutes > settings.stale_data_threshold_minutes
 
 
-# Singleton instance
-data_sync_service = DataSyncService()
+# Lazy singleton instance
+_data_sync_service: Optional[DataSyncService] = None
+
+
+def get_data_sync_service() -> DataSyncService:
+    """Get or create the DataSyncService singleton.
+
+    Service is created on first access, not at import time.
+    """
+    global _data_sync_service
+    if _data_sync_service is None:
+        _data_sync_service = DataSyncService()
+    return _data_sync_service
+
+
+class _LazyDataSyncService:
+    """Lazy proxy for backwards compatibility with data_sync_service usage."""
+
+    def __getattr__(self, name):
+        return getattr(get_data_sync_service(), name)
+
+
+data_sync_service = _LazyDataSyncService()

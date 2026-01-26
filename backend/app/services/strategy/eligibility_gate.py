@@ -29,7 +29,6 @@ from app.models.validator import Validator
 from app.models.slippage import SlippageSurface
 from app.services.strategy.regime_calculator import FlowRegime
 
-settings = get_settings()
 logger = structlog.get_logger()
 
 
@@ -75,6 +74,9 @@ class EligibilityGate:
     """Filters subnets into investable universe based on hard rules."""
 
     def __init__(self):
+        settings = get_settings()
+        self._wallet_address = settings.wallet_address
+
         # Universe filter thresholds from config
         self.min_liquidity_tao = settings.min_liquidity_tao
         self.min_holder_count = settings.min_holder_count
@@ -428,6 +430,7 @@ class EligibilityGate:
                 high = mid
 
         # SAFETY GUARD: Check if safe size is below minimum meaningful position
+        settings = get_settings()
         min_position_tao = settings.min_position_tao
 
         # If we have portfolio NAV, also check percentage-based minimum
@@ -615,7 +618,7 @@ class EligibilityGate:
                 - force_trims: Positions requiring FORCE_TRIM
                 - total_trim_tao: Total recommended trim amount
         """
-        wallet = wallet_address or settings.wallet_address
+        wallet = wallet_address or self._wallet_address
         logger.info("Checking exitability for all positions", wallet=wallet)
 
         results = {
@@ -688,5 +691,23 @@ class EligibilityGate:
         return results
 
 
-# Singleton instance
-eligibility_gate = EligibilityGate()
+# Lazy singleton instance
+_eligibility_gate: Optional[EligibilityGate] = None
+
+
+def get_eligibility_gate() -> EligibilityGate:
+    """Get or create the EligibilityGate singleton."""
+    global _eligibility_gate
+    if _eligibility_gate is None:
+        _eligibility_gate = EligibilityGate()
+    return _eligibility_gate
+
+
+class _LazyEligibilityGate:
+    """Lazy proxy for backwards compatibility."""
+
+    def __getattr__(self, name):
+        return getattr(get_eligibility_gate(), name)
+
+
+eligibility_gate = _LazyEligibilityGate()

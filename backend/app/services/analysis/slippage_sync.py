@@ -17,7 +17,6 @@ from app.models.slippage import SlippageSurface
 from app.models.position import Position
 from app.services.data.taostats_client import taostats_client
 
-settings = get_settings()
 logger = structlog.get_logger()
 
 # Standard trade sizes to cache slippage for (in TAO)
@@ -31,6 +30,7 @@ class SlippageSyncService:
     """Service for syncing slippage surfaces from TaoStats."""
 
     def __init__(self):
+        settings = get_settings()
         self.wallet_address = settings.wallet_address
 
     async def sync_slippage_surfaces(self) -> Dict[str, Any]:
@@ -270,5 +270,23 @@ class SlippageSyncService:
             return deleted
 
 
-# Singleton instance
-slippage_sync_service = SlippageSyncService()
+# Lazy singleton instance
+_slippage_sync_service: SlippageSyncService | None = None
+
+
+def get_slippage_sync_service() -> SlippageSyncService:
+    """Get or create the slippage sync service singleton."""
+    global _slippage_sync_service
+    if _slippage_sync_service is None:
+        _slippage_sync_service = SlippageSyncService()
+    return _slippage_sync_service
+
+
+class _LazySlippageSyncService:
+    """Lazy proxy for backwards compatibility."""
+
+    def __getattr__(self, name):
+        return getattr(get_slippage_sync_service(), name)
+
+
+slippage_sync_service = _LazySlippageSyncService()

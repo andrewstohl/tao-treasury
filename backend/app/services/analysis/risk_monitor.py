@@ -17,7 +17,6 @@ from app.models.portfolio import NAVHistory
 from app.models.alert import Alert
 from app.models.position import Position
 
-settings = get_settings()
 logger = structlog.get_logger()
 
 # Risk thresholds
@@ -34,6 +33,7 @@ class RiskMonitor:
     """Monitors portfolio risk metrics and generates alerts."""
 
     def __init__(self):
+        settings = get_settings()
         self.wallet_address = settings.wallet_address
 
     async def compute_drawdown(self) -> Dict[str, Any]:
@@ -419,5 +419,23 @@ class RiskMonitor:
             return False
 
 
-# Singleton instance
-risk_monitor = RiskMonitor()
+# Lazy singleton instance
+_risk_monitor: RiskMonitor | None = None
+
+
+def get_risk_monitor() -> RiskMonitor:
+    """Get or create the risk monitor singleton."""
+    global _risk_monitor
+    if _risk_monitor is None:
+        _risk_monitor = RiskMonitor()
+    return _risk_monitor
+
+
+class _LazyRiskMonitor:
+    """Lazy proxy for backwards compatibility."""
+
+    def __getattr__(self, name):
+        return getattr(get_risk_monitor(), name)
+
+
+risk_monitor = _LazyRiskMonitor()

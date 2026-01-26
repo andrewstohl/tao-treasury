@@ -15,7 +15,6 @@ from app.models.validator import Validator
 from app.schemas.position import PositionResponse, PositionListResponse
 
 router = APIRouter()
-settings = get_settings()
 
 
 def _compute_position_health(
@@ -61,6 +60,7 @@ async def list_positions(
     order: str = Query(default="desc", regex="^(asc|desc)$"),
 ) -> PositionListResponse:
     """List all positions for the configured wallet."""
+    settings = get_settings()
     wallet = settings.wallet_address
 
     # Build query
@@ -175,6 +175,7 @@ async def get_position(
     db: AsyncSession = Depends(get_db),
 ) -> PositionResponse:
     """Get position details for a specific subnet."""
+    settings = get_settings()
     wallet = settings.wallet_address
 
     stmt = select(Position).where(

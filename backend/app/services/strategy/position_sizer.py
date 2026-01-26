@@ -22,7 +22,6 @@ from app.models.subnet import Subnet
 from app.models.position import Position
 from app.models.slippage import SlippageSurface
 
-settings = get_settings()
 logger = structlog.get_logger()
 
 
@@ -55,6 +54,7 @@ class PositionSizer:
     """Computes position size limits based on three-tier cap system."""
 
     def __init__(self):
+        settings = get_settings()
         # Slippage thresholds
         self.max_slip_50pct = settings.max_exit_slippage_50pct
         self.max_slip_100pct = settings.max_exit_slippage_100pct
@@ -65,6 +65,9 @@ class PositionSizer:
 
         # Category limits (within sleeve)
         self.max_category_pct = settings.max_category_concentration_sleeve
+
+        # Store wallet address for queries
+        self._wallet_address = settings.wallet_address
 
     async def compute_position_limit(
         self,
@@ -98,7 +101,7 @@ class PositionSizer:
             # Get current position
             pos_stmt = select(Position).where(
                 Position.netuid == netuid,
-                Position.wallet_address == settings.wallet_address,
+                Position.wallet_address == self._wallet_address,
             )
             pos_result = await session.execute(pos_stmt)
             position = pos_result.scalar_one_or_none()
@@ -306,7 +309,7 @@ class PositionSizer:
 
             # Get current positions for category allocation calculation
             pos_stmt = select(Position).where(
-                Position.wallet_address == settings.wallet_address
+                Position.wallet_address == self._wallet_address
             )
             pos_result = await db.execute(pos_stmt)
             positions = list(pos_result.scalars().all())
@@ -370,5 +373,26 @@ class PositionSizer:
         return target, explanation
 
 
-# Singleton instance
-position_sizer = PositionSizer()
+# Lazy singleton instance
+_position_sizer: Optional[PositionSizer] = None
+
+
+def get_position_sizer() -> PositionSizer:
+    """Get or create the PositionSizer singleton.
+
+    Instance is created on first access, not at import time.
+    """
+    global _position_sizer
+    if _position_sizer is None:
+        _position_sizer = PositionSizer()
+    return _position_sizer
+
+
+class _LazyPositionSizer:
+    """Lazy proxy for backwards compatibility."""
+
+    def __getattr__(self, name):
+        return getattr(get_position_sizer(), name)
+
+
+position_sizer = _LazyPositionSizer()

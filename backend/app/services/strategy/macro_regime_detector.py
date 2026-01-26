@@ -22,7 +22,7 @@ Uses signals:
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 from enum import Enum
 
 import structlog
@@ -484,5 +484,23 @@ class MacroRegimeDetector:
         }
 
 
-# Singleton instance
-macro_regime_detector = MacroRegimeDetector()
+# Lazy singleton instance
+_macro_regime_detector: Optional[MacroRegimeDetector] = None
+
+
+def get_macro_regime_detector() -> MacroRegimeDetector:
+    """Get or create the MacroRegimeDetector singleton."""
+    global _macro_regime_detector
+    if _macro_regime_detector is None:
+        _macro_regime_detector = MacroRegimeDetector()
+    return _macro_regime_detector
+
+
+class _LazyMacroRegimeDetector:
+    """Lazy proxy for backwards compatibility."""
+
+    def __getattr__(self, name):
+        return getattr(get_macro_regime_detector(), name)
+
+
+macro_regime_detector = _LazyMacroRegimeDetector()

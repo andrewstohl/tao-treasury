@@ -32,7 +32,6 @@ from app.core.config import get_settings
 from app.core.database import get_db_context
 from app.models.subnet import Subnet, SubnetSnapshot
 
-settings = get_settings()
 logger = structlog.get_logger()
 
 
@@ -66,6 +65,7 @@ class RegimeCalculator:
     """
 
     def __init__(self):
+        settings = get_settings()
         self.persistence_days = settings.flow_persistence_days
         self.risk_off_threshold = settings.risk_off_flow_threshold
         self.quarantine_threshold = settings.quarantine_flow_threshold
@@ -86,6 +86,9 @@ class RegimeCalculator:
         self.emissions_severe_threshold = settings.emissions_collapse_severe_threshold
         self.emissions_near_zero_threshold = settings.emissions_near_zero_threshold
         self.emissions_lookback_days = settings.emissions_lookback_days
+
+        # Store wallet address for queries
+        self._wallet_address = settings.wallet_address
 
     async def compute_subnet_regime(
         self,
@@ -417,7 +420,7 @@ class RegimeCalculator:
             from app.models.position import Position
 
             stmt = select(Position).where(
-                Position.wallet_address == settings.wallet_address,
+                Position.wallet_address == self._wallet_address,
                 Position.tao_value_mid > 0
             )
             result = await db.execute(stmt)
@@ -632,5 +635,23 @@ class RegimeCalculator:
         return policies.get(regime, policies[FlowRegime.NEUTRAL])
 
 
-# Singleton instance
-regime_calculator = RegimeCalculator()
+# Lazy singleton instance
+_regime_calculator: Optional[RegimeCalculator] = None
+
+
+def get_regime_calculator() -> RegimeCalculator:
+    """Get or create the RegimeCalculator singleton."""
+    global _regime_calculator
+    if _regime_calculator is None:
+        _regime_calculator = RegimeCalculator()
+    return _regime_calculator
+
+
+class _LazyRegimeCalculator:
+    """Lazy proxy for backwards compatibility."""
+
+    def __getattr__(self, name):
+        return getattr(get_regime_calculator(), name)
+
+
+regime_calculator = _LazyRegimeCalculator()

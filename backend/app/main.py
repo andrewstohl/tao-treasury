@@ -9,11 +9,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
 from app.api.v1 import router as api_router
-from app.core.config import get_settings
 from app.core.database import init_db, close_db
 from app.core.redis import close_redis
 
-settings = get_settings()
 logger = structlog.get_logger()
 
 

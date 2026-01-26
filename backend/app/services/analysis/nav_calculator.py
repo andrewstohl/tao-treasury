@@ -17,9 +17,8 @@ from app.core.database import get_db_context
 from app.models.position import Position
 from app.models.portfolio import PortfolioSnapshot, NAVHistory
 from app.models.slippage import SlippageSurface
-from app.services.analysis.slippage_sync import slippage_sync_service
+from app.services.analysis.slippage_sync import get_slippage_sync_service
 
-settings = get_settings()
 logger = structlog.get_logger()
 
 # Default slippage assumption when not available
@@ -30,6 +29,7 @@ class NAVCalculator:
     """Calculates Net Asset Value with executable pricing."""
 
     def __init__(self):
+        settings = get_settings()
         self.wallet_address = settings.wallet_address
 
     async def compute_portfolio_nav(
@@ -181,7 +181,7 @@ class NAVCalculator:
 
         # Try to get from cached surface
         try:
-            slippage_pct = await slippage_sync_service.interpolate_slippage(
+            slippage_pct = await get_slippage_sync_service().interpolate_slippage(
                 netuid=netuid,
                 action="unstake",
                 size_tao=amount_tao,
@@ -331,5 +331,23 @@ class NAVCalculator:
             return None
 
 
-# Singleton instance
-nav_calculator = NAVCalculator()
+# Lazy singleton instance
+_nav_calculator: NAVCalculator | None = None
+
+
+def get_nav_calculator() -> NAVCalculator:
+    """Get or create the NAV calculator singleton."""
+    global _nav_calculator
+    if _nav_calculator is None:
+        _nav_calculator = NAVCalculator()
+    return _nav_calculator
+
+
+class _LazyNAVCalculator:
+    """Lazy proxy for backwards compatibility."""
+
+    def __getattr__(self, name):
+        return getattr(get_nav_calculator(), name)
+
+
+nav_calculator = _LazyNAVCalculator()

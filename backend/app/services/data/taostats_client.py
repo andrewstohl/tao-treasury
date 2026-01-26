@@ -22,7 +22,6 @@ from tenacity import (
 from app.core.config import get_settings
 from app.core.redis import cache
 
-settings = get_settings()
 logger = structlog.get_logger()
 
 
@@ -44,6 +43,7 @@ class TaoStatsClient:
     """
 
     def __init__(self):
+        settings = get_settings()
         self.base_url = settings.taostats_base_url
         self.api_key = settings.taostats_api_key
         self.rate_limit = settings.taostats_rate_limit_per_minute
@@ -765,5 +765,27 @@ class TaoStatsClient:
             return False
 
 
-# Singleton client instance
-taostats_client = TaoStatsClient()
+# Lazy singleton client instance
+_taostats_client: Optional[TaoStatsClient] = None
+
+
+def get_taostats_client() -> TaoStatsClient:
+    """Get or create the TaoStats client singleton.
+
+    Client is created on first access, not at import time.
+    """
+    global _taostats_client
+    if _taostats_client is None:
+        _taostats_client = TaoStatsClient()
+    return _taostats_client
+
+
+# Backwards compatibility alias - will be resolved lazily
+class _LazyClient:
+    """Lazy proxy for backwards compatibility with taostats_client usage."""
+
+    def __getattr__(self, name):
+        return getattr(get_taostats_client(), name)
+
+
+taostats_client = _LazyClient()

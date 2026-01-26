@@ -29,7 +29,6 @@ from app.models.portfolio import PortfolioSnapshot
 from app.models.trade import TradeRecommendation
 from app.models.alert import Alert
 
-settings = get_settings()
 logger = structlog.get_logger()
 
 
@@ -69,6 +68,7 @@ class ConstraintEnforcer:
     """Monitors and enforces portfolio constraints."""
 
     def __init__(self):
+        settings = get_settings()
         self.wallet_address = settings.wallet_address
 
         # Load thresholds
@@ -681,5 +681,23 @@ class ConstraintEnforcer:
         return "\n".join(lines)
 
 
-# Singleton instance
-constraint_enforcer = ConstraintEnforcer()
+# Lazy singleton instance
+_constraint_enforcer: Optional[ConstraintEnforcer] = None
+
+
+def get_constraint_enforcer() -> ConstraintEnforcer:
+    """Get or create the ConstraintEnforcer singleton."""
+    global _constraint_enforcer
+    if _constraint_enforcer is None:
+        _constraint_enforcer = ConstraintEnforcer()
+    return _constraint_enforcer
+
+
+class _LazyConstraintEnforcer:
+    """Lazy proxy for backwards compatibility."""
+
+    def __getattr__(self, name):
+        return getattr(get_constraint_enforcer(), name)
+
+
+constraint_enforcer = _LazyConstraintEnforcer()

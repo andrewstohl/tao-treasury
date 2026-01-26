@@ -30,12 +30,12 @@ from app.schemas.portfolio import (
 from app.services.data.data_sync import data_sync_service
 
 router = APIRouter()
-settings = get_settings()
 
 
 @router.get("", response_model=PortfolioSummary)
 async def get_portfolio(db: AsyncSession = Depends(get_db)) -> PortfolioSummary:
     """Get current portfolio summary."""
+    settings = get_settings()
     wallet = settings.wallet_address
 
     # Get latest portfolio snapshot
@@ -135,6 +135,7 @@ async def get_portfolio_history(
     db: AsyncSession = Depends(get_db),
 ) -> PortfolioHistoryResponse:
     """Get portfolio NAV history."""
+    settings = get_settings()
     wallet = settings.wallet_address
 
     stmt = (
@@ -259,6 +260,7 @@ async def get_positions(
     db: AsyncSession = Depends(get_db),
 ) -> list[PositionSummary]:
     """Get all positions sorted by TAO value."""
+    settings = get_settings()
     wallet = settings.wallet_address
     return await _get_top_positions(db, wallet, limit)
 
@@ -276,6 +278,7 @@ async def get_yield_history(
     from app.models.transaction import PositionYieldHistory
     from datetime import timedelta
 
+    settings = get_settings()
     wallet = settings.wallet_address
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
@@ -327,6 +330,7 @@ async def get_yield_history(
 @router.get("/dashboard", response_model=DashboardResponse)
 async def get_dashboard(db: AsyncSession = Depends(get_db)) -> DashboardResponse:
     """Get complete dashboard data."""
+    settings = get_settings()
     wallet = settings.wallet_address
     now = datetime.now(timezone.utc)
 

@@ -37,7 +37,6 @@ from app.services.strategy.eligibility_gate import (
 from app.services.strategy.position_sizer import position_sizer, PositionLimit
 from app.services.strategy.rebalancer import rebalancer, RebalanceResult, TriggerType
 
-settings = get_settings()
 logger = structlog.get_logger()
 
 
@@ -102,6 +101,7 @@ class StrategyEngine:
     """Main strategy engine orchestrator."""
 
     def __init__(self):
+        settings = get_settings()
         self.wallet_address = settings.wallet_address
         self._last_analysis: Optional[StrategyAnalysis] = None
         self._last_analysis_time: Optional[datetime] = None
@@ -454,6 +454,7 @@ class StrategyEngine:
         snapshot: Optional[PortfolioSnapshot],
     ) -> Dict[str, List[Dict[str, Any]]]:
         """Analyze positions for weight and eligibility."""
+        settings = get_settings()
         result = {
             "overweight": [],
             "underweight": [],
@@ -498,6 +499,7 @@ class StrategyEngine:
         snapshot: Optional[PortfolioSnapshot],
     ) -> List[ConstraintCheck]:
         """Check all portfolio constraints."""
+        settings = get_settings()
         checks = []
 
         if not snapshot:
@@ -595,6 +597,7 @@ class StrategyEngine:
         snapshot: Optional[PortfolioSnapshot],
     ) -> Decimal:
         """Calculate remaining weekly turnover budget."""
+        settings = get_settings()
         if not snapshot:
             return Decimal("100")
 
@@ -622,6 +625,7 @@ class StrategyEngine:
         constraint_checks: List[ConstraintCheck],
     ) -> tuple[PortfolioState, str]:
         """Determine overall portfolio state."""
+        settings = get_settings()
         if not snapshot:
             return PortfolioState.CAUTION, "No portfolio data available"
 
@@ -704,5 +708,23 @@ class StrategyEngine:
         return "\n".join(lines)
 
 
-# Singleton instance
-strategy_engine = StrategyEngine()
+# Lazy singleton instance
+_strategy_engine: Optional[StrategyEngine] = None
+
+
+def get_strategy_engine() -> StrategyEngine:
+    """Get or create the StrategyEngine singleton."""
+    global _strategy_engine
+    if _strategy_engine is None:
+        _strategy_engine = StrategyEngine()
+    return _strategy_engine
+
+
+class _LazyStrategyEngine:
+    """Lazy proxy for backwards compatibility."""
+
+    def __getattr__(self, name):
+        return getattr(get_strategy_engine(), name)
+
+
+strategy_engine = _LazyStrategyEngine()

@@ -29,7 +29,6 @@ from app.services.strategy.eligibility_gate import eligibility_gate
 from app.services.strategy.position_sizer import position_sizer
 from app.services.strategy.macro_regime_detector import macro_regime_detector, MacroRegime
 
-settings = get_settings()
 logger = structlog.get_logger()
 
 
@@ -61,6 +60,7 @@ class Rebalancer:
     """Generates trade recommendations for portfolio rebalancing."""
 
     def __init__(self):
+        settings = get_settings()
         self.wallet_address = settings.wallet_address
         self.max_daily_turnover = settings.max_daily_turnover
         self.max_weekly_turnover = settings.max_weekly_turnover
@@ -77,6 +77,7 @@ class Rebalancer:
         5. Enter new attractive positions (if macro regime allows)
         """
         logger.info("Generating weekly rebalance recommendations")
+        settings = get_settings()
 
         recommendations = []
         total_buys = Decimal("0")
@@ -735,5 +736,23 @@ class Rebalancer:
         return "\n".join(lines)
 
 
-# Singleton instance
-rebalancer = Rebalancer()
+# Lazy singleton instance
+_rebalancer: Optional[Rebalancer] = None
+
+
+def get_rebalancer() -> Rebalancer:
+    """Get or create the Rebalancer singleton."""
+    global _rebalancer
+    if _rebalancer is None:
+        _rebalancer = Rebalancer()
+    return _rebalancer
+
+
+class _LazyRebalancer:
+    """Lazy proxy for backwards compatibility."""
+
+    def __getattr__(self, name):
+        return getattr(get_rebalancer(), name)
+
+
+rebalancer = _LazyRebalancer()

@@ -19,7 +19,6 @@ from app.schemas.trade import (
 )
 
 router = APIRouter()
-settings = get_settings()
 
 
 @router.get("", response_model=RecommendationListResponse)
@@ -28,6 +27,7 @@ async def list_recommendations(
     status: str = Query(default="pending", regex="^(pending|approved|executed|expired|all)$"),
 ) -> RecommendationListResponse:
     """List trade recommendations."""
+    settings = get_settings()
     wallet = settings.wallet_address
 
     stmt = select(TradeRecommendation).where(

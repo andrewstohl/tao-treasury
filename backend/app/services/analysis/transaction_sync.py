@@ -18,7 +18,6 @@ from app.core.database import get_db_context
 from app.models.transaction import StakeTransaction
 from app.services.data.taostats_client import taostats_client
 
-settings = get_settings()
 logger = structlog.get_logger()
 
 # 1 TAO = 1e9 rao
@@ -51,6 +50,7 @@ class TransactionSyncService:
     """
 
     def __init__(self):
+        settings = get_settings()
         self.wallet_address = settings.wallet_address
         self._last_sync: Optional[datetime] = None
 
@@ -296,5 +296,23 @@ class TransactionSyncService:
             return summary
 
 
-# Singleton instance
-transaction_sync_service = TransactionSyncService()
+# Lazy singleton instance
+_transaction_sync_service: TransactionSyncService | None = None
+
+
+def get_transaction_sync_service() -> TransactionSyncService:
+    """Get or create the transaction sync service singleton."""
+    global _transaction_sync_service
+    if _transaction_sync_service is None:
+        _transaction_sync_service = TransactionSyncService()
+    return _transaction_sync_service
+
+
+class _LazyTransactionSyncService:
+    """Lazy proxy for backwards compatibility."""
+
+    def __getattr__(self, name):
+        return getattr(get_transaction_sync_service(), name)
+
+
+transaction_sync_service = _LazyTransactionSyncService()
