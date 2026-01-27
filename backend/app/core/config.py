@@ -349,6 +349,34 @@ class Settings(BaseSettings):
         description="Minutes without sync before critical alert"
     )
 
+    # ==================== Phase 2: Earnings & Reconciliation ====================
+    enable_earnings_endpoints: bool = Field(
+        default=True,
+        description="Enable earnings attribution endpoints"
+    )
+    enable_reconciliation_endpoints: bool = Field(
+        default=True,
+        description="Enable reconciliation endpoints"
+    )
+    enable_reconciliation_in_trust_pack: bool = Field(
+        default=True,
+        description="Include reconciliation status in Trust Pack"
+    )
+    enable_earnings_timeseries_by_netuid: bool = Field(
+        default=False,
+        description="Include per-netuid breakdown in timeseries (can be heavy)"
+    )
+
+    # Reconciliation tolerances
+    reconciliation_absolute_tolerance_tao: Decimal = Field(
+        default=Decimal("0.0001"),
+        description="Absolute tolerance for reconciliation checks in TAO"
+    )
+    reconciliation_relative_tolerance_pct: Decimal = Field(
+        default=Decimal("0.1"),
+        description="Relative tolerance for reconciliation checks as percentage"
+    )
+
     @property
     def database_url_sync(self) -> str:
         """Get synchronous database URL for Alembic migrations."""
