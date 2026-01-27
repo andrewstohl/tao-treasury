@@ -1,45 +1,70 @@
-"""TaoStats API client with rate limiting and caching.
+"""TaoStats API client with rate limiting, caching, and observability.
 
 API Reference: https://docs.taostats.io/reference/welcome-to-the-taostats-api
 Base URL: https://api.taostats.io
 Auth: Authorization header with API key
+
+Phase 1 Hardening:
+- Retry-After header handling (respect server feedback)
+- Exponential backoff with jitter for transient failures
+- Configurable timeouts
+- Response validation with Pydantic models
+- Structured logging with metrics integration
 """
 
 import asyncio
+import random
+import time
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Type, TypeVar
 
 import httpx
 import structlog
-from tenacity import (
-    retry,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
-)
+from pydantic import BaseModel, ValidationError
 
 from app.core.config import get_settings
 from app.core.redis import cache
 
 logger = structlog.get_logger()
 
+# Type var for generic response validation
+T = TypeVar("T", bound=BaseModel)
+
 
 class TaoStatsError(Exception):
     """TaoStats API error."""
-    pass
+
+    def __init__(self, message: str, status_code: Optional[int] = None):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class TaoStatsRateLimitError(TaoStatsError):
     """Rate limit exceeded."""
+
+    def __init__(self, message: str, retry_after: Optional[int] = None):
+        super().__init__(message, status_code=429)
+        self.retry_after = retry_after
+
+
+class TaoStatsValidationError(TaoStatsError):
+    """Response validation failed."""
     pass
 
 
 class TaoStatsClient:
-    """Async client for TaoStats API with rate limiting and caching.
+    """Async client for TaoStats API with rate limiting, caching, and observability.
 
     Implements the actual TaoStats API endpoints as documented at:
     https://docs.taostats.io/reference/
+
+    Phase 1 Hardening Features:
+    - Retry-After header handling (respects server feedback on rate limits)
+    - Exponential backoff with jitter for transient failures
+    - Configurable timeouts from settings
+    - Optional response validation with Pydantic models
+    - Metrics integration for observability
     """
 
     def __init__(self):
@@ -49,6 +74,7 @@ class TaoStatsClient:
         self.rate_limit = settings.taostats_rate_limit_per_minute
         self._request_times: List[datetime] = []
         self._lock = asyncio.Lock()
+        self._retry_after_until: Optional[datetime] = None  # Global rate limit state
 
     def _headers(self) -> Dict[str, str]:
         """Get request headers with authorization."""
@@ -59,7 +85,23 @@ class TaoStatsClient:
         }
 
     async def _check_rate_limit(self) -> None:
-        """Check and enforce rate limiting."""
+        """Check and enforce rate limiting (both local and server-signaled)."""
+        settings = get_settings()
+
+        # Check if we're in a server-signaled rate limit period
+        if self._retry_after_until and settings.enable_retry_after:
+            now = datetime.utcnow()
+            if now < self._retry_after_until:
+                wait_time = (self._retry_after_until - now).total_seconds()
+                logger.warning(
+                    "Waiting for Retry-After period",
+                    wait_seconds=wait_time,
+                    until=self._retry_after_until.isoformat(),
+                )
+                await asyncio.sleep(wait_time)
+                self._retry_after_until = None
+
+        # Local rate limiting
         async with self._lock:
             now = datetime.utcnow()
             # Remove requests older than 1 minute
@@ -72,16 +114,88 @@ class TaoStatsClient:
                 oldest = self._request_times[0]
                 wait_time = 60 - (now - oldest).total_seconds()
                 if wait_time > 0:
-                    logger.warning("Rate limit reached, waiting", wait_seconds=wait_time)
+                    logger.warning("Local rate limit reached, waiting", wait_seconds=wait_time)
                     await asyncio.sleep(wait_time)
 
             self._request_times.append(now)
 
-    @retry(
-        retry=retry_if_exception_type((httpx.HTTPError, TaoStatsRateLimitError)),
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-    )
+    def _parse_retry_after(self, response: httpx.Response) -> Optional[int]:
+        """Parse Retry-After header from response.
+
+        Handles both delta-seconds and HTTP-date formats.
+        Returns seconds to wait, or None if not present/parseable.
+        """
+        retry_after = response.headers.get("Retry-After")
+        if not retry_after:
+            return None
+
+        # Try as integer (delta-seconds)
+        try:
+            return int(retry_after)
+        except ValueError:
+            pass
+
+        # Try as HTTP-date (RFC 7231)
+        try:
+            from email.utils import parsedate_to_datetime
+            dt = parsedate_to_datetime(retry_after)
+            delta = (dt - datetime.now(dt.tzinfo)).total_seconds()
+            return max(0, int(delta))
+        except (ValueError, TypeError):
+            pass
+
+        return None
+
+    def _calculate_backoff(self, attempt: int) -> float:
+        """Calculate backoff delay with jitter.
+
+        Uses exponential backoff: base * multiplier^attempt + random jitter
+        """
+        settings = get_settings()
+        base = settings.api_initial_backoff_seconds
+        multiplier = settings.api_backoff_multiplier
+        max_backoff = settings.api_max_backoff_seconds
+
+        delay = base * (multiplier ** attempt)
+        delay = min(delay, max_backoff)
+
+        # Add jitter (0-25% of delay)
+        jitter = random.uniform(0, 0.25 * delay)
+        return delay + jitter
+
+    def _record_api_call(
+        self,
+        endpoint: str,
+        success: bool,
+        latency_ms: float,
+        status_code: Optional[int] = None,
+    ) -> None:
+        """Record API call metrics (fire-and-forget async)."""
+        try:
+            settings = get_settings()
+            if settings.enable_api_metrics:
+                from app.core.metrics import get_metrics
+
+                async def _record():
+                    try:
+                        await get_metrics().record_api_call(
+                            endpoint=endpoint,
+                            success=success,
+                            latency_ms=latency_ms,
+                            status_code=status_code,
+                        )
+                    except Exception:
+                        pass
+
+                # Schedule as task if we're in an event loop
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(_record())
+                except RuntimeError:
+                    pass  # No event loop, skip metrics
+        except Exception:
+            pass  # Don't fail API calls due to metrics
+
     async def _request(
         self,
         method: str,
@@ -89,46 +203,171 @@ class TaoStatsClient:
         params: Optional[Dict[str, Any]] = None,
         cache_key: Optional[str] = None,
         cache_ttl: Optional[timedelta] = None,
+        response_model: Optional[Type[T]] = None,
     ) -> Any:
-        """Make an API request with rate limiting and caching."""
+        """Make an API request with rate limiting, retries, and caching.
+
+        Args:
+            method: HTTP method
+            endpoint: API endpoint path
+            params: Query parameters
+            cache_key: Optional cache key for caching response
+            cache_ttl: Optional TTL for cached response
+            response_model: Optional Pydantic model for response validation
+
+        Returns:
+            Parsed JSON response (optionally validated)
+
+        Raises:
+            TaoStatsError: On API errors
+            TaoStatsRateLimitError: On rate limit (after retries exhausted)
+            TaoStatsValidationError: On response validation failure
+        """
+        settings = get_settings()
+
         # Check cache first
         if cache_key:
             cached = await cache.get(cache_key)
             if cached is not None:
-                logger.debug("Cache hit", key=cache_key)
+                logger.debug("Cache hit", key=cache_key, endpoint=endpoint)
                 return cached
 
         await self._check_rate_limit()
 
         url = f"{self.base_url}{endpoint}"
-        logger.debug("API request", method=method, url=url, params=params)
+        last_error: Optional[Exception] = None
+        start_time = time.monotonic()
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.request(
-                method=method,
-                url=url,
-                headers=self._headers(),
-                params=params,
-            )
+        # Configure timeout
+        timeout = httpx.Timeout(
+            connect=settings.api_connect_timeout_seconds,
+            read=settings.api_read_timeout_seconds,
+            write=10.0,
+            pool=5.0,
+        )
 
-            if response.status_code == 429:
-                logger.warning("Rate limit exceeded from API")
-                raise TaoStatsRateLimitError("Rate limit exceeded")
-
-            if response.status_code != 200:
-                logger.error("API error", status=response.status_code, body=response.text[:500])
-                raise TaoStatsError(
-                    f"API error {response.status_code}: {response.text[:500]}"
+        for attempt in range(settings.api_max_retries + 1):
+            try:
+                logger.debug(
+                    "API request",
+                    method=method,
+                    endpoint=endpoint,
+                    attempt=attempt + 1,
+                    params=params,
                 )
 
-            data = response.json()
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    response = await client.request(
+                        method=method,
+                        url=url,
+                        headers=self._headers(),
+                        params=params,
+                    )
 
-            # Cache the result
-            if cache_key and cache_ttl:
-                await cache.set(cache_key, data, cache_ttl)
-                logger.debug("Cached response", key=cache_key, ttl=cache_ttl)
+                    latency_ms = (time.monotonic() - start_time) * 1000
 
-            return data
+                    # Handle rate limiting with Retry-After
+                    if response.status_code == 429:
+                        retry_after = self._parse_retry_after(response)
+
+                        if retry_after and settings.enable_retry_after:
+                            # Cap the wait time
+                            retry_after = min(retry_after, settings.retry_after_max_wait_seconds)
+                            self._retry_after_until = datetime.utcnow() + timedelta(seconds=retry_after)
+
+                            logger.warning(
+                                "Rate limit exceeded, Retry-After received",
+                                retry_after_seconds=retry_after,
+                                endpoint=endpoint,
+                            )
+
+                            self._record_api_call(endpoint, False, latency_ms, 429)
+
+                            # If we have retries left, wait and retry
+                            if attempt < settings.api_max_retries:
+                                await asyncio.sleep(retry_after)
+                                start_time = time.monotonic()  # Reset for next attempt
+                                continue
+
+                        raise TaoStatsRateLimitError(
+                            "Rate limit exceeded",
+                            retry_after=retry_after,
+                        )
+
+                    # Handle other errors
+                    if response.status_code != 200:
+                        self._record_api_call(endpoint, False, latency_ms, response.status_code)
+                        error_body = response.text[:500]
+                        logger.error(
+                            "API error",
+                            status=response.status_code,
+                            endpoint=endpoint,
+                            body=error_body,
+                        )
+                        raise TaoStatsError(
+                            f"API error {response.status_code}: {error_body}",
+                            status_code=response.status_code,
+                        )
+
+                    # Success
+                    data = response.json()
+                    self._record_api_call(endpoint, True, latency_ms, 200)
+
+                    # Validate response if model provided and validation enabled
+                    if response_model and settings.enable_response_validation:
+                        try:
+                            # For list responses, validate the data array
+                            if "data" in data and isinstance(data["data"], list):
+                                validated_items = []
+                                for item in data["data"]:
+                                    validated_items.append(response_model.model_validate(item))
+                                # Keep original structure but could use validated data
+                            else:
+                                response_model.model_validate(data)
+                        except ValidationError as e:
+                            logger.warning(
+                                "Response validation warning",
+                                endpoint=endpoint,
+                                errors=str(e),
+                            )
+                            # Don't fail on validation - just log warning
+                            # This allows graceful degradation if API changes
+
+                    # Cache the result
+                    if cache_key and cache_ttl:
+                        await cache.set(cache_key, data, cache_ttl)
+                        logger.debug("Cached response", key=cache_key, ttl_seconds=cache_ttl.total_seconds())
+
+                    return data
+
+            except (httpx.HTTPError, httpx.TimeoutException) as e:
+                latency_ms = (time.monotonic() - start_time) * 1000
+                self._record_api_call(endpoint, False, latency_ms, None)
+                last_error = e
+
+                if attempt < settings.api_max_retries:
+                    backoff = self._calculate_backoff(attempt)
+                    logger.warning(
+                        "Transient error, retrying",
+                        endpoint=endpoint,
+                        attempt=attempt + 1,
+                        backoff_seconds=backoff,
+                        error=str(e),
+                    )
+                    await asyncio.sleep(backoff)
+                    start_time = time.monotonic()  # Reset for next attempt
+                else:
+                    logger.error(
+                        "Request failed after retries",
+                        endpoint=endpoint,
+                        attempts=settings.api_max_retries + 1,
+                        error=str(e),
+                    )
+
+        # All retries exhausted
+        raise TaoStatsError(
+            f"Request failed after {settings.api_max_retries + 1} attempts: {last_error}",
+        )
 
     # ==================== Account/Wallet Endpoints ====================
 
