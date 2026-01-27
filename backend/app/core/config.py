@@ -250,6 +250,104 @@ class Settings(BaseSettings):
     slippage_refresh_hours: int = Field(default=24)
     stale_data_threshold_minutes: int = Field(default=30)
 
+    # ==================== Phase 0: Observability ====================
+    enable_cache_metrics: bool = Field(
+        default=True,
+        description="Track cache hit/miss rates in metrics"
+    )
+    enable_api_metrics: bool = Field(
+        default=True,
+        description="Track API call latency and error rates"
+    )
+    enable_sync_metrics: bool = Field(
+        default=True,
+        description="Track sync job success/failure and staleness"
+    )
+    metrics_retention_hours: int = Field(
+        default=24,
+        description="Hours to retain detailed metrics history"
+    )
+
+    # ==================== Phase 1: Client Hardening ====================
+    # Retry-After handling
+    enable_retry_after: bool = Field(
+        default=True,
+        description="Respect Retry-After headers from TaoStats API"
+    )
+    retry_after_max_wait_seconds: int = Field(
+        default=300,
+        description="Max seconds to wait when Retry-After is received (5 min cap)"
+    )
+
+    # Backoff configuration
+    api_initial_backoff_seconds: float = Field(
+        default=1.0,
+        description="Initial backoff delay for transient failures"
+    )
+    api_max_backoff_seconds: float = Field(
+        default=60.0,
+        description="Maximum backoff delay"
+    )
+    api_backoff_multiplier: float = Field(
+        default=2.0,
+        description="Exponential backoff multiplier"
+    )
+    api_max_retries: int = Field(
+        default=3,
+        description="Max retry attempts for transient failures"
+    )
+
+    # Timeouts
+    api_connect_timeout_seconds: float = Field(
+        default=10.0,
+        description="HTTP connection timeout"
+    )
+    api_read_timeout_seconds: float = Field(
+        default=30.0,
+        description="HTTP read timeout"
+    )
+
+    # Response validation
+    enable_response_validation: bool = Field(
+        default=True,
+        description="Validate API responses with Pydantic models"
+    )
+
+    # ==================== Phase 1.5: Advanced Features (Behind Flags) ====================
+    enable_client_side_slippage: bool = Field(
+        default=False,
+        description="Use client-side slippage calculation instead of API"
+    )
+    enable_reconciliation: bool = Field(
+        default=False,
+        description="Enable periodic data reconciliation checks"
+    )
+    reconciliation_interval_hours: int = Field(
+        default=6,
+        description="Hours between reconciliation runs"
+    )
+    reconciliation_drift_threshold_pct: float = Field(
+        default=5.0,
+        description="Percentage drift threshold to flag as anomaly"
+    )
+
+    # ==================== Sync Reliability ====================
+    enable_partial_failure_protection: bool = Field(
+        default=True,
+        description="Never overwrite good data with empty API responses"
+    )
+    min_records_for_valid_sync: int = Field(
+        default=1,
+        description="Minimum records required to consider sync valid"
+    )
+    sync_staleness_warning_minutes: int = Field(
+        default=15,
+        description="Minutes without sync before warning"
+    )
+    sync_staleness_critical_minutes: int = Field(
+        default=60,
+        description="Minutes without sync before critical alert"
+    )
 
     @property
     def database_url_sync(self) -> str:
