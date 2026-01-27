@@ -10,6 +10,7 @@ from app.models.slippage import SlippageSurface
 from app.models.validator import Validator
 from app.models.transaction import StakeTransaction, PositionCostBasis, DelegationEvent, PositionYieldHistory
 from app.models.reconciliation import ReconciliationRun
+from app.models.signal import SignalRun
 
 __all__ = [
     "Subnet",
@@ -29,4 +30,5 @@ __all__ = [
     "DelegationEvent",
     "PositionYieldHistory",
     "ReconciliationRun",
+    "SignalRun",
 ]

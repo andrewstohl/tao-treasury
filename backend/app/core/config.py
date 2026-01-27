@@ -377,6 +377,20 @@ class Settings(BaseSettings):
         description="Relative tolerance for reconciliation checks as percentage"
     )
 
+    # ==================== Phase 3: Decision Support Signals ====================
+    enable_signal_endpoints: bool = Field(
+        default=True,
+        description="Enable signal endpoints for decision support"
+    )
+    slippage_threshold_pct: Decimal = Field(
+        default=Decimal("1.0"),
+        description="Slippage percentage threshold for capacity signal (1%)"
+    )
+    slippage_stale_minutes: int = Field(
+        default=10,
+        description="Minutes before slippage data is considered stale"
+    )
+
     @property
     def database_url_sync(self) -> str:
         """Get synchronous database URL for Alembic migrations."""
