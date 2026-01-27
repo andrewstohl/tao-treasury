@@ -1,4 +1,10 @@
-"""Data synchronization service for pulling and storing TaoStats data."""
+"""Data synchronization service for pulling and storing TaoStats data.
+
+Phase 1 Enhancements:
+- Partial failure protection (never overwrite good data with empty responses)
+- Per-dataset sync status tracking
+- Metrics integration for observability
+"""
 
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
@@ -19,6 +25,39 @@ from app.models.transaction import DelegationEvent, PositionYieldHistory
 from app.services.data.taostats_client import taostats_client, TaoStatsError
 
 logger = structlog.get_logger()
+
+
+def _record_sync_status(dataset: str, success: bool, record_count: int = 0) -> None:
+    """Record sync status in metrics (fire-and-forget async)."""
+    try:
+        settings = get_settings()
+        if settings.enable_sync_metrics:
+            import asyncio
+            from app.core.metrics import get_metrics
+
+            async def _record():
+                try:
+                    if success:
+                        await get_metrics().record_sync_success(
+                            dataset_name=dataset,
+                            record_count=record_count,
+                        )
+                    else:
+                        await get_metrics().record_sync_failure(
+                            dataset_name=dataset,
+                            error_message="Sync returned insufficient data",
+                        )
+                except Exception:
+                    pass
+
+            # Schedule as task if we're in an event loop, otherwise skip
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(_record())
+            except RuntimeError:
+                pass  # No event loop, skip metrics
+    except Exception:
+        pass  # Don't fail sync due to metrics
 
 # Standard slippage test sizes per spec
 SLIPPAGE_TEST_SIZES = [Decimal("2"), Decimal("5"), Decimal("10"), Decimal("15"), Decimal("20")]
@@ -167,12 +206,27 @@ class DataSyncService:
         return results
 
     async def sync_subnets(self) -> int:
-        """Sync subnet data from TaoStats."""
+        """Sync subnet data from TaoStats.
+
+        Partial failure protection: Only updates DB if we get valid data.
+        """
         logger.info("Syncing subnets")
+        settings = get_settings()
 
         try:
             response = await taostats_client.get_subnets()
             subnets_data = response.get("data", [])
+
+            # Partial failure protection: Don't overwrite with empty data
+            if settings.enable_partial_failure_protection:
+                if not subnets_data or len(subnets_data) < settings.min_records_for_valid_sync:
+                    logger.warning(
+                        "Subnet sync returned insufficient data, skipping update",
+                        record_count=len(subnets_data) if subnets_data else 0,
+                        min_required=settings.min_records_for_valid_sync,
+                    )
+                    _record_sync_status("subnets", False, 0)
+                    return 0
 
             async with get_db_context() as db:
                 count = 0
@@ -186,10 +240,12 @@ class DataSyncService:
 
                 await db.commit()
                 logger.info("Subnets synced", count=count)
+                _record_sync_status("subnets", True, count)
                 return count
 
         except Exception as e:
             logger.error("Failed to sync subnets", error=str(e))
+            _record_sync_status("subnets", False, 0)
             raise
 
     async def _upsert_subnet(self, db: AsyncSession, subnet_data: Dict) -> Subnet:
@@ -248,12 +304,27 @@ class DataSyncService:
         return subnet
 
     async def sync_pools(self) -> int:
-        """Sync dTAO pool data from TaoStats."""
+        """Sync dTAO pool data from TaoStats.
+
+        Partial failure protection: Only updates DB if we get valid data.
+        """
         logger.info("Syncing pools")
+        settings = get_settings()
 
         try:
             response = await taostats_client.get_pools()
             pools_data = response.get("data", [])
+
+            # Partial failure protection: Don't overwrite with empty data
+            if settings.enable_partial_failure_protection:
+                if not pools_data or len(pools_data) < settings.min_records_for_valid_sync:
+                    logger.warning(
+                        "Pool sync returned insufficient data, skipping update",
+                        record_count=len(pools_data) if pools_data else 0,
+                        min_required=settings.min_records_for_valid_sync,
+                    )
+                    _record_sync_status("pools", False, 0)
+                    return 0
 
             async with get_db_context() as db:
                 count = 0
@@ -268,10 +339,12 @@ class DataSyncService:
 
                 await db.commit()
                 logger.info("Pools synced", count=count)
+                _record_sync_status("pools", True, count)
                 return count
 
         except Exception as e:
             logger.error("Failed to sync pools", error=str(e))
+            _record_sync_status("pools", False, 0)
             raise
 
     async def _update_subnet_pool(self, db: AsyncSession, pool_data: Dict) -> Optional[Subnet]:
@@ -318,7 +391,11 @@ class DataSyncService:
         return snapshot
 
     async def sync_positions(self) -> int:
-        """Sync wallet positions from TaoStats."""
+        """Sync wallet positions from TaoStats.
+
+        Partial failure protection: Validates response before updating.
+        Note: Empty positions list may be valid (wallet has no stakes).
+        """
         logger.info("Syncing positions", wallet=self.wallet_address)
 
         try:
@@ -329,6 +406,9 @@ class DataSyncService:
             # Get stake balances (use coldkey to get all dTAO positions)
             stake_response = await taostats_client.get_stake_balance(coldkey=self.wallet_address)
             stakes_data = stake_response.get("data", [])
+
+            # Note: Empty stakes_data is valid - wallet may have no stakes
+            # We only fail if the API call itself fails (handled by exception)
 
             # Deduplicate by netuid - keep only the latest entry for each netuid
             # The API may return multiple entries per netuid (historical data)
@@ -363,10 +443,12 @@ class DataSyncService:
 
                 await db.commit()
                 logger.info("Positions synced", count=count)
+                _record_sync_status("positions", True, count)
                 return count
 
         except Exception as e:
             logger.error("Failed to sync positions", error=str(e))
+            _record_sync_status("positions", False, 0)
             raise
 
     async def _upsert_position(self, db: AsyncSession, stake_data: Dict) -> Position:
@@ -492,10 +574,12 @@ class DataSyncService:
 
                 await db.commit()
                 logger.info("Validators synced", count=total_count)
+                _record_sync_status("validators", True, total_count)
                 return total_count
 
         except Exception as e:
             logger.error("Failed to sync validators", error=str(e))
+            _record_sync_status("validators", False, 0)
             raise
 
     async def _upsert_validator(self, db: AsyncSession, val_data: Dict) -> Validator:
