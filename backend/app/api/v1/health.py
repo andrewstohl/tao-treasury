@@ -105,7 +105,22 @@ async def get_trust_pack(db: AsyncSession = Depends(get_db)) -> Dict[str, Any]:
         "enable_partial_failure_protection": settings.enable_partial_failure_protection,
         "enable_client_side_slippage": settings.enable_client_side_slippage,
         "enable_reconciliation": settings.enable_reconciliation,
+        "enable_earnings_endpoints": settings.enable_earnings_endpoints,
+        "enable_reconciliation_endpoints": settings.enable_reconciliation_endpoints,
+        "enable_reconciliation_in_trust_pack": settings.enable_reconciliation_in_trust_pack,
     }
+
+    # Add reconciliation status if enabled (Phase 2)
+    if settings.enable_reconciliation_in_trust_pack:
+        try:
+            from app.services.analysis.reconciliation import get_reconciliation_service
+            recon_service = get_reconciliation_service()
+            trust_pack["reconciliation"] = await recon_service.get_trust_pack_summary()
+        except Exception as e:
+            trust_pack["reconciliation"] = {
+                "error": f"Failed to get reconciliation status: {str(e)}",
+                "has_drift": False,
+            }
 
     # Add staleness thresholds for context
     trust_pack["staleness_config"] = {

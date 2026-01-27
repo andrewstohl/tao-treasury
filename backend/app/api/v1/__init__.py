@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from app.api.v1 import health, portfolio, positions, subnets, alerts, recommendations, tasks, strategy
+from app.api.v1 import earnings, reconciliation
 
 router = APIRouter(prefix="/api/v1")
 
@@ -14,3 +15,5 @@ router.include_router(alerts.router, prefix="/alerts", tags=["Alerts"])
 router.include_router(recommendations.router, prefix="/recommendations", tags=["Recommendations"])
 router.include_router(tasks.router, prefix="/tasks", tags=["Tasks"])
 router.include_router(strategy.router, prefix="/strategy", tags=["Strategy"])
+router.include_router(earnings.router, prefix="/earnings", tags=["Earnings"])
+router.include_router(reconciliation.router, prefix="/reconciliation", tags=["Reconciliation"])
