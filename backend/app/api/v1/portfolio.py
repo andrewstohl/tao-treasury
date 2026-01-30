@@ -2,8 +2,9 @@
 
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Optional
+from typing import Dict, List, Optional
 
+import structlog
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +13,7 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.portfolio import PortfolioSnapshot, NAVHistory
 from app.models.position import Position
+from app.models.subnet import Subnet
 from app.models.alert import Alert
 from app.models.trade import TradeRecommendation
 from app.schemas.portfolio import (
@@ -26,8 +28,12 @@ from app.schemas.portfolio import (
     PositionSummary,
     ActionItem,
     PortfolioHealth,
+    MarketPulse,
 )
 from app.services.data.data_sync import data_sync_service
+from app.services.data.taostats_client import taostats_client, TaoStatsError
+
+logger = structlog.get_logger()
 
 router = APIRouter()
 
@@ -224,6 +230,15 @@ async def _get_top_positions(db: AsyncSession, wallet: str, limit: int = 10) -> 
     result = await db.execute(stmt)
     positions = result.scalars().all()
 
+    # Batch-load subnets for flow_regime and emission_share
+    netuids = [p.netuid for p in positions]
+    subnet_lookup: Dict[int, Subnet] = {}
+    if netuids:
+        subnet_stmt = select(Subnet).where(Subnet.netuid.in_(netuids))
+        subnet_result = await db.execute(subnet_stmt)
+        for s in subnet_result.scalars().all():
+            subnet_lookup[s.netuid] = s
+
     # Calculate total value and average APY for weight/health calculation
     total_value = sum(p.tao_value_mid for p in positions)
     total_weighted_apy = sum(p.tao_value_mid * p.current_apy for p in positions)
@@ -233,22 +248,33 @@ async def _get_top_positions(db: AsyncSession, wallet: str, limit: int = 10) -> 
     for p in positions:
         weight_pct = (p.tao_value_mid / total_value * 100) if total_value else Decimal("0")
         health_status, health_reason = _compute_position_health(p, weight_pct, avg_apy)
+        subnet = subnet_lookup.get(p.netuid)
 
         summaries.append(PositionSummary(
             netuid=p.netuid,
             subnet_name=p.subnet_name or f"Subnet {p.netuid}",
             tao_value_mid=p.tao_value_mid,
+            tao_value_exec_50pct=p.tao_value_exec_50pct,
+            tao_value_exec_100pct=p.tao_value_exec_100pct,
             alpha_balance=p.alpha_balance,
             weight_pct=weight_pct,
+            entry_price_tao=p.entry_price_tao,
+            entry_date=p.entry_date,
             current_apy=p.current_apy,
             daily_yield_tao=p.daily_yield_tao,
             cost_basis_tao=p.cost_basis_tao,
+            realized_pnl_tao=p.realized_pnl_tao,
             unrealized_pnl_tao=p.unrealized_pnl_tao,
             unrealized_pnl_pct=p.unrealized_pnl_pct,
+            exit_slippage_50pct=p.exit_slippage_50pct,
+            exit_slippage_100pct=p.exit_slippage_100pct,
             health_status=health_status,
             health_reason=health_reason,
             validator_hotkey=p.validator_hotkey,
             recommended_action=p.recommended_action,
+            action_reason=p.action_reason,
+            flow_regime=subnet.flow_regime if subnet else None,
+            emission_share=subnet.emission_share if subnet else None,
         ))
 
     return summaries
@@ -325,6 +351,147 @@ async def get_yield_history(
         "daily_breakdown": sorted(daily_yields.values(), key=lambda x: x["date"], reverse=True),
         "records_count": len(records),
     }
+
+
+async def _compute_market_pulse(
+    positions: List[PositionSummary],
+) -> Optional[MarketPulse]:
+    """Compute aggregated market pulse from TaoStats pool data.
+
+    Filters to only held netuids and computes portfolio-weighted averages.
+    Returns None if no positions or TaoStats unavailable.
+    """
+    if not positions:
+        return MarketPulse(taostats_available=False)
+
+    try:
+        pool_response = await taostats_client.get_pools_full()
+        pools_data = pool_response.get("data", [])
+    except (TaoStatsError, Exception) as e:
+        logger.warning("TaoStats unavailable for market pulse", error=str(e))
+        return MarketPulse(taostats_available=False)
+
+    # Build lookup by netuid
+    pool_lookup: Dict[int, dict] = {}
+    for pool in pools_data:
+        netuid = pool.get("netuid")
+        if netuid is not None:
+            pool_lookup[int(netuid)] = pool
+
+    # Get held netuids and their values
+    held_netuids = {p.netuid for p in positions}
+    total_value = sum(float(p.tao_value_mid) for p in positions)
+    if total_value <= 0:
+        return MarketPulse(taostats_available=True)
+
+    # Compute weighted averages
+    weighted_24h_change = 0.0
+    weighted_7d_change = 0.0
+    weighted_sentiment = 0.0
+    total_volume = 0.0
+    total_buy_volume = 0.0
+    total_sell_volume = 0.0
+    sentiment_weight_total = 0.0
+    top_mover_netuid = None
+    top_mover_name = None
+    top_mover_change = 0.0
+
+    RAO_DIVISOR = 1e9
+
+    for pos in positions:
+        pool = pool_lookup.get(pos.netuid)
+        if not pool:
+            continue
+
+        pos_value = float(pos.tao_value_mid)
+        weight = pos_value / total_value if total_value > 0 else 0
+
+        # Price changes (TaoStats uses _1_day, _1_week naming)
+        change_24h = pool.get("price_change_1_day")
+        if change_24h is not None:
+            try:
+                change_24h = float(change_24h)
+                weighted_24h_change += weight * change_24h
+                # Track top mover
+                if abs(change_24h) > abs(top_mover_change):
+                    top_mover_change = change_24h
+                    top_mover_netuid = pos.netuid
+                    top_mover_name = pos.subnet_name
+            except (ValueError, TypeError):
+                pass
+
+        change_7d = pool.get("price_change_1_week")
+        if change_7d is not None:
+            try:
+                weighted_7d_change += weight * float(change_7d)
+            except (ValueError, TypeError):
+                pass
+
+        # Sentiment (TaoStats uses fear_and_greed_index)
+        fg_index = pool.get("fear_and_greed_index")
+        if fg_index is not None:
+            try:
+                weighted_sentiment += weight * float(fg_index)
+                sentiment_weight_total += weight
+            except (ValueError, TypeError):
+                pass
+
+        # Volume (TaoStats uses _24_hr suffix, values in rao)
+        vol_24h = pool.get("tao_volume_24_hr")
+        if vol_24h is not None:
+            try:
+                total_volume += float(vol_24h) / RAO_DIVISOR
+            except (ValueError, TypeError):
+                pass
+
+        buy_vol = pool.get("tao_buy_volume_24_hr")
+        if buy_vol is not None:
+            try:
+                total_buy_volume += float(buy_vol) / RAO_DIVISOR
+            except (ValueError, TypeError):
+                pass
+
+        sell_vol = pool.get("tao_sell_volume_24_hr")
+        if sell_vol is not None:
+            try:
+                total_sell_volume += float(sell_vol) / RAO_DIVISOR
+            except (ValueError, TypeError):
+                pass
+
+    # Determine sentiment label
+    avg_sentiment = weighted_sentiment / sentiment_weight_total if sentiment_weight_total > 0 else None
+    sentiment_label = None
+    if avg_sentiment is not None:
+        if avg_sentiment >= 75:
+            sentiment_label = "Extreme Greed"
+        elif avg_sentiment >= 55:
+            sentiment_label = "Greed"
+        elif avg_sentiment >= 45:
+            sentiment_label = "Neutral"
+        elif avg_sentiment >= 25:
+            sentiment_label = "Fear"
+        else:
+            sentiment_label = "Extreme Fear"
+
+    # Net buy pressure
+    net_buy_pressure = None
+    if total_volume > 0:
+        net_buy_pressure = Decimal(str(
+            round((total_buy_volume - total_sell_volume) / total_volume * 100, 2)
+        ))
+
+    return MarketPulse(
+        portfolio_24h_change_pct=Decimal(str(round(weighted_24h_change, 4))),
+        portfolio_7d_change_pct=Decimal(str(round(weighted_7d_change, 4))),
+        avg_sentiment_index=Decimal(str(round(avg_sentiment, 1))) if avg_sentiment is not None else None,
+        avg_sentiment_label=sentiment_label,
+        total_volume_24h_tao=Decimal(str(round(total_volume, 4))) if total_volume > 0 else None,
+        net_buy_pressure_pct=net_buy_pressure,
+        top_mover_netuid=top_mover_netuid,
+        top_mover_name=top_mover_name,
+        top_mover_change_24h=Decimal(str(round(top_mover_change, 4))) if top_mover_netuid else None,
+        taostats_available=True,
+    )
 
 
 @router.get("/dashboard", response_model=DashboardResponse)
@@ -444,12 +611,16 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)) -> DashboardResponse
     priority_order = {"high": 0, "medium": 1, "low": 2}
     action_items.sort(key=lambda x: priority_order.get(x.priority, 99))
 
+    # Compute market pulse from TaoStats pool data
+    market_pulse = await _compute_market_pulse(top_positions)
+
     return DashboardResponse(
         portfolio=portfolio,
         portfolio_health=portfolio_health,
         top_positions=top_positions,
         action_items=action_items[:5],  # Top 5 action items
         alerts=alerts,
+        market_pulse=market_pulse,
         pending_recommendations=pending_count,
         urgent_recommendations=urgent_count,
         last_sync=data_sync_service.last_sync,

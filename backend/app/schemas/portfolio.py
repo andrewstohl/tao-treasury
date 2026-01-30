@@ -102,21 +102,34 @@ class PositionSummary(BaseModel):
     netuid: int
     subnet_name: str
     tao_value_mid: Decimal = Field(default=Decimal("0"))
+    tao_value_exec_50pct: Decimal = Field(default=Decimal("0"))
+    tao_value_exec_100pct: Decimal = Field(default=Decimal("0"))
     alpha_balance: Decimal = Field(default=Decimal("0"))
     weight_pct: Decimal = Field(default=Decimal("0"))
+    # Entry tracking
+    entry_price_tao: Decimal = Field(default=Decimal("0"))
+    entry_date: Optional[datetime] = None
     # Yield
     current_apy: Decimal = Field(default=Decimal("0"))
     daily_yield_tao: Decimal = Field(default=Decimal("0"))
     # P&L
     cost_basis_tao: Decimal = Field(default=Decimal("0"))
+    realized_pnl_tao: Decimal = Field(default=Decimal("0"))
     unrealized_pnl_tao: Decimal = Field(default=Decimal("0"))
     unrealized_pnl_pct: Decimal = Field(default=Decimal("0"))
+    # Slippage
+    exit_slippage_50pct: Decimal = Field(default=Decimal("0"))
+    exit_slippage_100pct: Decimal = Field(default=Decimal("0"))
     # Health status: green (good), yellow (needs attention), red (action required)
     health_status: str = "green"
     health_reason: Optional[str] = None
-    # Status
+    # Status & recommendation
     validator_hotkey: Optional[str] = None
     recommended_action: Optional[str] = None
+    action_reason: Optional[str] = None
+    # Subnet context
+    flow_regime: Optional[str] = None
+    emission_share: Optional[Decimal] = None
 
     class Config:
         from_attributes = True
@@ -147,6 +160,20 @@ class PortfolioHealth(BaseModel):
     issues_count: int = 0
 
 
+class MarketPulse(BaseModel):
+    """Aggregated market data for held positions."""
+    portfolio_24h_change_pct: Optional[Decimal] = None
+    portfolio_7d_change_pct: Optional[Decimal] = None
+    avg_sentiment_index: Optional[Decimal] = None
+    avg_sentiment_label: Optional[str] = None
+    total_volume_24h_tao: Optional[Decimal] = None
+    net_buy_pressure_pct: Optional[Decimal] = None
+    top_mover_netuid: Optional[int] = None
+    top_mover_name: Optional[str] = None
+    top_mover_change_24h: Optional[Decimal] = None
+    taostats_available: bool = False
+
+
 class DashboardResponse(BaseModel):
     """Complete dashboard response."""
     portfolio: PortfolioSummary
@@ -154,6 +181,7 @@ class DashboardResponse(BaseModel):
     top_positions: List[PositionSummary] = Field(default_factory=list)
     action_items: List[ActionItem] = Field(default_factory=list)
     alerts: AlertSummary
+    market_pulse: Optional[MarketPulse] = None
     pending_recommendations: int = 0
     urgent_recommendations: int = 0
     last_sync: Optional[datetime] = None

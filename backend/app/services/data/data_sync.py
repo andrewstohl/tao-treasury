@@ -120,6 +120,10 @@ class DataSyncService:
             validator_count = await self.sync_validators()
             results["validators"] = validator_count
 
+            # Compute subnet-level APYs (stake-weighted average across all subnets)
+            subnet_apy_count = await self.sync_subnet_apys()
+            results["subnet_apys"] = subnet_apy_count
+
             # Sync yield data to positions (uses validator APY data)
             yield_count = await self.sync_position_yields()
             results["positions_with_yield"] = yield_count
@@ -152,13 +156,25 @@ class DataSyncService:
                 from app.services.analysis.nav_calculator import nav_calculator
                 from app.services.analysis.risk_monitor import risk_monitor
 
-                # Sync transaction history
+                # Sync transaction history (dTAO trades for SN1+)
                 try:
                     tx_results = await transaction_sync_service.sync_transactions()
                     results["transactions"] = tx_results.get("new_transactions", 0)
                 except Exception as e:
                     logger.error("Transaction sync failed", error=str(e))
                     results["errors"].append(f"Transaction sync: {str(e)}")
+
+                # Bridge Root (SN0) delegation events into stake_transactions
+                # (dtao/trade endpoint doesn't capture Root staking)
+                try:
+                    root_results = await transaction_sync_service.sync_root_transactions()
+                    root_new = root_results.get("new_transactions", 0)
+                    results["transactions"] += root_new
+                    if root_new > 0:
+                        logger.info("Root transactions bridged", count=root_new)
+                except Exception as e:
+                    logger.error("Root transaction sync failed", error=str(e))
+                    results["errors"].append(f"Root transaction sync: {str(e)}")
 
                 # Compute cost basis from transactions
                 try:
@@ -366,6 +382,11 @@ class DataSyncService:
         subnet.pool_tao_reserve = rao_to_tao(pool_data.get("total_tao", 0) or pool_data.get("tao_reserve", 0) or 0)
         subnet.pool_alpha_reserve = rao_to_tao(pool_data.get("total_alpha", 0) or pool_data.get("alpha_reserve", 0) or 0)
         subnet.alpha_price_tao = Decimal(str(pool_data.get("price", 0) or 0))
+
+        # Rank and market cap from pool API
+        subnet.rank = pool_data.get("rank")
+        market_cap_raw = pool_data.get("market_cap", 0) or 0
+        subnet.market_cap_tao = rao_to_tao(market_cap_raw)
 
         subnet.updated_at = datetime.now(timezone.utc)
         return subnet
@@ -629,6 +650,102 @@ class DataSyncService:
         validator.updated_at = now
 
         return validator
+
+    async def sync_subnet_apys(self) -> int:
+        """Compute stake-weighted average APY per subnet from validator yield data.
+
+        Fetches top validators across all subnets (sorted by stake desc),
+        groups by netuid, and computes: sum(apy * stake) / sum(stake).
+        Uses thirty_day_apy for stability. Stores result in subnet.validator_apy.
+        """
+        logger.info("Syncing subnet APYs from validator yield data")
+
+        try:
+            # Fetch top validators across all subnets (paginated, 200 per page)
+            # Sorted by stake descending, so first pages have the most influential validators
+            all_validators: List[Dict] = []
+            max_pages = 4  # 800 validators covers all subnets well
+
+            for page in range(1, max_pages + 1):
+                try:
+                    response = await taostats_client._request(
+                        "GET",
+                        "/api/dtao/validator/yield/latest/v1",
+                        params={"network": "finney", "limit": 200, "page": page},
+                        cache_key=f"validator_yield_bulk:{page}",
+                        cache_ttl=timedelta(minutes=10),
+                    )
+                    page_data = response.get("data", [])
+                    if not page_data:
+                        break
+                    all_validators.extend(page_data)
+
+                    pagination = response.get("pagination", {})
+                    if page >= pagination.get("total_pages", 1):
+                        break
+                except Exception as e:
+                    logger.warning("Failed to fetch validator yield page", page=page, error=str(e))
+                    break
+
+            if not all_validators:
+                logger.warning("No validator yield data fetched for subnet APY computation")
+                return 0
+
+            # Group by netuid: accumulate (stake, apy * stake) per subnet
+            subnet_accum: Dict[int, Dict[str, float]] = {}
+            for val in all_validators:
+                netuid = val.get("netuid")
+                if netuid is None:
+                    continue
+
+                stake_rao = val.get("stake", 0) or 0
+                thirty_day_apy = val.get("thirty_day_apy") or val.get("seven_day_apy") or val.get("one_day_apy") or 0
+
+                if stake_rao <= 0 or thirty_day_apy <= 0:
+                    continue
+
+                stake = float(stake_rao)
+                apy = float(thirty_day_apy)
+
+                if netuid not in subnet_accum:
+                    subnet_accum[netuid] = {"total_stake": 0.0, "weighted_apy": 0.0}
+
+                subnet_accum[netuid]["total_stake"] += stake
+                subnet_accum[netuid]["weighted_apy"] += apy * stake
+
+            # Compute weighted average APY per subnet and update DB
+            count = 0
+            async with get_db_context() as db:
+                for netuid, accum in subnet_accum.items():
+                    if accum["total_stake"] <= 0:
+                        continue
+
+                    # Weighted average APY as decimal (0.37 = 37%), convert to percentage
+                    avg_apy_decimal = accum["weighted_apy"] / accum["total_stake"]
+                    avg_apy_pct = Decimal(str(round(avg_apy_decimal * 100, 4)))
+
+                    stmt = select(Subnet).where(Subnet.netuid == netuid)
+                    result = await db.execute(stmt)
+                    subnet = result.scalar_one_or_none()
+
+                    if subnet:
+                        subnet.validator_apy = avg_apy_pct
+                        count += 1
+
+                await db.commit()
+
+            logger.info(
+                "Subnet APYs computed",
+                validators_fetched=len(all_validators),
+                subnets_updated=count,
+            )
+            _record_sync_status("subnet_apys", True, count)
+            return count
+
+        except Exception as e:
+            logger.error("Failed to sync subnet APYs", error=str(e))
+            _record_sync_status("subnet_apys", False, 0)
+            raise
 
     async def sync_position_yields(self) -> int:
         """Sync yield data to positions from validator APY data.

@@ -105,9 +105,9 @@ async def list_positions(
         subnet_result = await db.execute(subnet_stmt)
         subnet = subnet_result.scalar_one_or_none()
 
-        # Calculate unrealized PnL
-        unrealized = pos.tao_value_mid - pos.cost_basis_tao
-        unrealized_pct = (unrealized / pos.cost_basis_tao * 100) if pos.cost_basis_tao else Decimal("0")
+        # Use stored unrealized P&L from cost basis computation (single source of truth)
+        unrealized = pos.unrealized_pnl_tao or Decimal("0")
+        unrealized_pct = pos.unrealized_pnl_pct or Decimal("0")
 
         # Calculate weight
         weight_pct = (pos.tao_value_mid / total_mid * 100) if total_mid else Decimal("0")

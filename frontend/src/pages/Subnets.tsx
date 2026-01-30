@@ -1,80 +1,173 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
+import { ChevronRight, ChevronDown, AlertTriangle, Search, SlidersHorizontal, Columns3 } from 'lucide-react'
 import { api } from '../services/api'
-import { Subnet } from '../types'
+import type { EnrichedSubnet, EnrichedSubnetListResponse } from '../types'
+import { formatTao, formatCompact } from '../utils/format'
+import SortableHeader, { useSortToggle, type SortDirection } from '../components/common/SortableHeader'
+import SparklineCell from '../components/common/cells/SparklineCell'
+import PriceChangeCell from '../components/common/cells/PriceChangeCell'
+import SentimentBadge from '../components/common/cells/SentimentBadge'
+import VolumeBar from '../components/common/cells/VolumeBar'
+import RegimeBadge from '../components/common/cells/RegimeBadge'
+import SubnetExpandedRow from '../components/common/SubnetExpandedRow'
 
-type SortDirection = 'asc' | 'desc' | null
-type SortKey = 'name' | 'emission_share' | 'pool_tao_reserve' | 'holder_count' | 'taoflow_7d' | 'flow_regime' | 'validator_apy' | null
+type SortKey =
+  | 'netuid'
+  | 'rank'
+  | 'alpha_price_tao'
+  | 'price_change_24h'
+  | 'market_cap_tao'
+  | 'tao_volume_24h'
+  | 'emission_share'
+  | 'pool_tao_reserve'
+  | 'validator_apy'
+  | 'flow_regime'
 
-interface SortableHeaderProps {
-  label: string
-  sortKey: SortKey
-  currentSortKey: SortKey
-  currentDirection: SortDirection
-  onSort: (key: SortKey) => void
-  align?: 'left' | 'right'
+// --- Column visibility ---
+type ColumnKey =
+  | 'sparkline'
+  | 'price'
+  | 'change'
+  | 'mktcap'
+  | 'volume'
+  | 'emission'
+  | 'liquidity'
+  | 'apy'
+  | 'sentiment'
+  | 'regime'
+  | 'status'
+
+const ALL_COLUMNS: { key: ColumnKey; label: string }[] = [
+  { key: 'sparkline', label: '7d Chart' },
+  { key: 'price', label: 'Price' },
+  { key: 'change', label: '24h / 7d' },
+  { key: 'mktcap', label: 'Mkt Cap' },
+  { key: 'volume', label: 'Volume 24h' },
+  { key: 'emission', label: 'Emission' },
+  { key: 'liquidity', label: 'Liquidity' },
+  { key: 'apy', label: 'APY' },
+  { key: 'sentiment', label: 'Sentiment' },
+  { key: 'regime', label: 'Regime' },
+  { key: 'status', label: 'Status' },
+]
+
+const COLUMNS_STORAGE_KEY = 'tao-subnets-columns'
+const ALL_COLUMN_KEYS = ALL_COLUMNS.map((c) => c.key)
+
+function loadVisibleColumns(): Set<ColumnKey> {
+  try {
+    const stored = localStorage.getItem(COLUMNS_STORAGE_KEY)
+    if (stored) {
+      const parsed: ColumnKey[] = JSON.parse(stored)
+      if (Array.isArray(parsed) && parsed.length > 0) return new Set(parsed)
+    }
+  } catch {
+    // ignore
+  }
+  return new Set(ALL_COLUMN_KEYS)
 }
 
-function SortableHeader({ label, sortKey, currentSortKey, currentDirection, onSort, align = 'left' }: SortableHeaderProps) {
-  const isActive = currentSortKey === sortKey
-
-  return (
-    <th
-      className={`p-4 cursor-pointer hover:bg-gray-700/50 select-none ${align === 'right' ? 'text-right' : 'text-left'}`}
-      onClick={() => onSort(sortKey)}
-    >
-      <div className={`flex items-center gap-1 ${align === 'right' ? 'justify-end' : ''}`}>
-        <span>{label}</span>
-        <span className="text-gray-500">
-          {isActive ? (
-            currentDirection === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />
-          ) : (
-            <ChevronsUpDown className="w-4 h-4 opacity-50" />
-          )}
-        </span>
-      </div>
-    </th>
-  )
+function saveVisibleColumns(cols: Set<ColumnKey>) {
+  localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify([...cols]))
 }
 
-function formatTao(value: string | number): string {
-  const num = typeof value === 'string' ? parseFloat(value) : value
-  return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
+// --- Filter types ---
+type RegimeFilter = 'all' | 'risk_on' | 'neutral' | 'risk_off' | 'quarantine' | 'dead'
+type SentimentFilter = 'all' | 'fear' | 'neutral' | 'greed'
 
-function formatPercent(value: string | number): string {
-  const num = typeof value === 'string' ? parseFloat(value) : value
-  return `${num.toFixed(4)}%`
+function getSentimentBucket(sentiment: string | null | undefined): 'fear' | 'neutral' | 'greed' | null {
+  if (!sentiment) return null
+  const lower = sentiment.toLowerCase()
+  if (lower.includes('fear')) return 'fear'
+  if (lower.includes('greed')) return 'greed'
+  if (lower === 'neutral') return 'neutral'
+  return null
 }
 
 export default function Subnets() {
   const [eligibleOnly, setEligibleOnly] = useState(false)
-  const [sortKey, setSortKey] = useState<SortKey>('emission_share')
-  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
+  const [sortKey, setSortKey] = useState<SortKey | null>('netuid')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
+  const [expandedNetuid, setExpandedNetuid] = useState<number | null>(null)
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['subnets', eligibleOnly],
-    queryFn: () => api.getSubnets(eligibleOnly),
+  // Search & filters
+  const [searchQuery, setSearchQuery] = useState('')
+  const [regimeFilter, setRegimeFilter] = useState<RegimeFilter>('all')
+  const [sentimentFilter, setSentimentFilter] = useState<SentimentFilter>('all')
+
+  // Column visibility
+  const [visibleColumns, setVisibleColumns] = useState<Set<ColumnKey>>(loadVisibleColumns)
+  const [showColumnMenu, setShowColumnMenu] = useState(false)
+  const columnMenuRef = useRef<HTMLDivElement>(null)
+
+  const handleSort = useSortToggle(sortKey, sortDirection, setSortKey, setSortDirection)
+
+  const toggleColumn = useCallback((key: ColumnKey) => {
+    setVisibleColumns((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      saveVisibleColumns(next)
+      return next
+    })
+  }, [])
+
+  const isColVisible = useCallback(
+    (key: ColumnKey) => visibleColumns.has(key),
+    [visibleColumns],
+  )
+
+  // Close column menu on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (columnMenuRef.current && !columnMenuRef.current.contains(e.target as Node)) {
+        setShowColumnMenu(false)
+      }
+    }
+    if (showColumnMenu) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showColumnMenu])
+
+  const { data, isLoading, error, isFetching } = useQuery<EnrichedSubnetListResponse>({
+    queryKey: ['subnets-enriched', eligibleOnly],
+    queryFn: () => api.getEnrichedSubnets(eligibleOnly),
     refetchInterval: 120000,
   })
 
-  const handleSort = (key: SortKey) => {
-    if (sortKey === key) {
-      if (sortDirection === 'desc') {
-        setSortDirection('asc')
-      } else if (sortDirection === 'asc') {
-        setSortKey(null)
-        setSortDirection(null)
-      }
-    } else {
-      setSortKey(key)
-      setSortDirection('desc')
-    }
-  }
+  // Filter -> sort pipeline
+  const filteredAndSorted = useMemo(() => {
+    let subnets: EnrichedSubnet[] = data?.subnets || []
 
-  const sortedSubnets = useMemo(() => {
-    const subnets: Subnet[] = data?.subnets || []
+    // Text search
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase()
+      subnets = subnets.filter(
+        (s) =>
+          s.name.toLowerCase().includes(q) ||
+          String(s.netuid).includes(q),
+      )
+    }
+
+    // Regime filter
+    if (regimeFilter !== 'all') {
+      subnets = subnets.filter((s) => s.flow_regime === regimeFilter)
+    }
+
+    // Sentiment filter
+    if (sentimentFilter !== 'all') {
+      subnets = subnets.filter((s) => {
+        const bucket = getSentimentBucket(s.volatile?.fear_greed_sentiment)
+        return bucket === sentimentFilter
+      })
+    }
+
+    // Sort
     if (!sortKey || !sortDirection) return subnets
 
     return [...subnets].sort((a, b) => {
@@ -82,9 +175,32 @@ export default function Subnets() {
       let bVal: number | string
 
       switch (sortKey) {
-        case 'name':
-          aVal = a.name
-          bVal = b.name
+        case 'netuid':
+          aVal = a.netuid
+          bVal = b.netuid
+          break
+        case 'rank':
+          if (a.rank == null && b.rank == null) return 0
+          if (a.rank == null) return 1
+          if (b.rank == null) return -1
+          aVal = a.rank
+          bVal = b.rank
+          break
+        case 'alpha_price_tao':
+          aVal = parseFloat(a.alpha_price_tao)
+          bVal = parseFloat(b.alpha_price_tao)
+          break
+        case 'price_change_24h':
+          aVal = a.volatile?.price_change_24h ?? -Infinity
+          bVal = b.volatile?.price_change_24h ?? -Infinity
+          break
+        case 'market_cap_tao':
+          aVal = parseFloat(a.market_cap_tao)
+          bVal = parseFloat(b.market_cap_tao)
+          break
+        case 'tao_volume_24h':
+          aVal = a.volatile?.tao_volume_24h ?? -Infinity
+          bVal = b.volatile?.tao_volume_24h ?? -Infinity
           break
         case 'emission_share':
           aVal = parseFloat(a.emission_share)
@@ -94,21 +210,13 @@ export default function Subnets() {
           aVal = parseFloat(a.pool_tao_reserve)
           bVal = parseFloat(b.pool_tao_reserve)
           break
-        case 'holder_count':
-          aVal = a.holder_count
-          bVal = b.holder_count
-          break
-        case 'taoflow_7d':
-          aVal = parseFloat(a.taoflow_7d)
-          bVal = parseFloat(b.taoflow_7d)
+        case 'validator_apy':
+          aVal = parseFloat(a.validator_apy)
+          bVal = parseFloat(b.validator_apy)
           break
         case 'flow_regime':
           aVal = a.flow_regime
           bVal = b.flow_regime
-          break
-        case 'validator_apy':
-          aVal = parseFloat(a.validator_apy)
-          bVal = parseFloat(b.validator_apy)
           break
         default:
           return 0
@@ -124,7 +232,12 @@ export default function Subnets() {
         ? (aVal as number) - (bVal as number)
         : (bVal as number) - (aVal as number)
     })
-  }, [data?.subnets, sortKey, sortDirection])
+  }, [data?.subnets, searchQuery, regimeFilter, sentimentFilter, sortKey, sortDirection])
+
+  // Compute colSpan: expand(1) + subnet(1) + visible optional columns
+  const colSpan = 2 + visibleColumns.size
+
+  const hasActiveFilters = searchQuery.trim() !== '' || regimeFilter !== 'all' || sentimentFilter !== 'all'
 
   if (isLoading) {
     return (
@@ -143,9 +256,20 @@ export default function Subnets() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Subnets</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold">Subnets</h1>
+          {isFetching && (
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-tao-400"></div>
+          )}
+          {data.cache_age_seconds != null && (
+            <span className="text-xs text-gray-500">
+              Data: {data.cache_age_seconds}s ago
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-4">
           <label className="flex items-center gap-2 cursor-pointer">
             <input
@@ -162,126 +286,438 @@ export default function Subnets() {
         </div>
       </div>
 
-      {sortedSubnets.length === 0 ? (
+      {/* TaoStats degraded banner */}
+      {data.taostats_available === false && (
+        <div className="flex items-center gap-2 bg-yellow-900/20 border border-yellow-700/50 rounded-lg px-4 py-2 text-sm text-yellow-400">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+          <span>Live market data temporarily unavailable. Showing cached data only.</span>
+        </div>
+      )}
+
+      {/* Search & Filters Bar */}
+      <div className="flex items-center gap-3 flex-wrap">
+        {/* Text search */}
+        <div className="relative flex-1 min-w-[200px] max-w-xs">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+          <input
+            type="text"
+            placeholder="Search name or netuid..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-tao-500"
+          />
+        </div>
+
+        {/* Regime filter */}
+        <div className="flex items-center gap-1.5">
+          <SlidersHorizontal className="w-4 h-4 text-gray-500" />
+          <select
+            value={regimeFilter}
+            onChange={(e) => setRegimeFilter(e.target.value as RegimeFilter)}
+            className="bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300 px-2 py-2 focus:outline-none focus:border-tao-500"
+          >
+            <option value="all">All Regimes</option>
+            <option value="risk_on">Risk On</option>
+            <option value="neutral">Neutral</option>
+            <option value="risk_off">Risk Off</option>
+            <option value="quarantine">Quarantine</option>
+            <option value="dead">Dead</option>
+          </select>
+        </div>
+
+        {/* Sentiment filter */}
+        <select
+          value={sentimentFilter}
+          onChange={(e) => setSentimentFilter(e.target.value as SentimentFilter)}
+          className="bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300 px-2 py-2 focus:outline-none focus:border-tao-500"
+        >
+          <option value="all">All Sentiment</option>
+          <option value="fear">Fear</option>
+          <option value="neutral">Neutral</option>
+          <option value="greed">Greed</option>
+        </select>
+
+        {/* Column visibility toggle */}
+        <div className="relative" ref={columnMenuRef}>
+          <button
+            onClick={() => setShowColumnMenu((prev) => !prev)}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm ${
+              showColumnMenu
+                ? 'bg-gray-700 border-tao-500 text-tao-400'
+                : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'
+            }`}
+          >
+            <Columns3 className="w-4 h-4" />
+            Columns
+          </button>
+          {showColumnMenu && (
+            <div className="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-20 py-1 w-48">
+              {ALL_COLUMNS.map((col) => (
+                <label
+                  key={col.key}
+                  className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-700 cursor-pointer text-sm text-gray-300"
+                >
+                  <input
+                    type="checkbox"
+                    checked={visibleColumns.has(col.key)}
+                    onChange={() => toggleColumn(col.key)}
+                    className="rounded bg-gray-600 border-gray-500"
+                  />
+                  {col.label}
+                </label>
+              ))}
+              <div className="border-t border-gray-700 mt-1 pt-1 px-3 pb-1">
+                <button
+                  onClick={() => {
+                    const all = new Set(ALL_COLUMN_KEYS)
+                    setVisibleColumns(all)
+                    saveVisibleColumns(all)
+                  }}
+                  className="text-xs text-tao-400 hover:text-tao-300"
+                >
+                  Show All
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Active filter count + clear */}
+        {hasActiveFilters && (
+          <button
+            onClick={() => {
+              setSearchQuery('')
+              setRegimeFilter('all')
+              setSentimentFilter('all')
+            }}
+            className="text-xs text-gray-400 hover:text-gray-200 underline"
+          >
+            Clear filters
+          </button>
+        )}
+
+        {/* Result count */}
+        <span className="text-xs text-gray-500 ml-auto">
+          {filteredAndSorted.length} of {data.subnets.length} shown
+        </span>
+      </div>
+
+      {/* Table */}
+      {filteredAndSorted.length === 0 ? (
         <div className="bg-gray-800 rounded-lg p-8 text-center border border-gray-700">
-          <p className="text-gray-400">No subnets found. Try refreshing data from TaoStats.</p>
+          <p className="text-gray-400">
+            {hasActiveFilters
+              ? 'No subnets match your filters. Try adjusting or clearing filters.'
+              : 'No subnets found. Try refreshing data from TaoStats.'}
+          </p>
         </div>
       ) : (
-        <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
-          <table className="w-full">
+        <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-x-auto">
+          <table className="w-full min-w-[900px]">
             <thead className="bg-gray-900/50">
               <tr className="text-sm text-gray-400">
-                <SortableHeader
+                {/* Expand toggle - always visible */}
+                <th className="w-8 px-2 py-3" />
+                {/* Subnet - always visible */}
+                <SortableHeader<SortKey>
                   label="Subnet"
-                  sortKey="name"
+                  sortKey="netuid"
                   currentSortKey={sortKey}
                   currentDirection={sortDirection}
                   onSort={handleSort}
                 />
-                <SortableHeader
-                  label="Emission"
-                  sortKey="emission_share"
-                  currentSortKey={sortKey}
-                  currentDirection={sortDirection}
-                  onSort={handleSort}
-                  align="right"
-                />
-                <SortableHeader
-                  label="Liquidity"
-                  sortKey="pool_tao_reserve"
-                  currentSortKey={sortKey}
-                  currentDirection={sortDirection}
-                  onSort={handleSort}
-                  align="right"
-                />
-                <SortableHeader
-                  label="Holders"
-                  sortKey="holder_count"
-                  currentSortKey={sortKey}
-                  currentDirection={sortDirection}
-                  onSort={handleSort}
-                  align="right"
-                />
-                <SortableHeader
-                  label="7d Flow"
-                  sortKey="taoflow_7d"
-                  currentSortKey={sortKey}
-                  currentDirection={sortDirection}
-                  onSort={handleSort}
-                  align="right"
-                />
-                <SortableHeader
-                  label="Regime"
-                  sortKey="flow_regime"
-                  currentSortKey={sortKey}
-                  currentDirection={sortDirection}
-                  onSort={handleSort}
-                />
-                <SortableHeader
-                  label="APY"
-                  sortKey="validator_apy"
-                  currentSortKey={sortKey}
-                  currentDirection={sortDirection}
-                  onSort={handleSort}
-                  align="right"
-                />
-                <th className="p-4 text-left">Status</th>
+                {isColVisible('sparkline') && (
+                  <th className="px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">
+                    7d Chart
+                  </th>
+                )}
+                {isColVisible('price') && (
+                  <SortableHeader<SortKey>
+                    label="Price"
+                    sortKey="alpha_price_tao"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={handleSort}
+                    align="right"
+                  />
+                )}
+                {isColVisible('change') && (
+                  <SortableHeader<SortKey>
+                    label="24h / 7d"
+                    sortKey="price_change_24h"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={handleSort}
+                    align="right"
+                  />
+                )}
+                {isColVisible('mktcap') && (
+                  <SortableHeader<SortKey>
+                    label="Mkt Cap"
+                    sortKey="rank"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={handleSort}
+                    align="right"
+                  />
+                )}
+                {isColVisible('volume') && (
+                  <SortableHeader<SortKey>
+                    label="Volume 24h"
+                    sortKey="tao_volume_24h"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={handleSort}
+                    align="right"
+                  />
+                )}
+                {isColVisible('emission') && (
+                  <SortableHeader<SortKey>
+                    label="Emission"
+                    sortKey="emission_share"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={handleSort}
+                    align="right"
+                  />
+                )}
+                {isColVisible('liquidity') && (
+                  <SortableHeader<SortKey>
+                    label="Liquidity"
+                    sortKey="pool_tao_reserve"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={handleSort}
+                    align="right"
+                  />
+                )}
+                {isColVisible('apy') && (
+                  <SortableHeader<SortKey>
+                    label="APY"
+                    sortKey="validator_apy"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={handleSort}
+                    align="right"
+                  />
+                )}
+                {isColVisible('sentiment') && (
+                  <th className="px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">
+                    Sentiment
+                  </th>
+                )}
+                {isColVisible('regime') && (
+                  <SortableHeader<SortKey>
+                    label="Regime"
+                    sortKey="flow_regime"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={handleSort}
+                  />
+                )}
+                {isColVisible('status') && (
+                  <th className="px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider text-left">
+                    Status
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-700">
-              {sortedSubnets.map((subnet) => (
-                <tr key={subnet.id} className="hover:bg-gray-700/30">
-                  <td className="p-4">
-                    <div className="font-medium">{subnet.name}</div>
-                    <div className="text-xs text-gray-500">SN{subnet.netuid} | {subnet.age_days}d old</div>
-                  </td>
-                  <td className="p-4 text-right font-mono text-sm">
-                    {formatPercent(parseFloat(subnet.emission_share) * 100)}
-                  </td>
-                  <td className="p-4 text-right font-mono text-sm">{formatTao(subnet.pool_tao_reserve)} τ</td>
-                  <td className="p-4 text-right font-mono text-sm">{subnet.holder_count}</td>
-                  <td className="p-4 text-right">
-                    <span className={`font-mono text-sm ${parseFloat(subnet.taoflow_7d) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                      {parseFloat(subnet.taoflow_7d) >= 0 ? '+' : ''}{formatTao(subnet.taoflow_7d)} τ
-                    </span>
-                  </td>
-                  <td className="p-4">
-                    <span className={`capitalize text-sm ${
-                      subnet.flow_regime === 'risk_on' ? 'text-green-400' :
-                      subnet.flow_regime === 'risk_off' ? 'text-red-400' :
-                      subnet.flow_regime === 'quarantine' ? 'text-orange-400' :
-                      'text-yellow-400'
-                    }`}>
-                      {subnet.flow_regime.replace('_', ' ')}
-                    </span>
-                  </td>
-                  <td className="p-4 text-right font-mono text-sm">
-                    {parseFloat(subnet.validator_apy).toFixed(1)}%
-                  </td>
-                  <td className="p-4">
-                    {subnet.is_eligible ? (
-                      <span className="px-2 py-1 rounded text-xs font-medium bg-green-600/20 text-green-400">
-                        Eligible
-                      </span>
-                    ) : (
-                      <div>
-                        <span className="px-2 py-1 rounded text-xs font-medium bg-red-600/20 text-red-400">
-                          Excluded
-                        </span>
-                        {subnet.ineligibility_reasons && (
-                          <div className="text-xs text-gray-500 mt-1 max-w-[150px] truncate" title={subnet.ineligibility_reasons}>
-                            {subnet.ineligibility_reasons}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {filteredAndSorted.map((subnet) => {
+                const isExpanded = expandedNetuid === subnet.netuid
+                return (
+                  <SubnetRow
+                    key={subnet.id}
+                    subnet={subnet}
+                    isExpanded={isExpanded}
+                    onToggle={() =>
+                      setExpandedNetuid(isExpanded ? null : subnet.netuid)
+                    }
+                    isColVisible={isColVisible}
+                    colSpan={colSpan}
+                  />
+                )
+              })}
             </tbody>
           </table>
         </div>
       )}
     </div>
+  )
+}
+
+function SubnetRow({
+  subnet,
+  isExpanded,
+  onToggle,
+  isColVisible,
+  colSpan,
+}: {
+  subnet: EnrichedSubnet
+  isExpanded: boolean
+  onToggle: () => void
+  isColVisible: (key: ColumnKey) => boolean
+  colSpan: number
+}) {
+  const v = subnet.volatile
+
+  return (
+    <>
+      <tr
+        className="hover:bg-gray-700/30 cursor-pointer"
+        onClick={onToggle}
+      >
+        {/* Expand chevron */}
+        <td className="px-2 py-3 text-gray-500">
+          {isExpanded ? (
+            <ChevronDown className="w-4 h-4" />
+          ) : (
+            <ChevronRight className="w-4 h-4" />
+          )}
+        </td>
+
+        {/* Subnet name + logo */}
+        <td className="px-4 py-3">
+          <div className="flex items-center gap-2">
+            {subnet.identity?.logo_url && (
+              <img
+                src={subnet.identity.logo_url}
+                alt=""
+                className="w-6 h-6 rounded-full flex-shrink-0 bg-gray-700"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+              />
+            )}
+            <div className="min-w-0">
+              <div className="font-medium text-sm">{subnet.name}</div>
+              <div className="text-xs text-gray-500">SN{subnet.netuid}</div>
+            </div>
+          </div>
+        </td>
+
+        {/* 7d Sparkline */}
+        {isColVisible('sparkline') && (
+          <td className="px-2 py-3 align-middle">
+            <SparklineCell data={v?.sparkline_7d} />
+          </td>
+        )}
+
+        {/* Price */}
+        {isColVisible('price') && (
+          <td className="px-4 py-3 text-right font-mono text-sm">
+            {parseFloat(subnet.alpha_price_tao).toFixed(6)} τ
+          </td>
+        )}
+
+        {/* 24h / 7d Change */}
+        {isColVisible('change') && (
+          <td className="px-4 py-3">
+            <PriceChangeCell
+              change24h={v?.price_change_24h}
+              change7d={v?.price_change_7d}
+            />
+          </td>
+        )}
+
+        {/* Market Cap + Rank */}
+        {isColVisible('mktcap') && (
+          <td className="px-4 py-3 text-right">
+            {subnet.rank != null && (
+              <div className="text-xs text-gray-500 font-mono">#{subnet.rank}</div>
+            )}
+            <div className="font-mono text-sm">
+              {parseFloat(subnet.market_cap_tao) > 0
+                ? formatCompact(parseFloat(subnet.market_cap_tao)) + ' τ'
+                : '--'}
+            </div>
+          </td>
+        )}
+
+        {/* 24h Volume */}
+        {isColVisible('volume') && (
+          <td className="px-4 py-3">
+            <VolumeBar
+              volume24h={v?.tao_volume_24h}
+              buyVolume={v?.tao_buy_volume_24h}
+              sellVolume={v?.tao_sell_volume_24h}
+            />
+          </td>
+        )}
+
+        {/* Emission */}
+        {isColVisible('emission') && (
+          <td className="px-4 py-3 text-right font-mono text-sm">
+            {(parseFloat(subnet.emission_share) * 100).toFixed(2)}%
+          </td>
+        )}
+
+        {/* Liquidity */}
+        {isColVisible('liquidity') && (
+          <td className="px-4 py-3 text-right font-mono text-sm">
+            {formatTao(subnet.pool_tao_reserve)} τ
+          </td>
+        )}
+
+        {/* APY */}
+        {isColVisible('apy') && (
+          <td className="px-4 py-3 text-right font-mono text-sm">
+            {parseFloat(subnet.validator_apy).toFixed(1)}%
+          </td>
+        )}
+
+        {/* Sentiment */}
+        {isColVisible('sentiment') && (
+          <td className="px-4 py-3">
+            <SentimentBadge
+              sentiment={v?.fear_greed_sentiment}
+              index={v?.fear_greed_index}
+            />
+          </td>
+        )}
+
+        {/* Regime */}
+        {isColVisible('regime') && (
+          <td className="px-4 py-3">
+            <RegimeBadge regime={subnet.flow_regime} />
+          </td>
+        )}
+
+        {/* Status */}
+        {isColVisible('status') && (
+          <td className="px-4 py-3">
+            {subnet.is_eligible ? (
+              <span className="px-2 py-0.5 rounded text-xs font-medium bg-green-600/20 text-green-400">
+                Eligible
+              </span>
+            ) : (
+              <span className="px-2 py-0.5 rounded text-xs font-medium bg-red-600/20 text-red-400">
+                Excluded
+              </span>
+            )}
+          </td>
+        )}
+      </tr>
+
+      {/* Expanded detail row */}
+      {isExpanded && (
+        <tr>
+          <td colSpan={colSpan} className="p-0">
+            <SubnetExpandedRow
+              volatile={v}
+              identity={subnet.identity}
+              devActivity={subnet.dev_activity}
+              ownerAddress={subnet.owner_address}
+              ownerTake={subnet.owner_take}
+              ageDays={subnet.age_days}
+              holderCount={subnet.holder_count}
+              ineligibilityReasons={subnet.ineligibility_reasons}
+              taoflow1d={subnet.taoflow_1d}
+              taoflow3d={subnet.taoflow_3d}
+              taoflow7d={subnet.taoflow_7d}
+              taoflow14d={subnet.taoflow_14d}
+            />
+          </td>
+        </tr>
+      )}
+    </>
   )
 }

@@ -241,6 +241,11 @@ class CostBasisService:
                 position.unrealized_pnl_pct = (
                     (position.unrealized_pnl_tao / cost_basis.net_invested_tao) * 100
                 )
+            else:
+                # Reset P&L when cost basis is zero/negative (e.g. fully unstaked then re-staked
+                # before the new stake is detected by balance history sync)
+                position.unrealized_pnl_tao = Decimal("0")
+                position.unrealized_pnl_pct = Decimal("0")
 
     async def get_cost_basis(self, netuid: int) -> Optional[PositionCostBasis]:
         """Get cost basis for a specific position."""

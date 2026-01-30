@@ -2,7 +2,6 @@ import { ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard,
-  Wallet,
   Globe,
   AlertTriangle,
   ArrowRightLeft,
@@ -18,7 +17,6 @@ interface LayoutProps {
 
 const navItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/positions', label: 'Positions', icon: Wallet },
   { path: '/subnets', label: 'Subnets', icon: Globe },
   { path: '/strategy', label: 'Strategy', icon: Shield },
   { path: '/alerts', label: 'Alerts', icon: AlertTriangle },

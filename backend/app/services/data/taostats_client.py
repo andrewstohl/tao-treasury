@@ -506,6 +506,60 @@ class TaoStatsClient:
             cache_ttl=timedelta(minutes=2),
         )
 
+    async def get_pools_full(
+        self,
+        limit: int = 200,
+        network: str = "finney"
+    ) -> Dict[str, Any]:
+        """Get full dTAO pool data including sparklines, sentiment, volumes.
+
+        Same endpoint as get_pools() but with a separate cache key so
+        the enriched endpoint caching doesn't conflict with sync caching.
+
+        Endpoint: GET /api/dtao/pool/latest/v1
+        """
+        return await self._request(
+            "GET",
+            "/api/dtao/pool/latest/v1",
+            params={"network": network, "limit": limit},
+            cache_key="pools:full",
+            cache_ttl=timedelta(minutes=2),
+        )
+
+    async def get_subnet_identity(
+        self,
+        limit: int = 200,
+        network: str = "finney",
+    ) -> Dict[str, Any]:
+        """Get subnet identity metadata (description, summary, tags, links, logo).
+
+        Endpoint: GET /api/subnet/identity/v1
+        """
+        return await self._request(
+            "GET",
+            "/api/subnet/identity/v1",
+            params={"network": network, "limit": limit},
+            cache_key="subnet_identity:all",
+            cache_ttl=timedelta(minutes=30),
+        )
+
+    async def get_dev_activity(
+        self,
+        limit: int = 200,
+        network: str = "finney",
+    ) -> Dict[str, Any]:
+        """Get subnet developer activity metrics.
+
+        Endpoint: GET /api/dev_activity/latest/v1
+        """
+        return await self._request(
+            "GET",
+            "/api/dev_activity/latest/v1",
+            params={"network": network, "limit": limit},
+            cache_key="dev_activity:all",
+            cache_ttl=timedelta(minutes=30),
+        )
+
     async def get_pool_history(
         self,
         netuid: Optional[int] = None,

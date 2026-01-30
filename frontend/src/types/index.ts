@@ -16,17 +16,27 @@ export interface PositionSummary {
   netuid: number
   subnet_name: string
   tao_value_mid: string
+  tao_value_exec_50pct: string
+  tao_value_exec_100pct: string
   alpha_balance: string
   weight_pct: string
+  entry_price_tao: string
+  entry_date: string | null
   current_apy: string
   daily_yield_tao: string
   cost_basis_tao: string
+  realized_pnl_tao: string
   unrealized_pnl_tao: string
   unrealized_pnl_pct: string
+  exit_slippage_50pct: string
+  exit_slippage_100pct: string
   health_status: 'green' | 'yellow' | 'red'
   health_reason: string | null
   validator_hotkey: string | null
   recommended_action: string | null
+  action_reason: string | null
+  flow_regime: string | null
+  emission_share: string | null
 }
 
 export interface ActionItem {
@@ -88,39 +98,7 @@ export interface Dashboard {
   last_sync: string | null
   data_stale: boolean
   generated_at: string
-}
-
-export interface Position {
-  id: number
-  wallet_address: string
-  netuid: number
-  alpha_balance: string
-  tao_value_mid: string
-  tao_value_exec_50pct: string
-  tao_value_exec_100pct: string
-  weight_pct: string
-  entry_price_tao: string
-  entry_date: string | null
-  cost_basis_tao: string
-  realized_pnl_tao: string
-  unrealized_pnl_tao: string
-  unrealized_pnl_pct: string
-  exit_slippage_50pct: string
-  exit_slippage_100pct: string
-  validator_hotkey: string | null
-  recommended_action: string | null
-  action_reason: string | null
-  subnet_name: string | null
-  flow_regime: string | null
-  emission_share: string | null
-  // Yield fields
-  current_apy: string | null
-  daily_yield_tao: string | null
-  // Health scoring
-  health_status: 'green' | 'yellow' | 'red'
-  health_reason: string | null
-  created_at: string
-  updated_at: string
+  market_pulse: MarketPulse | null
 }
 
 export interface Subnet {
@@ -137,6 +115,8 @@ export interface Subnet {
   pool_tao_reserve: string
   pool_alpha_reserve: string
   alpha_price_tao: string
+  rank: number | null
+  market_cap_tao: string
   holder_count: number
   taoflow_1d: string
   taoflow_3d: string
@@ -150,6 +130,92 @@ export interface Subnet {
   category: string | null
   created_at: string
   updated_at: string
+}
+
+// Enriched subnet types (volatile pool data from TaoStats)
+export interface SparklinePoint {
+  timestamp: string
+  price: number
+}
+
+export interface VolatilePoolData {
+  price_change_1h: number | null
+  price_change_24h: number | null
+  price_change_7d: number | null
+  price_change_30d: number | null
+  high_24h: number | null
+  low_24h: number | null
+  market_cap_change_24h: number | null
+  tao_volume_24h: number | null
+  tao_buy_volume_24h: number | null
+  tao_sell_volume_24h: number | null
+  buys_24h: number | null
+  sells_24h: number | null
+  buyers_24h: number | null
+  sellers_24h: number | null
+  fear_greed_index: number | null
+  fear_greed_sentiment: string | null
+  sparkline_7d: SparklinePoint[] | null
+  alpha_in_pool: number | null
+  alpha_staked: number | null
+  total_alpha: number | null
+  root_prop: number | null
+  startup_mode: boolean | null
+}
+
+export interface SubnetIdentity {
+  tagline: string | null
+  summary: string | null
+  tags: string[] | null
+  github_repo: string | null
+  subnet_url: string | null
+  logo_url: string | null
+  discord: string | null
+  twitter: string | null
+  subnet_contact: string | null
+}
+
+export interface DevActivity {
+  repo_url: string | null
+  commits_1d: number | null
+  commits_7d: number | null
+  commits_30d: number | null
+  prs_opened_7d: number | null
+  prs_merged_7d: number | null
+  issues_opened_30d: number | null
+  issues_closed_30d: number | null
+  reviews_30d: number | null
+  unique_contributors_7d: number | null
+  unique_contributors_30d: number | null
+  last_event_at: string | null
+  days_since_last_event: number | null
+}
+
+export interface EnrichedSubnet extends Subnet {
+  volatile: VolatilePoolData | null
+  identity: SubnetIdentity | null
+  dev_activity: DevActivity | null
+}
+
+export interface EnrichedSubnetListResponse {
+  subnets: EnrichedSubnet[]
+  total: number
+  eligible_count: number
+  taostats_available: boolean
+  cache_age_seconds: number | null
+}
+
+export interface MarketPulse {
+  portfolio_24h_change_pct: string | null
+  portfolio_7d_change_pct: string | null
+  avg_sentiment_index: number | null
+  avg_sentiment_label: string | null
+  total_volume_24h_tao: string | null
+  net_buy_pressure_pct: string | null
+  top_mover_netuid: number | null
+  top_mover_name: string | null
+  top_mover_change_24h: string | null
+  taostats_available: boolean
 }
 
 export interface Alert {

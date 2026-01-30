@@ -47,6 +47,10 @@ class Subnet(Base):
     pool_alpha_reserve: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0"))
     alpha_price_tao: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0"))
 
+    # Ranking and market cap (from pool API)
+    rank: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    market_cap_tao: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0"))
+
     # Holder metrics
     holder_count: Mapped[int] = mapped_column(Integer, default=0)
 

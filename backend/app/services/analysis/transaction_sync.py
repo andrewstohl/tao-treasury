@@ -242,6 +242,154 @@ class TransactionSyncService:
 
         return tx
 
+    async def sync_root_transactions(self) -> Dict[str, Any]:
+        """Create StakeTransaction records for Root (SN0) from balance history.
+
+        The dtao/trade/v1 endpoint only captures dTAO alpha swaps, not Root
+        staking (which uses traditional add_stake delegation). This method
+        detects staking events by analyzing stake_balance_history for SN0:
+        significant balance jumps between consecutive snapshots indicate
+        stake/unstake events.
+
+        For Root, alpha = TAO (1:1 ratio), so effective_price is always 1.0.
+        """
+        logger.info("Syncing Root (SN0) transactions from balance history")
+
+        results = {
+            "new_transactions": 0,
+            "stake_transactions": 0,
+            "unstake_transactions": 0,
+            "skipped_existing": 0,
+        }
+
+        # Minimum balance change to be considered a stake/unstake (not yield)
+        # Normal daily Root yield is tiny (< 0.05 TAO/day for typical positions)
+        STAKE_THRESHOLD = Decimal("0.1")
+
+        try:
+            # Get Root position hotkey
+            async with get_db_context() as db:
+                from app.models.position import Position
+                stmt = select(Position).where(
+                    Position.wallet_address == self.wallet_address,
+                    Position.netuid == 0,
+                )
+                result = await db.execute(stmt)
+                position = result.scalar_one_or_none()
+
+            if not position or not position.validator_hotkey:
+                logger.info("No Root position or hotkey found, skipping")
+                return results
+
+            hotkey = position.validator_hotkey
+
+            # Fetch stake balance history for Root (90 days)
+            import time
+            ts_start = int(time.time()) - (90 * 86400)
+            history = await taostats_client.get_stake_balance_history(
+                coldkey=self.wallet_address,
+                hotkey=hotkey,
+                netuid=0,
+                timestamp_start=ts_start,
+                limit=200,
+            )
+            snapshots = history.get("data", [])
+
+            if not snapshots:
+                logger.info("No Root balance history found")
+                return results
+
+            # Sort by timestamp ascending
+            snapshots.sort(key=lambda x: x.get("timestamp", ""))
+
+            async with get_db_context() as db:
+                prev_balance = Decimal("0")
+
+                for snap in snapshots:
+                    balance_rao = snap.get("balance", 0)
+                    balance = Decimal(str(balance_rao)) / RAO_PER_TAO
+                    timestamp_str = snap.get("timestamp", "")
+
+                    if not timestamp_str:
+                        continue
+
+                    timestamp = datetime.fromisoformat(
+                        timestamp_str.replace("Z", "+00:00")
+                    )
+
+                    delta = balance - prev_balance
+                    prev_balance = balance
+
+                    # Skip tiny changes (yield, not staking)
+                    if abs(delta) < STAKE_THRESHOLD:
+                        continue
+
+                    # Determine stake or unstake
+                    if delta > 0:
+                        tx_type = "stake"
+                        amount = delta
+                    else:
+                        tx_type = "unstake"
+                        amount = abs(delta)
+
+                    # Create unique extrinsic_id from block number (fits varchar(32))
+                    block_num = snap.get("block_number", 0)
+                    extrinsic_id = f"r0-{block_num}"
+
+                    # Check if already exists
+                    check_stmt = select(StakeTransaction).where(
+                        StakeTransaction.extrinsic_id == extrinsic_id
+                    )
+                    check_result = await db.execute(check_stmt)
+                    if check_result.scalar_one_or_none():
+                        results["skipped_existing"] += 1
+                        continue
+
+                    tx = StakeTransaction(
+                        wallet_address=self.wallet_address,
+                        extrinsic_id=extrinsic_id,
+                        block_number=0,
+                        timestamp=timestamp,
+                        tx_hash=None,
+                        tx_type=tx_type,
+                        call_name=f"root.{tx_type}_detected",
+                        netuid=0,
+                        hotkey=hotkey,
+                        amount_tao=amount,
+                        alpha_amount=amount,  # Root alpha = TAO
+                        limit_price=Decimal("1"),  # Root price is always 1:1
+                        usd_value=Decimal("0"),
+                        fee_rao=0,
+                        fee_tao=Decimal("0"),
+                        success=True,
+                        error_message=None,
+                        raw_args={"source": "balance_history", "snapshot": snap},
+                    )
+                    db.add(tx)
+
+                    results["new_transactions"] += 1
+                    if tx_type == "stake":
+                        results["stake_transactions"] += 1
+                    else:
+                        results["unstake_transactions"] += 1
+
+                    logger.debug(
+                        "Detected Root transaction from balance history",
+                        type=tx_type,
+                        amount_tao=float(amount),
+                        timestamp=timestamp_str,
+                    )
+
+                await db.commit()
+
+            logger.info("Root transaction sync completed", results=results)
+
+        except Exception as e:
+            logger.error("Root transaction sync failed", error=str(e))
+            results["errors"] = [str(e)]
+
+        return results
+
     async def get_transactions_by_netuid(self, netuid: int) -> List[StakeTransaction]:
         """Get all transactions for a specific subnet."""
         async with get_db_context() as db:

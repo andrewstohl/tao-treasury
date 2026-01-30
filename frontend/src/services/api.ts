@@ -32,17 +32,6 @@ export const api = {
     return data
   },
 
-  // Positions
-  getPositions: async () => {
-    const { data } = await client.get('/api/v1/positions')
-    return data
-  },
-
-  getPosition: async (netuid: number) => {
-    const { data } = await client.get(`/api/v1/positions/${netuid}`)
-    return data
-  },
-
   // Subnets
   getSubnets: async (eligibleOnly: boolean = false) => {
     const { data } = await client.get(`/api/v1/subnets?eligible_only=${eligibleOnly}`)
@@ -51,6 +40,11 @@ export const api = {
 
   getSubnet: async (netuid: number) => {
     const { data } = await client.get(`/api/v1/subnets/${netuid}`)
+    return data
+  },
+
+  getEnrichedSubnets: async (eligibleOnly: boolean = false) => {
+    const { data } = await client.get(`/api/v1/subnets/enriched?eligible_only=${eligibleOnly}`)
     return data
   },
 
