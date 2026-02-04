@@ -1,6 +1,7 @@
 """Portfolio endpoints."""
 
-from datetime import datetime, timezone
+import math
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from typing import Dict, List, Optional
 
@@ -13,6 +14,7 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.portfolio import PortfolioSnapshot, NAVHistory
 from app.models.position import Position
+from app.models.transaction import PositionYieldHistory
 from app.models.subnet import Subnet
 from app.models.alert import Alert
 from app.models.trade import TradeRecommendation
@@ -26,12 +28,37 @@ from app.schemas.portfolio import (
     YieldSummary,
     PnLSummary,
     PositionSummary,
-    ActionItem,
-    PortfolioHealth,
     MarketPulse,
+    # Phase 1 – Overview
+    PortfolioOverviewResponse,
+    RollingReturn,
+    TaoPriceContext,
+    DualCurrencyValue,
+    OverviewPnL,
+    OverviewYield,
+    CompoundingProjection,
+    # Phase 2 – Attribution
+    AttributionResponse,
+    WaterfallStep,
+    PositionContribution,
+    IncomeStatement,
+    # Phase 3 – Scenario Analysis
+    ScenarioResponse,
+    SensitivityPoint,
+    StressScenario,
+    AllocationExposure,
+    RiskExposure,
+    # Phase 4 – Risk Metrics
+    RiskMetricsResponse,
+    DailyReturnPoint,
+    BenchmarkComparison,
 )
 from app.services.data.data_sync import data_sync_service
 from app.services.data.taostats_client import taostats_client, TaoStatsError
+from app.services.data.coingecko_client import fetch_tao_price as cg_fetch_tao_price
+from app.services.analysis.attribution import get_attribution_service
+from app.services.analysis.scenario import get_scenario_service
+from app.services.analysis.risk_metrics import get_risk_metrics_service
 
 logger = structlog.get_logger()
 
@@ -185,42 +212,8 @@ async def get_portfolio_history(
     )
 
 
-def _compute_position_health(p, weight_pct: Decimal, avg_apy: Decimal) -> tuple[str, str]:
-    """Compute health status for a position.
-
-    Returns (status, reason) where status is green/yellow/red.
-    """
-    reasons = []
-
-    # Check P&L
-    pnl_pct = float(p.unrealized_pnl_pct)
-    if pnl_pct < -10:
-        reasons.append(f"Down {abs(pnl_pct):.1f}% from cost basis")
-        status = "red"
-    elif pnl_pct < -5:
-        reasons.append(f"Down {abs(pnl_pct):.1f}%")
-        status = "yellow"
-    else:
-        status = "green"
-
-    # Check APY relative to portfolio average
-    pos_apy = float(p.current_apy)
-    avg = float(avg_apy)
-    if avg > 0 and pos_apy < avg * 0.5:
-        reasons.append(f"APY ({pos_apy:.0f}%) below average ({avg:.0f}%)")
-        status = "yellow" if status == "green" else status
-
-    # Check concentration risk
-    if float(weight_pct) > 20:
-        reasons.append(f"High concentration ({float(weight_pct):.0f}%)")
-        status = "yellow" if status == "green" else status
-
-    reason = "; ".join(reasons) if reasons else None
-    return status, reason
-
-
 async def _get_top_positions(db: AsyncSession, wallet: str, limit: int = 10) -> list[PositionSummary]:
-    """Helper to get top positions by TAO value with health scoring."""
+    """Helper to get top positions by TAO value."""
     stmt = (
         select(Position)
         .where(Position.wallet_address == wallet)
@@ -239,15 +232,11 @@ async def _get_top_positions(db: AsyncSession, wallet: str, limit: int = 10) -> 
         for s in subnet_result.scalars().all():
             subnet_lookup[s.netuid] = s
 
-    # Calculate total value and average APY for weight/health calculation
     total_value = sum(p.tao_value_mid for p in positions)
-    total_weighted_apy = sum(p.tao_value_mid * p.current_apy for p in positions)
-    avg_apy = total_weighted_apy / total_value if total_value > 0 else Decimal("0")
 
     summaries = []
     for p in positions:
         weight_pct = (p.tao_value_mid / total_value * 100) if total_value else Decimal("0")
-        health_status, health_reason = _compute_position_health(p, weight_pct, avg_apy)
         subnet = subnet_lookup.get(p.netuid)
 
         summaries.append(PositionSummary(
@@ -268,8 +257,6 @@ async def _get_top_positions(db: AsyncSession, wallet: str, limit: int = 10) -> 
             unrealized_pnl_pct=p.unrealized_pnl_pct,
             exit_slippage_50pct=p.exit_slippage_50pct,
             exit_slippage_100pct=p.exit_slippage_100pct,
-            health_status=health_status,
-            health_reason=health_reason,
             validator_hotkey=p.validator_hotkey,
             recommended_action=p.recommended_action,
             action_reason=p.action_reason,
@@ -546,79 +533,13 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)) -> DashboardResponse
     # Get all positions for dashboard (no limit)
     top_positions = await _get_top_positions(db, wallet, limit=500)
 
-    # Generate action items based on position health
-    action_items = []
-    red_count = 0
-    yellow_count = 0
-
-    for pos in top_positions:
-        if pos.health_status == "red":
-            red_count += 1
-            if float(pos.unrealized_pnl_pct) < -10:
-                action_items.append(ActionItem(
-                    priority="high",
-                    action_type="cut_loss",
-                    title=f"Review {pos.subnet_name} position",
-                    description=f"Down {abs(float(pos.unrealized_pnl_pct)):.1f}% from cost basis. Consider reducing exposure.",
-                    subnet_id=pos.netuid,
-                ))
-        elif pos.health_status == "yellow":
-            yellow_count += 1
-
-        # Check for take profit opportunities
-        if float(pos.unrealized_pnl_pct) > 25:
-            action_items.append(ActionItem(
-                priority="medium",
-                action_type="take_profit",
-                title=f"Consider taking profit on {pos.subnet_name}",
-                description=f"Up {float(pos.unrealized_pnl_pct):.1f}% - you could lock in {float(pos.unrealized_pnl_tao):.2f} TAO profit.",
-                subnet_id=pos.netuid,
-                potential_gain_tao=pos.unrealized_pnl_tao,
-            ))
-
-        # Check for concentration risk
-        if float(pos.weight_pct) > 20:
-            action_items.append(ActionItem(
-                priority="medium",
-                action_type="rebalance",
-                title=f"High concentration in {pos.subnet_name}",
-                description=f"{float(pos.weight_pct):.1f}% of portfolio. Consider diversifying to reduce risk.",
-                subnet_id=pos.netuid,
-            ))
-
-    # Compute portfolio health
-    if red_count > 0:
-        health_status = "red"
-        health_score = max(0, 100 - red_count * 20 - yellow_count * 5)
-        top_issue = f"{red_count} position(s) need immediate attention"
-    elif yellow_count > 2:
-        health_status = "yellow"
-        health_score = max(50, 100 - yellow_count * 10)
-        top_issue = f"{yellow_count} positions need review"
-    else:
-        health_status = "green"
-        health_score = min(100, 100 - yellow_count * 5)
-        top_issue = None
-
-    portfolio_health = PortfolioHealth(
-        status=health_status,
-        score=health_score,
-        top_issue=top_issue,
-        issues_count=red_count + yellow_count,
-    )
-
-    # Sort action items by priority
-    priority_order = {"high": 0, "medium": 1, "low": 2}
-    action_items.sort(key=lambda x: priority_order.get(x.priority, 99))
-
     # Compute market pulse from TaoStats pool data
     market_pulse = await _compute_market_pulse(top_positions)
 
     return DashboardResponse(
         portfolio=portfolio,
-        portfolio_health=portfolio_health,
         top_positions=top_positions,
-        action_items=action_items[:5],  # Top 5 action items
+        action_items=[],
         alerts=alerts,
         market_pulse=market_pulse,
         pending_recommendations=pending_count,
@@ -627,3 +548,558 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)) -> DashboardResponse
         data_stale=data_sync_service.is_data_stale(),
         generated_at=now,
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 – Portfolio Overview
+# ---------------------------------------------------------------------------
+
+_ROLLING_PERIODS = [
+    ("1d", 1),
+    ("7d", 7),
+    ("30d", 30),
+    ("90d", 90),
+]
+
+
+async def _compute_rolling_returns(
+    db: AsyncSession,
+    wallet: str,
+    nav_field_close: str,  # "nav_mid_close" or "nav_exec_close"
+) -> list[RollingReturn]:
+    """Compute rolling returns from NAVHistory for a given NAV variant.
+
+    Returns a list of RollingReturn objects for 1d/7d/30d/90d/inception.
+    """
+    now = datetime.now(timezone.utc)
+
+    # Fetch last 90 days of history (covers all rolling windows)
+    stmt = (
+        select(NAVHistory)
+        .where(NAVHistory.wallet_address == wallet)
+        .order_by(NAVHistory.date.desc())
+        .limit(365)
+    )
+    result = await db.execute(stmt)
+    records = result.scalars().all()
+
+    if not records:
+        return [
+            RollingReturn(period=p, data_points=0)
+            for p, _ in _ROLLING_PERIODS
+        ] + [RollingReturn(period="inception", data_points=0)]
+
+    # records are newest-first; build date->nav lookup
+    nav_by_date: dict[datetime, Decimal] = {}
+    for r in records:
+        nav_by_date[r.date.date() if hasattr(r.date, "date") else r.date] = getattr(r, nav_field_close)
+
+    latest_record = records[0]
+    latest_nav = getattr(latest_record, nav_field_close)
+    oldest_record = records[-1]
+
+    returns: list[RollingReturn] = []
+
+    for period_label, days_back in _ROLLING_PERIODS:
+        target_date = (now - timedelta(days=days_back)).date()
+
+        # Find the closest record on or before the target date
+        best_nav: Optional[Decimal] = None
+        best_dist = 999
+        for d, nav in nav_by_date.items():
+            d_date = d if not isinstance(d, datetime) else d.date()
+            dist = abs((d_date - target_date).days)
+            if dist < best_dist:
+                best_dist = dist
+                best_nav = nav
+
+        if best_nav and best_nav > 0:
+            return_tao = latest_nav - best_nav
+            return_pct = (return_tao / best_nav) * 100
+            returns.append(RollingReturn(
+                period=period_label,
+                return_pct=return_pct.quantize(Decimal("0.01")),
+                return_tao=return_tao.quantize(Decimal("0.000000001")),
+                nav_start=best_nav,
+                nav_end=latest_nav,
+                data_points=len(records),
+            ))
+        else:
+            returns.append(RollingReturn(period=period_label, data_points=len(records)))
+
+    # Inception return (oldest record to latest)
+    oldest_nav = getattr(oldest_record, nav_field_close)
+    if oldest_nav and oldest_nav > 0:
+        return_tao = latest_nav - oldest_nav
+        return_pct = (return_tao / oldest_nav) * 100
+        returns.append(RollingReturn(
+            period="inception",
+            return_pct=return_pct.quantize(Decimal("0.01")),
+            return_tao=return_tao.quantize(Decimal("0.000000001")),
+            nav_start=oldest_nav,
+            nav_end=latest_nav,
+            data_points=len(records),
+        ))
+    else:
+        returns.append(RollingReturn(period="inception", data_points=len(records)))
+
+    return returns
+
+
+def _compute_compounding(
+    nav_tao: Decimal,
+    apy: Decimal,
+    daily_yield_tao: Decimal,
+) -> CompoundingProjection:
+    """Compute forward yield projections with continuous compounding."""
+    nav_f = float(nav_tao) if nav_tao else 0.0
+    apy_f = float(apy) if apy else 0.0
+    daily_f = float(daily_yield_tao) if daily_yield_tao else 0.0
+
+    if nav_f <= 0 or apy_f <= 0:
+        return CompoundingProjection(
+            current_nav_tao=nav_tao,
+            current_apy=apy,
+        )
+
+    # Simple (linear) projection: daily_yield * days
+    simple_30 = daily_f * 30
+    simple_90 = daily_f * 90
+    simple_365 = daily_f * 365
+
+    # Continuous compounding: NAV * (e^(r*t) - 1)
+    # where r = ln(1 + APY/100) is the continuously compounded rate
+    r = math.log(1 + apy_f / 100)
+    comp_30 = nav_f * (math.exp(r * 30 / 365) - 1)
+    comp_90 = nav_f * (math.exp(r * 90 / 365) - 1)
+    comp_365 = nav_f * (math.exp(r) - 1)
+
+    return CompoundingProjection(
+        current_nav_tao=nav_tao,
+        current_apy=apy,
+        projected_30d_tao=Decimal(str(round(simple_30, 9))),
+        projected_90d_tao=Decimal(str(round(simple_90, 9))),
+        projected_365d_tao=Decimal(str(round(simple_365, 9))),
+        compounded_30d_tao=Decimal(str(round(comp_30, 9))),
+        compounded_90d_tao=Decimal(str(round(comp_90, 9))),
+        compounded_365d_tao=Decimal(str(round(comp_365, 9))),
+        projected_nav_365d_tao=Decimal(str(round(nav_f + comp_365, 9))),
+    )
+
+
+async def _get_tao_price_context() -> TaoPriceContext:
+    """Fetch TAO spot price and recent changes.
+
+    Primary source: CoinGecko (returns price + 24h/7d changes in one call).
+    Fallback: TaoStats price endpoint.
+    """
+    # 1. Try CoinGecko first — gives price + changes in a single call
+    try:
+        cg = await cg_fetch_tao_price()
+        if cg is not None and cg.price_usd > 0:
+            return TaoPriceContext(
+                price_usd=cg.price_usd,
+                change_24h_pct=cg.change_24h_pct,
+                change_7d_pct=cg.change_7d_pct,
+            )
+    except Exception as e:
+        logger.warning("CoinGecko price fetch failed, trying TaoStats", error=str(e))
+
+    # 2. Fallback to TaoStats
+    try:
+        price_data = await taostats_client.get_tao_price()
+        # TaoStats wraps response in {"data": [{"price": ...}]}
+        price_info = price_data.get("data", [{}])[0] if price_data.get("data") else {}
+        price_usd = Decimal(str(price_info.get("price", 0) or 0))
+
+        if price_usd <= 0:
+            logger.warning("TaoStats returned zero/negative price")
+            return TaoPriceContext()
+
+        return TaoPriceContext(price_usd=price_usd)
+    except (TaoStatsError, Exception) as e:
+        logger.warning("Failed to fetch TAO price from all sources", error=str(e))
+        return TaoPriceContext()
+
+
+@router.get("/overview", response_model=PortfolioOverviewResponse)
+async def get_portfolio_overview(
+    db: AsyncSession = Depends(get_db),
+) -> PortfolioOverviewResponse:
+    """Enhanced portfolio overview with dual-currency metrics, rolling returns,
+    and compounding projections.
+    """
+    settings = get_settings()
+    wallet = settings.wallet_address
+    now = datetime.now(timezone.utc)
+
+    # 1. Get latest portfolio snapshot for current values
+    snap_stmt = (
+        select(PortfolioSnapshot)
+        .where(PortfolioSnapshot.wallet_address == wallet)
+        .order_by(PortfolioSnapshot.timestamp.desc())
+        .limit(1)
+    )
+    snap_result = await db.execute(snap_stmt)
+    snapshot = snap_result.scalar_one_or_none()
+
+    if snapshot is None:
+        return PortfolioOverviewResponse(as_of=now)
+
+    # 2. Fetch TAO price context (spot + changes) concurrently with rolling returns
+    tao_price_ctx = await _get_tao_price_context()
+    tao_usd = float(tao_price_ctx.price_usd) if tao_price_ctx.price_usd else 0.0
+
+    # 3. Compute rolling returns for both mid and exec NAV
+    returns_mid = await _compute_rolling_returns(db, wallet, "nav_mid_close")
+    returns_exec = await _compute_rolling_returns(db, wallet, "nav_exec_close")
+
+    # 4. Build dual-currency NAV
+    nav_mid_tao = snapshot.nav_mid or Decimal("0")
+    nav_exec_tao = snapshot.nav_exec_100pct or Decimal("0")
+
+    nav_mid = DualCurrencyValue(
+        tao=nav_mid_tao,
+        usd=Decimal(str(round(float(nav_mid_tao) * tao_usd, 2))),
+    )
+    nav_exec = DualCurrencyValue(
+        tao=nav_exec_tao,
+        usd=Decimal(str(round(float(nav_exec_tao) * tao_usd, 2))),
+    )
+
+    # 5. Build dual-currency P&L
+    unrealized_tao = snapshot.total_unrealized_pnl_tao or Decimal("0")
+    realized_tao = snapshot.total_realized_pnl_tao or Decimal("0")
+    total_pnl_tao = unrealized_tao + realized_tao
+    cost_basis_tao = snapshot.total_cost_basis_tao or Decimal("0")
+    total_pnl_pct = (
+        (total_pnl_tao / cost_basis_tao * 100) if cost_basis_tao else Decimal("0")
+    )
+
+    pnl = OverviewPnL(
+        unrealized=DualCurrencyValue(
+            tao=unrealized_tao,
+            usd=Decimal(str(round(float(unrealized_tao) * tao_usd, 2))),
+        ),
+        realized=DualCurrencyValue(
+            tao=realized_tao,
+            usd=Decimal(str(round(float(realized_tao) * tao_usd, 2))),
+        ),
+        total=DualCurrencyValue(
+            tao=total_pnl_tao,
+            usd=Decimal(str(round(float(total_pnl_tao) * tao_usd, 2))),
+        ),
+        cost_basis=DualCurrencyValue(
+            tao=cost_basis_tao,
+            usd=Decimal(str(round(float(cost_basis_tao) * tao_usd, 2))),
+        ),
+        total_pnl_pct=total_pnl_pct.quantize(Decimal("0.01")) if isinstance(total_pnl_pct, Decimal) else Decimal("0"),
+    )
+
+    # 6. Build dual-currency yield
+    daily_yield = snapshot.daily_yield_tao or Decimal("0")
+    weekly_yield = snapshot.weekly_yield_tao or Decimal("0")
+    monthly_yield = snapshot.monthly_yield_tao or Decimal("0")
+    annualized_yield = daily_yield * 365
+    portfolio_apy = snapshot.portfolio_apy or Decimal("0")
+
+    # 6a. Compute cumulative yield from emission alpha (not PositionYieldHistory).
+    #
+    #     For each open position we know:
+    #       - alpha_balance:     total alpha tokens currently held
+    #       - cost_basis_tao:    TAO invested in remaining FIFO lots
+    #       - entry_price_tao:   weighted-avg TAO-per-alpha at purchase
+    #
+    #     alpha_purchased  = cost_basis_tao / entry_price_tao
+    #     emission_alpha   = alpha_balance - alpha_purchased
+    #     yield_gain       = emission_alpha × current_alpha_price
+    #
+    #     This cleanly separates "income from emissions" from "alpha repricing".
+    pos_stmt = select(Position).where(Position.wallet_address == wallet)
+    pos_result = await db.execute(pos_stmt)
+    open_positions = pos_result.scalars().all()
+
+    cumulative_yield_tao = Decimal("0")
+    for pos in open_positions:
+        if (
+            pos.entry_price_tao
+            and pos.entry_price_tao > 0
+            and pos.alpha_balance
+            and pos.alpha_balance > 0
+            and pos.cost_basis_tao is not None
+        ):
+            alpha_purchased = pos.cost_basis_tao / pos.entry_price_tao
+            emission_alpha = pos.alpha_balance - alpha_purchased
+            if emission_alpha > 0:
+                current_alpha_price = pos.tao_value_mid / pos.alpha_balance
+                cumulative_yield_tao += emission_alpha * current_alpha_price
+
+    yield_income = OverviewYield(
+        daily=DualCurrencyValue(
+            tao=daily_yield,
+            usd=Decimal(str(round(float(daily_yield) * tao_usd, 2))),
+        ),
+        weekly=DualCurrencyValue(
+            tao=weekly_yield,
+            usd=Decimal(str(round(float(weekly_yield) * tao_usd, 2))),
+        ),
+        monthly=DualCurrencyValue(
+            tao=monthly_yield,
+            usd=Decimal(str(round(float(monthly_yield) * tao_usd, 2))),
+        ),
+        annualized=DualCurrencyValue(
+            tao=annualized_yield,
+            usd=Decimal(str(round(float(annualized_yield) * tao_usd, 2))),
+        ),
+        portfolio_apy=portfolio_apy,
+        cumulative_tao=cumulative_yield_tao,
+        yield_1d_tao=daily_yield,
+        yield_7d_tao=weekly_yield,
+        yield_30d_tao=monthly_yield,
+    )
+
+    # 7. Compounding projection
+    compounding = _compute_compounding(nav_mid_tao, portfolio_apy, daily_yield)
+
+    # 8. ATH and drawdown
+    ath_stmt = (
+        select(func.max(NAVHistory.nav_exec_ath))
+        .where(NAVHistory.wallet_address == wallet)
+    )
+    ath_result = await db.execute(ath_stmt)
+    nav_ath = ath_result.scalar() or Decimal("0")
+    drawdown_pct = (
+        ((nav_ath - nav_exec_tao) / nav_ath * 100) if nav_ath > 0 else Decimal("0")
+    )
+
+    # 9. Position count
+    pos_count = snapshot.active_positions or 0
+    eligible = snapshot.eligible_subnets or 0
+
+    return PortfolioOverviewResponse(
+        nav_mid=nav_mid,
+        nav_exec=nav_exec,
+        tao_price=tao_price_ctx,
+        returns_mid=returns_mid,
+        returns_exec=returns_exec,
+        pnl=pnl,
+        yield_income=yield_income,
+        compounding=compounding,
+        nav_ath_tao=nav_ath,
+        drawdown_from_ath_pct=drawdown_pct.quantize(Decimal("0.01")) if isinstance(drawdown_pct, Decimal) else Decimal("0"),
+        active_positions=pos_count,
+        eligible_subnets=eligible,
+        overall_regime=snapshot.overall_regime or "neutral",
+        as_of=snapshot.timestamp,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 – Performance Attribution
+# ---------------------------------------------------------------------------
+
+@router.get("/attribution", response_model=AttributionResponse)
+async def get_attribution(
+    days: int = Query(default=7, ge=1, le=90),
+) -> AttributionResponse:
+    """Decompose portfolio returns into yield, price, and fee components.
+
+    Returns a waterfall breakdown, per-position contributions, and
+    a period income statement.
+    """
+    svc = get_attribution_service()
+    try:
+        result = await svc.compute_attribution(days=days)
+    except Exception:
+        logger.exception("Attribution computation failed", days=days)
+        now = datetime.now(timezone.utc)
+        return AttributionResponse(
+            period_days=days, start=now - timedelta(days=days), end=now,
+            nav_start_tao=Decimal("0"), nav_end_tao=Decimal("0"),
+            total_return_tao=Decimal("0"), total_return_pct=Decimal("0"),
+            yield_income_tao=Decimal("0"), yield_income_pct=Decimal("0"),
+            price_effect_tao=Decimal("0"), price_effect_pct=Decimal("0"),
+            fees_tao=Decimal("0"), fees_pct=Decimal("0"),
+            net_flows_tao=Decimal("0"), waterfall=[], position_contributions=[],
+            income_statement=IncomeStatement(
+                yield_income_tao=Decimal("0"), realized_gains_tao=Decimal("0"),
+                fees_tao=Decimal("0"), net_income_tao=Decimal("0"),
+            ),
+        )
+
+    return AttributionResponse(
+        period_days=result["period_days"],
+        start=datetime.fromisoformat(result["start"]),
+        end=datetime.fromisoformat(result["end"]),
+        nav_start_tao=Decimal(result["nav_start_tao"]),
+        nav_end_tao=Decimal(result["nav_end_tao"]),
+        total_return_tao=Decimal(result["total_return_tao"]),
+        total_return_pct=Decimal(result["total_return_pct"]),
+        yield_income_tao=Decimal(result["yield_income_tao"]),
+        yield_income_pct=Decimal(result["yield_income_pct"]),
+        price_effect_tao=Decimal(result["price_effect_tao"]),
+        price_effect_pct=Decimal(result["price_effect_pct"]),
+        fees_tao=Decimal(result["fees_tao"]),
+        fees_pct=Decimal(result["fees_pct"]),
+        net_flows_tao=Decimal(result["net_flows_tao"]),
+        waterfall=[
+            WaterfallStep(
+                label=w["label"],
+                value_tao=Decimal(w["value_tao"]),
+                is_total=w["is_total"],
+            )
+            for w in result["waterfall"]
+        ],
+        position_contributions=[
+            PositionContribution(
+                netuid=pc["netuid"],
+                subnet_name=pc["subnet_name"],
+                start_value_tao=Decimal(pc["start_value_tao"]),
+                return_tao=Decimal(pc["return_tao"]),
+                return_pct=Decimal(pc["return_pct"]),
+                yield_tao=Decimal(pc["yield_tao"]),
+                price_effect_tao=Decimal(pc["price_effect_tao"]),
+                weight_pct=Decimal(pc["weight_pct"]),
+                contribution_pct=Decimal(pc["contribution_pct"]),
+            )
+            for pc in result["position_contributions"]
+        ],
+        income_statement=IncomeStatement(
+            yield_income_tao=Decimal(result["income_statement"]["yield_income_tao"]),
+            realized_gains_tao=Decimal(result["income_statement"]["realized_gains_tao"]),
+            fees_tao=Decimal(result["income_statement"]["fees_tao"]),
+            net_income_tao=Decimal(result["income_statement"]["net_income_tao"]),
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 – TAO Price Sensitivity & Scenario Analysis
+# ---------------------------------------------------------------------------
+
+@router.get("/scenarios", response_model=ScenarioResponse)
+async def get_scenarios() -> ScenarioResponse:
+    """TAO price sensitivity table, stress scenarios, and risk exposure.
+
+    Computes portfolio USD value at various TAO price shocks (±10/20/50%),
+    runs pre-built stress scenarios (crash, contagion, pump, rotation),
+    and reports portfolio risk exposure including exit slippage.
+    """
+    svc = get_scenario_service()
+    try:
+        result = await svc.compute_scenarios()
+    except Exception:
+        logger.exception("Scenario computation failed")
+        result = svc._empty_result()
+
+    return ScenarioResponse(
+        current_tao_price_usd=Decimal(str(result["current_tao_price_usd"])),
+        nav_tao=Decimal(str(result["nav_tao"])),
+        nav_usd=Decimal(str(result["nav_usd"])),
+        allocation=AllocationExposure(
+            root_tao=Decimal(str(result["allocation"]["root_tao"])),
+            root_pct=Decimal(str(result["allocation"]["root_pct"])),
+            dtao_tao=Decimal(str(result["allocation"]["dtao_tao"])),
+            dtao_pct=Decimal(str(result["allocation"]["dtao_pct"])),
+            unstaked_tao=Decimal(str(result["allocation"]["unstaked_tao"])),
+        ),
+        sensitivity=[
+            SensitivityPoint(
+                shock_pct=s["shock_pct"],
+                tao_price_usd=Decimal(str(s["tao_price_usd"])),
+                nav_tao=Decimal(str(s["nav_tao"])),
+                nav_usd=Decimal(str(s["nav_usd"])),
+                usd_change=Decimal(str(s["usd_change"])),
+                usd_change_pct=Decimal(str(s["usd_change_pct"])),
+            )
+            for s in result["sensitivity"]
+        ],
+        scenarios=[
+            StressScenario(
+                id=sc["id"],
+                name=sc["name"],
+                description=sc["description"],
+                tao_price_change_pct=sc["tao_price_change_pct"],
+                alpha_impact_pct=sc["alpha_impact_pct"],
+                new_tao_price_usd=Decimal(str(sc["new_tao_price_usd"])),
+                nav_tao=Decimal(str(sc["nav_tao"])),
+                nav_usd=Decimal(str(sc["nav_usd"])),
+                tao_impact=Decimal(str(sc["tao_impact"])),
+                usd_impact=Decimal(str(sc["usd_impact"])),
+                usd_impact_pct=Decimal(str(sc["usd_impact_pct"])),
+            )
+            for sc in result["scenarios"]
+        ],
+        risk_exposure=RiskExposure(
+            tao_beta=Decimal(str(result["risk_exposure"]["tao_beta"])),
+            dtao_weight_pct=Decimal(str(result["risk_exposure"]["dtao_weight_pct"])),
+            root_weight_pct=Decimal(str(result["risk_exposure"]["root_weight_pct"])),
+            total_exit_slippage_pct=Decimal(str(result["risk_exposure"]["total_exit_slippage_pct"])),
+            total_exit_slippage_tao=Decimal(str(result["risk_exposure"]["total_exit_slippage_tao"])),
+            note=result["risk_exposure"]["note"],
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 – Risk-Adjusted Returns & Benchmarking
+# ---------------------------------------------------------------------------
+
+@router.get("/risk-metrics", response_model=RiskMetricsResponse)
+async def get_risk_metrics(
+    days: int = Query(default=90, ge=7, le=365),
+) -> RiskMetricsResponse:
+    """Risk-adjusted return metrics with benchmark comparisons.
+
+    Computes Sharpe ratio, Sortino ratio, Calmar ratio, annualized
+    volatility, max drawdown, and win rate from daily NAV returns.
+    Uses Root (SN0) validator APY as the risk-free rate.
+
+    Benchmarks: Root-only staking, Hold TAO, and High-emission top 3.
+    """
+    svc = get_risk_metrics_service()
+    try:
+        result = await svc.compute_risk_metrics(days=days)
+    except Exception:
+        logger.exception("Risk metrics computation failed", days=days)
+        result = svc._empty_result(days)
+
+    return RiskMetricsResponse(
+        period_days=result["period_days"],
+        start=result["start"],
+        end=result["end"],
+        annualized_return_pct=Decimal(str(result["annualized_return_pct"])),
+        annualized_volatility_pct=Decimal(str(result["annualized_volatility_pct"])),
+        downside_deviation_pct=Decimal(str(result["downside_deviation_pct"])),
+        sharpe_ratio=Decimal(str(result["sharpe_ratio"])),
+        sortino_ratio=Decimal(str(result["sortino_ratio"])),
+        calmar_ratio=Decimal(str(result["calmar_ratio"])),
+        max_drawdown_pct=Decimal(str(result["max_drawdown_pct"])),
+        max_drawdown_tao=Decimal(str(result["max_drawdown_tao"])),
+        risk_free_rate_pct=Decimal(str(result["risk_free_rate_pct"])),
+        risk_free_source=result["risk_free_source"],
+        win_rate_pct=Decimal(str(result["win_rate_pct"])),
+        best_day_pct=Decimal(str(result["best_day_pct"])),
+        worst_day_pct=Decimal(str(result["worst_day_pct"])),
+        benchmarks=[
+            BenchmarkComparison(
+                id=b["id"],
+                name=b["name"],
+                description=b["description"],
+                annualized_return_pct=Decimal(str(b["annualized_return_pct"])),
+                annualized_volatility_pct=Decimal(str(b["annualized_volatility_pct"])) if b.get("annualized_volatility_pct") is not None else None,
+                sharpe_ratio=Decimal(str(b["sharpe_ratio"])) if b.get("sharpe_ratio") is not None else None,
+                alpha_pct=Decimal(str(b["alpha_pct"])),
+            )
+            for b in result["benchmarks"]
+        ],
+        daily_returns=[
+            DailyReturnPoint(
+                date=d["date"],
+                return_pct=Decimal(str(d["return_pct"])),
+                nav_tao=Decimal(str(d["nav_tao"])),
+            )
+            for d in result["daily_returns"]
+        ],
+    )
+

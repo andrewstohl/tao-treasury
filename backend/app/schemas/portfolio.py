@@ -1,5 +1,6 @@
 """Portfolio schemas."""
 
+import math
 from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional
@@ -120,9 +121,6 @@ class PositionSummary(BaseModel):
     # Slippage
     exit_slippage_50pct: Decimal = Field(default=Decimal("0"))
     exit_slippage_100pct: Decimal = Field(default=Decimal("0"))
-    # Health status: green (good), yellow (needs attention), red (action required)
-    health_status: str = "green"
-    health_reason: Optional[str] = None
     # Status & recommendation
     validator_hotkey: Optional[str] = None
     recommended_action: Optional[str] = None
@@ -152,14 +150,6 @@ class AlertSummary(BaseModel):
     info: int = 0
 
 
-class PortfolioHealth(BaseModel):
-    """Overall portfolio health assessment."""
-    status: str = "green"  # green, yellow, red
-    score: int = 100  # 0-100
-    top_issue: Optional[str] = None
-    issues_count: int = 0
-
-
 class MarketPulse(BaseModel):
     """Aggregated market data for held positions."""
     portfolio_24h_change_pct: Optional[Decimal] = None
@@ -177,7 +167,6 @@ class MarketPulse(BaseModel):
 class DashboardResponse(BaseModel):
     """Complete dashboard response."""
     portfolio: PortfolioSummary
-    portfolio_health: PortfolioHealth = Field(default_factory=PortfolioHealth)
     top_positions: List[PositionSummary] = Field(default_factory=list)
     action_items: List[ActionItem] = Field(default_factory=list)
     alerts: AlertSummary
@@ -187,3 +176,286 @@ class DashboardResponse(BaseModel):
     last_sync: Optional[datetime] = None
     data_stale: bool = False
     generated_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 – Portfolio Overview (dual-currency, rolling returns, projections)
+# ---------------------------------------------------------------------------
+
+class RollingReturn(BaseModel):
+    """Rolling return for a specific look-back period."""
+    period: str  # "1d", "7d", "30d", "90d", "inception"
+    return_pct: Optional[Decimal] = None
+    return_tao: Optional[Decimal] = None
+    nav_start: Optional[Decimal] = None
+    nav_end: Optional[Decimal] = None
+    data_points: int = 0
+
+
+class TaoPriceContext(BaseModel):
+    """TAO spot price with recent changes."""
+    price_usd: Decimal = Field(default=Decimal("0"))
+    change_24h_pct: Optional[Decimal] = None
+    change_7d_pct: Optional[Decimal] = None
+
+
+class DualCurrencyValue(BaseModel):
+    """A value expressed in both TAO and USD."""
+    tao: Decimal = Field(default=Decimal("0"))
+    usd: Decimal = Field(default=Decimal("0"))
+
+
+class OverviewPnL(BaseModel):
+    """P&L summary in both TAO and USD."""
+    unrealized: DualCurrencyValue = Field(default_factory=DualCurrencyValue)
+    realized: DualCurrencyValue = Field(default_factory=DualCurrencyValue)
+    total: DualCurrencyValue = Field(default_factory=DualCurrencyValue)
+    cost_basis: DualCurrencyValue = Field(default_factory=DualCurrencyValue)
+    total_pnl_pct: Decimal = Field(default=Decimal("0"))
+
+
+class OverviewYield(BaseModel):
+    """Yield / income metrics in both currencies."""
+    daily: DualCurrencyValue = Field(default_factory=DualCurrencyValue)
+    weekly: DualCurrencyValue = Field(default_factory=DualCurrencyValue)
+    monthly: DualCurrencyValue = Field(default_factory=DualCurrencyValue)
+    annualized: DualCurrencyValue = Field(default_factory=DualCurrencyValue)
+    portfolio_apy: Decimal = Field(default=Decimal("0"))
+    # Cumulative and period-specific actual yield from PositionYieldHistory
+    cumulative_tao: Decimal = Field(default=Decimal("0"))
+    yield_1d_tao: Decimal = Field(default=Decimal("0"))
+    yield_7d_tao: Decimal = Field(default=Decimal("0"))
+    yield_30d_tao: Decimal = Field(default=Decimal("0"))
+
+
+class CompoundingProjection(BaseModel):
+    """Forward yield projection using current APY with compounding."""
+    current_nav_tao: Decimal = Field(default=Decimal("0"))
+    current_apy: Decimal = Field(default=Decimal("0"))
+    # Simple (linear) projections
+    projected_30d_tao: Decimal = Field(default=Decimal("0"))
+    projected_90d_tao: Decimal = Field(default=Decimal("0"))
+    projected_365d_tao: Decimal = Field(default=Decimal("0"))
+    # Continuously compounded projections
+    compounded_30d_tao: Decimal = Field(default=Decimal("0"))
+    compounded_90d_tao: Decimal = Field(default=Decimal("0"))
+    compounded_365d_tao: Decimal = Field(default=Decimal("0"))
+    # Growth factor: portfolio value after 12m compounding
+    projected_nav_365d_tao: Decimal = Field(default=Decimal("0"))
+
+
+class PortfolioOverviewResponse(BaseModel):
+    """Enhanced portfolio overview – Phase 1 endpoint."""
+
+    # Current NAV in both variants and currencies
+    nav_mid: DualCurrencyValue = Field(default_factory=DualCurrencyValue)
+    nav_exec: DualCurrencyValue = Field(default_factory=DualCurrencyValue)
+
+    # TAO spot price context
+    tao_price: TaoPriceContext = Field(default_factory=TaoPriceContext)
+
+    # Rolling returns – computed from NAVHistory
+    returns_mid: List[RollingReturn] = Field(default_factory=list)
+    returns_exec: List[RollingReturn] = Field(default_factory=list)
+
+    # P&L (dual currency)
+    pnl: OverviewPnL = Field(default_factory=OverviewPnL)
+
+    # Yield / Income (dual currency)
+    yield_income: OverviewYield = Field(default_factory=OverviewYield)
+
+    # Compounding projection
+    compounding: CompoundingProjection = Field(default_factory=CompoundingProjection)
+
+    # High-water mark
+    nav_ath_tao: Decimal = Field(default=Decimal("0"))
+    drawdown_from_ath_pct: Decimal = Field(default=Decimal("0"))
+
+    # Portfolio context
+    active_positions: int = 0
+    eligible_subnets: int = 0
+    overall_regime: str = "neutral"
+
+    as_of: datetime
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 – Performance Attribution & Income Analysis
+# ---------------------------------------------------------------------------
+
+class WaterfallStep(BaseModel):
+    """Single step in a return decomposition waterfall."""
+    label: str
+    value_tao: Decimal = Field(default=Decimal("0"))
+    is_total: bool = False
+
+
+class PositionContribution(BaseModel):
+    """One position's contribution to portfolio return."""
+    netuid: int
+    subnet_name: str
+    start_value_tao: Decimal = Field(default=Decimal("0"))
+    return_tao: Decimal = Field(default=Decimal("0"))
+    return_pct: Decimal = Field(default=Decimal("0"))
+    yield_tao: Decimal = Field(default=Decimal("0"))
+    price_effect_tao: Decimal = Field(default=Decimal("0"))
+    weight_pct: Decimal = Field(default=Decimal("0"))
+    contribution_pct: Decimal = Field(default=Decimal("0"))
+
+
+class IncomeStatement(BaseModel):
+    """Period income statement."""
+    yield_income_tao: Decimal = Field(default=Decimal("0"))
+    realized_gains_tao: Decimal = Field(default=Decimal("0"))
+    fees_tao: Decimal = Field(default=Decimal("0"))
+    net_income_tao: Decimal = Field(default=Decimal("0"))
+
+
+class AttributionResponse(BaseModel):
+    """Performance attribution response – Phase 2 endpoint."""
+    period_days: int
+    start: datetime
+    end: datetime
+
+    # Portfolio NAV at start and end of period
+    nav_start_tao: Decimal = Field(default=Decimal("0"))
+    nav_end_tao: Decimal = Field(default=Decimal("0"))
+
+    # Total return (flow-adjusted)
+    total_return_tao: Decimal = Field(default=Decimal("0"))
+    total_return_pct: Decimal = Field(default=Decimal("0"))
+
+    # Decomposition
+    yield_income_tao: Decimal = Field(default=Decimal("0"))
+    yield_income_pct: Decimal = Field(default=Decimal("0"))
+    price_effect_tao: Decimal = Field(default=Decimal("0"))
+    price_effect_pct: Decimal = Field(default=Decimal("0"))
+    fees_tao: Decimal = Field(default=Decimal("0"))
+    fees_pct: Decimal = Field(default=Decimal("0"))
+    net_flows_tao: Decimal = Field(default=Decimal("0"))
+
+    # Waterfall chart data
+    waterfall: List[WaterfallStep] = Field(default_factory=list)
+
+    # Position-level contribution
+    position_contributions: List[PositionContribution] = Field(default_factory=list)
+
+    # Income statement
+    income_statement: IncomeStatement = Field(default_factory=IncomeStatement)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 – TAO Price Sensitivity & Scenario Analysis
+# ---------------------------------------------------------------------------
+
+class SensitivityPoint(BaseModel):
+    """Portfolio value at a specific TAO price shock."""
+    shock_pct: int
+    tao_price_usd: Decimal = Field(default=Decimal("0"))
+    nav_tao: Decimal = Field(default=Decimal("0"))
+    nav_usd: Decimal = Field(default=Decimal("0"))
+    usd_change: Decimal = Field(default=Decimal("0"))
+    usd_change_pct: Decimal = Field(default=Decimal("0"))
+
+
+class StressScenario(BaseModel):
+    """Result of a pre-built stress scenario."""
+    id: str
+    name: str
+    description: str
+    tao_price_change_pct: int
+    alpha_impact_pct: int
+    new_tao_price_usd: Decimal = Field(default=Decimal("0"))
+    nav_tao: Decimal = Field(default=Decimal("0"))
+    nav_usd: Decimal = Field(default=Decimal("0"))
+    tao_impact: Decimal = Field(default=Decimal("0"))
+    usd_impact: Decimal = Field(default=Decimal("0"))
+    usd_impact_pct: Decimal = Field(default=Decimal("0"))
+
+
+class AllocationExposure(BaseModel):
+    """Portfolio allocation for risk exposure."""
+    root_tao: Decimal = Field(default=Decimal("0"))
+    root_pct: Decimal = Field(default=Decimal("0"))
+    dtao_tao: Decimal = Field(default=Decimal("0"))
+    dtao_pct: Decimal = Field(default=Decimal("0"))
+    unstaked_tao: Decimal = Field(default=Decimal("0"))
+
+
+class RiskExposure(BaseModel):
+    """Portfolio risk exposure summary."""
+    tao_beta: Decimal = Field(default=Decimal("1.0"))
+    dtao_weight_pct: Decimal = Field(default=Decimal("0"))
+    root_weight_pct: Decimal = Field(default=Decimal("0"))
+    total_exit_slippage_pct: Decimal = Field(default=Decimal("0"))
+    total_exit_slippage_tao: Decimal = Field(default=Decimal("0"))
+    note: str = ""
+
+
+class ScenarioResponse(BaseModel):
+    """TAO price sensitivity and scenario analysis – Phase 3 endpoint."""
+    current_tao_price_usd: Decimal = Field(default=Decimal("0"))
+    nav_tao: Decimal = Field(default=Decimal("0"))
+    nav_usd: Decimal = Field(default=Decimal("0"))
+    allocation: AllocationExposure = Field(default_factory=AllocationExposure)
+    sensitivity: List[SensitivityPoint] = Field(default_factory=list)
+    scenarios: List[StressScenario] = Field(default_factory=list)
+    risk_exposure: RiskExposure = Field(default_factory=RiskExposure)
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 – Risk-Adjusted Returns & Benchmarking
+# ---------------------------------------------------------------------------
+
+class DailyReturnPoint(BaseModel):
+    """Single day's return for chart data."""
+    date: str
+    return_pct: Decimal = Field(default=Decimal("0"))
+    nav_tao: Decimal = Field(default=Decimal("0"))
+
+
+class BenchmarkComparison(BaseModel):
+    """Single benchmark comparison."""
+    id: str
+    name: str
+    description: str
+    annualized_return_pct: Decimal = Field(default=Decimal("0"))
+    annualized_volatility_pct: Optional[Decimal] = None
+    sharpe_ratio: Optional[Decimal] = None
+    alpha_pct: Decimal = Field(default=Decimal("0"))
+
+
+class RiskMetricsResponse(BaseModel):
+    """Risk-adjusted return metrics – Phase 4 endpoint."""
+    period_days: int = 0
+    start: str = ""
+    end: str = ""
+
+    # Core return metrics
+    annualized_return_pct: Decimal = Field(default=Decimal("0"))
+    annualized_volatility_pct: Decimal = Field(default=Decimal("0"))
+    downside_deviation_pct: Decimal = Field(default=Decimal("0"))
+
+    # Risk-adjusted ratios
+    sharpe_ratio: Decimal = Field(default=Decimal("0"))
+    sortino_ratio: Decimal = Field(default=Decimal("0"))
+    calmar_ratio: Decimal = Field(default=Decimal("0"))
+
+    # Drawdown
+    max_drawdown_pct: Decimal = Field(default=Decimal("0"))
+    max_drawdown_tao: Decimal = Field(default=Decimal("0"))
+
+    # Risk-free rate
+    risk_free_rate_pct: Decimal = Field(default=Decimal("0"))
+    risk_free_source: str = "Root (SN0) Validator APY"
+
+    # Win/loss stats
+    win_rate_pct: Decimal = Field(default=Decimal("0"))
+    best_day_pct: Decimal = Field(default=Decimal("0"))
+    worst_day_pct: Decimal = Field(default=Decimal("0"))
+
+    # Benchmarks
+    benchmarks: List[BenchmarkComparison] = Field(default_factory=list)
+
+    # Daily return series (for chart)
+    daily_returns: List[DailyReturnPoint] = Field(default_factory=list)

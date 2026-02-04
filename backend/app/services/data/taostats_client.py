@@ -1046,6 +1046,102 @@ class TaoStatsClient:
             cache_ttl=timedelta(minutes=30),
         )
 
+    # ==================== Accounting/Tax Endpoints ====================
+
+    async def get_accounting_tax(
+        self,
+        coldkey: str,
+        token: str = "TAO",
+        date_start: Optional[str] = None,
+        date_end: Optional[str] = None,
+        page: int = 1,
+        limit: int = 500,
+    ) -> Dict[str, Any]:
+        """Get accounting/tax data for a wallet (paid tier).
+
+        Endpoint: GET /api/accounting/tax/v1
+
+        Returns complete transaction history including token_swap,
+        transfer_in, transfer_out, daily_income records.
+
+        Args:
+            coldkey: Wallet address
+            token: Token name (default "TAO")
+            date_start: Start date (YYYY-MM-DD)
+            date_end: End date (YYYY-MM-DD), max 12 month span
+            page: Page number
+            limit: Records per page (up to 500)
+        """
+        params = {
+            "coldkey": coldkey,
+            "token": token,
+            "limit": limit,
+            "page": page,
+        }
+        if date_start:
+            params["date_start"] = date_start
+        if date_end:
+            params["date_end"] = date_end
+
+        return await self._request(
+            "GET",
+            "/api/accounting/tax/v1",
+            params=params,
+            cache_key=None,  # Don't cache accounting data
+            cache_ttl=None,
+        )
+
+    async def get_all_accounting_tax(
+        self,
+        coldkey: str,
+        token: str = "TAO",
+        date_start: Optional[str] = None,
+        date_end: Optional[str] = None,
+        max_pages: int = 20,
+    ) -> List[Dict[str, Any]]:
+        """Fetch all accounting/tax records across multiple pages.
+
+        Args:
+            coldkey: Wallet address
+            token: Token name
+            date_start: Start date (YYYY-MM-DD)
+            date_end: End date (YYYY-MM-DD)
+            max_pages: Maximum pages to fetch
+
+        Returns:
+            List of all accounting records
+        """
+        all_records: List[Dict[str, Any]] = []
+        page = 1
+
+        while page <= max_pages:
+            response = await self.get_accounting_tax(
+                coldkey=coldkey,
+                token=token,
+                date_start=date_start,
+                date_end=date_end,
+                page=page,
+                limit=500,
+            )
+
+            data = response.get("data", [])
+            if not data:
+                break
+
+            all_records.extend(data)
+
+            pagination = response.get("pagination", {})
+            total_pages = pagination.get("total_pages", 1)
+
+            if page >= total_pages:
+                break
+
+            page += 1
+            await asyncio.sleep(0.1)
+
+        logger.info("Fetched all accounting/tax records", count=len(all_records), pages=page)
+        return all_records
+
     # ==================== Utility Methods ====================
 
     async def health_check(self) -> bool:

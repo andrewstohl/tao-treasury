@@ -30,8 +30,6 @@ export interface PositionSummary {
   unrealized_pnl_pct: string
   exit_slippage_50pct: string
   exit_slippage_100pct: string
-  health_status: 'green' | 'yellow' | 'red'
-  health_reason: string | null
   validator_hotkey: string | null
   recommended_action: string | null
   action_reason: string | null
@@ -46,13 +44,6 @@ export interface ActionItem {
   description: string
   subnet_id: number | null
   potential_gain_tao: string | null
-}
-
-export interface PortfolioHealth {
-  status: 'green' | 'yellow' | 'red'
-  score: number
-  top_issue: string | null
-  issues_count: number
 }
 
 export interface Portfolio {
@@ -85,7 +76,6 @@ export interface Portfolio {
 
 export interface Dashboard {
   portfolio: Portfolio
-  portfolio_health: PortfolioHealth
   top_positions: PositionSummary[]
   action_items: ActionItem[]
   alerts: {
@@ -330,4 +320,221 @@ export interface RebalanceResult {
   turnover_pct: number
   constrained_by_turnover: boolean
   summary: string
+}
+
+// ---------------------------------------------------------------------------
+// Phase 1 – Portfolio Overview (dual-currency, rolling returns, projections)
+// ---------------------------------------------------------------------------
+
+export interface DualCurrencyValue {
+  tao: string
+  usd: string
+}
+
+export interface RollingReturn {
+  period: string // "1d" | "7d" | "30d" | "90d" | "inception"
+  return_pct: string | null
+  return_tao: string | null
+  nav_start: string | null
+  nav_end: string | null
+  data_points: number
+}
+
+export interface TaoPriceContext {
+  price_usd: string
+  change_24h_pct: string | null
+  change_7d_pct: string | null
+}
+
+export interface OverviewPnL {
+  unrealized: DualCurrencyValue
+  realized: DualCurrencyValue
+  total: DualCurrencyValue
+  cost_basis: DualCurrencyValue
+  total_pnl_pct: string
+}
+
+export interface OverviewYield {
+  daily: DualCurrencyValue
+  weekly: DualCurrencyValue
+  monthly: DualCurrencyValue
+  annualized: DualCurrencyValue
+  portfolio_apy: string
+  cumulative_tao: string
+  yield_1d_tao: string
+  yield_7d_tao: string
+  yield_30d_tao: string
+}
+
+export interface CompoundingProjection {
+  current_nav_tao: string
+  current_apy: string
+  projected_30d_tao: string
+  projected_90d_tao: string
+  projected_365d_tao: string
+  compounded_30d_tao: string
+  compounded_90d_tao: string
+  compounded_365d_tao: string
+  projected_nav_365d_tao: string
+}
+
+export interface PortfolioOverview {
+  nav_mid: DualCurrencyValue
+  nav_exec: DualCurrencyValue
+  tao_price: TaoPriceContext
+  returns_mid: RollingReturn[]
+  returns_exec: RollingReturn[]
+  pnl: OverviewPnL
+  yield_income: OverviewYield
+  compounding: CompoundingProjection
+  nav_ath_tao: string
+  drawdown_from_ath_pct: string
+  active_positions: number
+  eligible_subnets: number
+  overall_regime: string
+  as_of: string
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2 – Performance Attribution & Income Analysis
+// ---------------------------------------------------------------------------
+
+export interface WaterfallStep {
+  label: string
+  value_tao: string
+  is_total: boolean
+}
+
+export interface PositionContribution {
+  netuid: number
+  subnet_name: string
+  start_value_tao: string
+  return_tao: string
+  return_pct: string
+  yield_tao: string
+  price_effect_tao: string
+  weight_pct: string
+  contribution_pct: string
+}
+
+export interface IncomeStatement {
+  yield_income_tao: string
+  realized_gains_tao: string
+  fees_tao: string
+  net_income_tao: string
+}
+
+export interface Attribution {
+  period_days: number
+  start: string
+  end: string
+  nav_start_tao: string
+  nav_end_tao: string
+  total_return_tao: string
+  total_return_pct: string
+  yield_income_tao: string
+  yield_income_pct: string
+  price_effect_tao: string
+  price_effect_pct: string
+  fees_tao: string
+  fees_pct: string
+  net_flows_tao: string
+  waterfall: WaterfallStep[]
+  position_contributions: PositionContribution[]
+  income_statement: IncomeStatement
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3 – TAO Price Sensitivity & Scenario Analysis
+// ---------------------------------------------------------------------------
+
+export interface SensitivityPoint {
+  shock_pct: number
+  tao_price_usd: string
+  nav_tao: string
+  nav_usd: string
+  usd_change: string
+  usd_change_pct: string
+}
+
+export interface StressScenario {
+  id: string
+  name: string
+  description: string
+  tao_price_change_pct: number
+  alpha_impact_pct: number
+  new_tao_price_usd: string
+  nav_tao: string
+  nav_usd: string
+  tao_impact: string
+  usd_impact: string
+  usd_impact_pct: string
+}
+
+export interface AllocationExposure {
+  root_tao: string
+  root_pct: string
+  dtao_tao: string
+  dtao_pct: string
+  unstaked_tao: string
+}
+
+export interface RiskExposure {
+  tao_beta: string
+  dtao_weight_pct: string
+  root_weight_pct: string
+  total_exit_slippage_pct: string
+  total_exit_slippage_tao: string
+  note: string
+}
+
+export interface ScenarioAnalysis {
+  current_tao_price_usd: string
+  nav_tao: string
+  nav_usd: string
+  allocation: AllocationExposure
+  sensitivity: SensitivityPoint[]
+  scenarios: StressScenario[]
+  risk_exposure: RiskExposure
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4 – Risk-Adjusted Returns & Benchmarking
+// ---------------------------------------------------------------------------
+
+export interface DailyReturnPoint {
+  date: string
+  return_pct: string
+  nav_tao: string
+}
+
+export interface BenchmarkComparison {
+  id: string
+  name: string
+  description: string
+  annualized_return_pct: string
+  annualized_volatility_pct: string | null
+  sharpe_ratio: string | null
+  alpha_pct: string
+}
+
+export interface RiskMetrics {
+  period_days: number
+  start: string
+  end: string
+  annualized_return_pct: string
+  annualized_volatility_pct: string
+  downside_deviation_pct: string
+  sharpe_ratio: string
+  sortino_ratio: string
+  calmar_ratio: string
+  max_drawdown_pct: string
+  max_drawdown_tao: string
+  risk_free_rate_pct: string
+  risk_free_source: string
+  win_rate_pct: string
+  best_day_pct: string
+  worst_day_pct: string
+  benchmarks: BenchmarkComparison[]
+  daily_returns: DailyReturnPoint[]
 }

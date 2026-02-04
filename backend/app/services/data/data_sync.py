@@ -11,7 +11,7 @@ from decimal import Decimal
 from typing import Dict, List, Optional, Any
 
 import structlog
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -21,8 +21,9 @@ from app.models.position import Position, PositionSnapshot
 from app.models.portfolio import PortfolioSnapshot
 from app.models.slippage import SlippageSurface
 from app.models.validator import Validator
-from app.models.transaction import DelegationEvent, PositionYieldHistory
+from app.models.transaction import DelegationEvent, PositionCostBasis, PositionYieldHistory
 from app.services.data.taostats_client import taostats_client, TaoStatsError
+from app.services.data.coingecko_client import fetch_tao_price as cg_fetch_tao_price
 
 logger = structlog.get_logger()
 
@@ -144,10 +145,6 @@ class DataSyncService:
                 logger.warning("Stake balance history sync failed", error=str(e))
                 results["yield_history_records"] = 0
 
-            # Create portfolio snapshot
-            await self.create_portfolio_snapshot()
-            results["portfolio_snapshot"] = True
-
             if include_analysis:
                 # Lazy imports to avoid circular imports
                 from app.services.analysis.transaction_sync import transaction_sync_service
@@ -176,13 +173,31 @@ class DataSyncService:
                     logger.error("Root transaction sync failed", error=str(e))
                     results["errors"].append(f"Root transaction sync: {str(e)}")
 
-                # Compute cost basis from transactions
+                # Compute cost basis from transactions (alpha-based FIFO for entry prices)
                 try:
                     cb_results = await cost_basis_service.compute_all_cost_basis()
                     results["cost_basis_computed"] = cb_results.get("positions_computed", 0) > 0
                 except Exception as e:
                     logger.error("Cost basis computation failed", error=str(e))
                     results["errors"].append(f"Cost basis: {str(e)}")
+
+                # Override realized P&L with accounting/tax data (TAO-based FIFO).
+                # The accounting endpoint captures batch extrinsics that dtao/trade
+                # misses, giving a more complete and accurate realized P&L.
+                try:
+                    acct_results = await cost_basis_service.compute_realized_pnl_from_accounting()
+                    results["accounting_pnl_computed"] = True
+                    results["accounting_realized_pnl"] = float(
+                        acct_results.get("total_realized_pnl", 0)
+                    )
+                    logger.info(
+                        "Accounting P&L override applied",
+                        total=float(acct_results.get("total_realized_pnl", 0)),
+                        subnets=acct_results.get("subnets_processed", 0),
+                    )
+                except Exception as e:
+                    logger.warning("Accounting P&L computation failed, using trade-based FIFO", error=str(e))
+                    results["accounting_pnl_computed"] = False
 
                 # Sync slippage surfaces
                 try:
@@ -210,6 +225,11 @@ class DataSyncService:
                 except Exception as e:
                     logger.error("Risk check failed", error=str(e))
                     results["errors"].append(f"Risk check: {str(e)}")
+
+            # Create portfolio snapshot AFTER analysis so cost basis /
+            # realized P&L data is included in the snapshot.
+            await self.create_portfolio_snapshot()
+            results["portfolio_snapshot"] = True
 
             self._last_sync = datetime.now(timezone.utc)
             self._last_sync_results = results
@@ -892,13 +912,21 @@ class DataSyncService:
             result = await db.execute(stmt)
             positions = result.scalars().all()
 
-            # Get TAO price
+            # Get TAO price — CoinGecko primary, TaoStats fallback
+            tao_price_usd = Decimal("0")
             try:
-                price_data = await taostats_client.get_tao_price()
-                price_info = price_data.get("data", [{}])[0] if price_data.get("data") else {}
-                tao_price_usd = Decimal(str(price_info.get("price", 0) or 0))
-            except TaoStatsError:
-                tao_price_usd = Decimal("0")
+                cg = await cg_fetch_tao_price()
+                if cg is not None and cg.price_usd > 0:
+                    tao_price_usd = cg.price_usd
+            except Exception:
+                pass
+            if tao_price_usd <= 0:
+                try:
+                    price_data = await taostats_client.get_tao_price()
+                    price_info = price_data.get("data", [{}])[0] if price_data.get("data") else {}
+                    tao_price_usd = Decimal(str(price_info.get("price", 0) or 0))
+                except TaoStatsError:
+                    tao_price_usd = Decimal("0")
 
             # Get wallet TAO balance
             try:
@@ -910,8 +938,12 @@ class DataSyncService:
                 tao_balance = Decimal("0")
                 root_stake = Decimal("0")
 
-            # Calculate totals
-            dtao_value_mid = sum(p.tao_value_mid for p in positions)
+            # Calculate totals — exclude SN0 from the positions sum
+            # because root_stake already captures it from the account API.
+            # Including both would double-count root stake in the NAV.
+            dtao_value_mid = sum(
+                p.tao_value_mid for p in positions if p.netuid != 0
+            )
             nav_mid = tao_balance + root_stake + dtao_value_mid
 
             # Calculate yield aggregates from positions
@@ -926,10 +958,23 @@ class DataSyncService:
             else:
                 weighted_apy = Decimal("0")
 
-            # P&L aggregates
+            # P&L aggregates — read realized P&L and cost basis from
+            # position_cost_basis table which includes CLOSED positions
+            # (the positions table only has open positions).
             total_unrealized_pnl = sum(p.unrealized_pnl_tao for p in positions)
-            total_realized_pnl = sum(p.realized_pnl_tao for p in positions)
-            total_cost_basis = sum(p.cost_basis_tao for p in positions)
+
+            cb_stmt = select(
+                func.coalesce(func.sum(PositionCostBasis.realized_pnl_tao), 0),
+                func.coalesce(func.sum(PositionCostBasis.net_invested_tao), 0),
+            ).where(PositionCostBasis.wallet_address == self.wallet_address)
+            cb_result = await db.execute(cb_stmt)
+            cb_row = cb_result.fetchone()
+            total_realized_pnl = cb_row[0] if cb_row else Decimal("0")
+            # Derive cost basis so the ledger identity holds exactly:
+            #   NAV = cost_basis + realized_pnl + unrealized_pnl
+            # This equals the portfolio's implied initial capital
+            # (total deposits minus withdrawals, before any gains/losses).
+            total_cost_basis = nav_mid - total_realized_pnl - total_unrealized_pnl
 
             snapshot = PortfolioSnapshot(
                 wallet_address=self.wallet_address,

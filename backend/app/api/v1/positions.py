@@ -1,7 +1,7 @@
 """Positions endpoints."""
 
 from decimal import Decimal
-from typing import Optional, Tuple
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
@@ -15,42 +15,6 @@ from app.models.validator import Validator
 from app.schemas.position import PositionResponse, PositionListResponse
 
 router = APIRouter()
-
-
-def _compute_position_health(
-    unrealized_pnl_pct: Decimal,
-    weight_pct: Decimal,
-    current_apy: Optional[Decimal],
-    avg_apy: Decimal,
-) -> Tuple[str, Optional[str]]:
-    """Compute health status and reason for a position."""
-    reasons = []
-    status = "green"
-
-    pnl_pct = float(unrealized_pnl_pct)
-
-    # Check P&L
-    if pnl_pct < -10:
-        reasons.append(f"Down {abs(pnl_pct):.1f}% from cost basis")
-        status = "red"
-    elif pnl_pct < -5:
-        reasons.append(f"Down {abs(pnl_pct):.1f}% from cost basis")
-        status = "yellow" if status != "red" else status
-
-    # Check APY relative to average
-    if current_apy and avg_apy and avg_apy > 0:
-        apy_ratio = float(current_apy / avg_apy)
-        if apy_ratio < 0.5:
-            reasons.append(f"APY below average ({float(current_apy):.1f}% vs {float(avg_apy):.1f}%)")
-            status = "yellow" if status == "green" else status
-
-    # Check concentration
-    if float(weight_pct) > 20:
-        reasons.append(f"High concentration ({float(weight_pct):.1f}% of portfolio)")
-        status = "yellow" if status == "green" else status
-
-    reason = "; ".join(reasons) if reasons else None
-    return status, reason
 
 
 @router.get("", response_model=PositionListResponse)
@@ -93,10 +57,6 @@ async def list_positions(
             key = (v.hotkey, v.netuid)
             validator_apy_map[key] = v.apy
 
-    # Calculate average APY for health scoring
-    all_apys = [apy for apy in validator_apy_map.values() if apy and apy > 0]
-    avg_apy = sum(all_apys) / len(all_apys) if all_apys else Decimal("0")
-
     # Enrich with subnet data and calculate weights
     enriched = []
     for pos in positions:
@@ -121,14 +81,6 @@ async def list_positions(
         daily_yield_tao = None
         if current_apy and current_apy > 0:
             daily_yield_tao = pos.tao_value_mid * current_apy / Decimal("100") / Decimal("365")
-
-        # Compute health status
-        health_status, health_reason = _compute_position_health(
-            unrealized_pnl_pct=unrealized_pct,
-            weight_pct=weight_pct,
-            current_apy=current_apy,
-            avg_apy=avg_apy,
-        )
 
         enriched.append(PositionResponse(
             id=pos.id,
@@ -155,8 +107,6 @@ async def list_positions(
             emission_share=subnet.emission_share if subnet else None,
             current_apy=current_apy,
             daily_yield_tao=daily_yield_tao,
-            health_status=health_status,
-            health_reason=health_reason,
             created_at=pos.created_at,
             updated_at=pos.updated_at,
         ))
@@ -223,22 +173,6 @@ async def get_position(
     if current_apy and current_apy > 0:
         daily_yield_tao = pos.tao_value_mid * current_apy / Decimal("100") / Decimal("365")
 
-    # Get average APY for health scoring
-    all_val_stmt = select(Validator.apy).where(
-        Validator.netuid.in_([p.netuid for p in all_positions])
-    )
-    all_val_result = await db.execute(all_val_stmt)
-    all_apys = [row[0] for row in all_val_result.fetchall() if row[0] and row[0] > 0]
-    avg_apy = sum(all_apys) / len(all_apys) if all_apys else Decimal("0")
-
-    # Compute health status
-    health_status, health_reason = _compute_position_health(
-        unrealized_pnl_pct=unrealized_pct,
-        weight_pct=weight_pct,
-        current_apy=current_apy,
-        avg_apy=avg_apy,
-    )
-
     return PositionResponse(
         id=pos.id,
         wallet_address=pos.wallet_address,
@@ -264,8 +198,6 @@ async def get_position(
         emission_share=subnet.emission_share if subnet else None,
         current_apy=current_apy,
         daily_yield_tao=daily_yield_tao,
-        health_status=health_status,
-        health_reason=health_reason,
         created_at=pos.created_at,
         updated_at=pos.updated_at,
     )

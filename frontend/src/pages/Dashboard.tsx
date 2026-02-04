@@ -1,15 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
-  TrendingUp,
-  TrendingDown,
-  AlertTriangle,
-  ArrowRightLeft,
-  Coins,
-  DollarSign,
   Activity,
-  CheckCircle,
-  XCircle,
   BarChart3,
   Shield,
   ChevronRight,
@@ -17,16 +9,16 @@ import {
 } from 'lucide-react'
 import { api } from '../services/api'
 import type { Dashboard as DashboardType, EnrichedSubnetListResponse, EnrichedSubnet, VolatilePoolData, PositionSummary } from '../types'
-import { formatTao, formatTaoShort, formatPercent, formatApy, formatUsd, formatCompact, getHealthColor, getHealthBgColor } from '../utils/format'
+import { formatTao, formatTaoShort, formatPercent, formatCompact, safeFloat } from '../utils/format'
 import SortableHeader, { useSortToggle, type SortDirection } from '../components/common/SortableHeader'
 import SparklineCell from '../components/common/cells/SparklineCell'
 import PriceChangeCell from '../components/common/cells/PriceChangeCell'
 import SentimentBadge from '../components/common/cells/SentimentBadge'
 import RegimeBadge from '../components/common/cells/RegimeBadge'
 import SubnetExpandedRow from '../components/common/SubnetExpandedRow'
+import PortfolioOverviewCards from '../components/dashboard/PortfolioOverviewCards'
 
 type DashboardSortKey =
-  | 'health_status'
   | 'subnet_name'
   | 'tao_value_mid'
   | 'weight_pct'
@@ -74,42 +66,36 @@ export default function Dashboard() {
       let bVal: number | string
 
       switch (sortKey as DashboardSortKey) {
-        case 'health_status': {
-          const statusOrder = { red: 0, yellow: 1, green: 2 }
-          aVal = statusOrder[a.health_status as keyof typeof statusOrder] ?? 2
-          bVal = statusOrder[b.health_status as keyof typeof statusOrder] ?? 2
-          break
-        }
         case 'subnet_name':
           aVal = a.subnet_name || `SN${a.netuid}`
           bVal = b.subnet_name || `SN${b.netuid}`
           break
         case 'tao_value_mid':
-          aVal = parseFloat(a.tao_value_mid)
-          bVal = parseFloat(b.tao_value_mid)
+          aVal = safeFloat(a.tao_value_mid)
+          bVal = safeFloat(b.tao_value_mid)
           break
         case 'weight_pct':
-          aVal = parseFloat(a.weight_pct)
-          bVal = parseFloat(b.weight_pct)
+          aVal = safeFloat(a.weight_pct)
+          bVal = safeFloat(b.weight_pct)
           break
         case 'price_change_24h': {
           const aV = enrichedLookup.get(a.netuid)?.volatile?.price_change_24h
           const bV = enrichedLookup.get(b.netuid)?.volatile?.price_change_24h
-          aVal = aV ?? -Infinity
-          bVal = bV ?? -Infinity
+          aVal = aV ?? 0
+          bVal = bV ?? 0
           break
         }
         case 'current_apy':
-          aVal = parseFloat(a.current_apy || '0')
-          bVal = parseFloat(b.current_apy || '0')
+          aVal = safeFloat(a.current_apy)
+          bVal = safeFloat(b.current_apy)
           break
         case 'cost_basis_tao':
-          aVal = parseFloat(a.cost_basis_tao || '0')
-          bVal = parseFloat(b.cost_basis_tao || '0')
+          aVal = safeFloat(a.cost_basis_tao)
+          bVal = safeFloat(b.cost_basis_tao)
           break
         case 'unrealized_pnl_pct':
-          aVal = parseFloat(a.unrealized_pnl_pct)
-          bVal = parseFloat(b.unrealized_pnl_pct)
+          aVal = safeFloat(a.unrealized_pnl_pct)
+          bVal = safeFloat(b.unrealized_pnl_pct)
           break
         case 'flow_regime':
           aVal = a.flow_regime || 'neutral'
@@ -147,10 +133,10 @@ export default function Dashboard() {
     )
   }
 
-  const { portfolio, alerts, portfolio_health, action_items, market_pulse } = data
+  const { portfolio, action_items, market_pulse } = data
 
   // Compute Portfolio Risk metrics
-  const drawdownPct = Math.abs(parseFloat(portfolio.executable_drawdown_pct) || 0)
+  const drawdownPct = Math.abs(safeFloat(portfolio.executable_drawdown_pct))
   const drawdownLimit = 15
   const drawdownColor =
     drawdownPct < 5 ? 'bg-green-500' : drawdownPct < 10 ? 'bg-yellow-500' : 'bg-red-500'
@@ -160,7 +146,7 @@ export default function Dashboard() {
   // Compute HHI from position weights
   const positions = data.top_positions || []
   const hhi = positions.reduce((sum, p) => {
-    const w = parseFloat(p.weight_pct)
+    const w = safeFloat(p.weight_pct)
     return sum + w * w
   }, 0)
   const hhiLabel =
@@ -171,13 +157,13 @@ export default function Dashboard() {
   // Largest position
   const largestPos = positions.length > 0
     ? positions.reduce((max, p) =>
-        parseFloat(p.weight_pct) > parseFloat(max.weight_pct) ? p : max
+        safeFloat(p.weight_pct) > safeFloat(max.weight_pct) ? p : max
       , positions[0])
     : null
 
   // Slippage risk: (nav_mid - nav_exec_100pct) / nav_mid
-  const navMid = parseFloat(portfolio.nav_mid) || 0
-  const navExec = parseFloat(portfolio.nav_exec_100pct) || 0
+  const navMid = safeFloat(portfolio.nav_mid)
+  const navExec = safeFloat(portfolio.nav_exec_100pct)
   const slippagePct = navMid > 0 ? ((navMid - navExec) / navMid) * 100 : 0
   const slippageColor =
     slippagePct < 2 ? 'text-green-400' : slippagePct < 5 ? 'text-yellow-400' : 'text-red-400'
@@ -190,44 +176,6 @@ export default function Dashboard() {
           Last updated: {new Date(data.generated_at).toLocaleTimeString()}
         </div>
       </div>
-
-      {/* Portfolio Health Banner */}
-      {portfolio_health && (
-        <div className={`rounded-lg p-4 border flex items-center justify-between ${
-          portfolio_health.status === 'red' ? 'bg-red-900/20 border-red-700' :
-          portfolio_health.status === 'yellow' ? 'bg-yellow-900/20 border-yellow-700' :
-          'bg-green-900/20 border-green-700'
-        }`}>
-          <div className="flex items-center gap-4">
-            <div className={`p-3 rounded-full ${
-              portfolio_health.status === 'red' ? 'bg-red-600/30' :
-              portfolio_health.status === 'yellow' ? 'bg-yellow-600/30' :
-              'bg-green-600/30'
-            }`}>
-              {portfolio_health.status === 'red' ? <XCircle className="text-red-400 w-8 h-8" /> :
-               portfolio_health.status === 'yellow' ? <AlertTriangle className="text-yellow-400 w-8 h-8" /> :
-               <CheckCircle className="text-green-400 w-8 h-8" />}
-            </div>
-            <div>
-              <div className="text-lg font-semibold">
-                Portfolio Health: <span className={
-                  portfolio_health.status === 'red' ? 'text-red-400' :
-                  portfolio_health.status === 'yellow' ? 'text-yellow-400' :
-                  'text-green-400'
-                }>{portfolio_health.status === 'red' ? 'ACTION REQUIRED' :
-                   portfolio_health.status === 'yellow' ? 'NEEDS ATTENTION' : 'GOOD'}</span>
-              </div>
-              {portfolio_health.top_issue && (
-                <div className="text-sm text-gray-400">{portfolio_health.top_issue}</div>
-              )}
-            </div>
-          </div>
-          <div className="text-right">
-            <div className="text-3xl font-bold">{portfolio_health.score}</div>
-            <div className="text-xs text-gray-500">Health Score</div>
-          </div>
-        </div>
-      )}
 
       {/* Action Items */}
       {action_items && action_items.length > 0 && (
@@ -255,7 +203,7 @@ export default function Dashboard() {
                 </div>
                 {item.potential_gain_tao && (
                   <div className="text-right text-sm">
-                    <div className="text-green-400">+{parseFloat(item.potential_gain_tao).toFixed(2)} τ</div>
+                    <div className="text-green-400">+{safeFloat(item.potential_gain_tao).toFixed(2)} τ</div>
                     <div className="text-xs text-gray-500">potential</div>
                   </div>
                 )}
@@ -265,42 +213,8 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* NAV Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-          <div className="text-sm text-gray-400 mb-1">Total NAV (TAO)</div>
-          <div className="text-3xl font-bold text-white">{formatTao(portfolio.nav_mid)}</div>
-          <div className="text-sm text-gray-500 mt-1">{formatUsd(portfolio.nav_usd)} USD</div>
-        </div>
-
-        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-          <div className="flex items-center gap-2 text-sm text-gray-400 mb-1">
-            <Coins className="w-4 h-4" />
-            <span>Daily Yield</span>
-          </div>
-          <div className="text-2xl font-bold text-green-400">+{formatTaoShort(portfolio.yield_summary?.daily_yield_tao || 0)} τ</div>
-          <div className="text-sm text-gray-500 mt-1">APY: {formatApy(portfolio.yield_summary?.portfolio_apy || 0)}</div>
-        </div>
-
-        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-          <div className="flex items-center gap-2 text-sm text-gray-400 mb-1">
-            <DollarSign className="w-4 h-4" />
-            <span>Unrealized P&L</span>
-          </div>
-          <div className={`text-2xl font-bold ${parseFloat(portfolio.pnl_summary?.total_unrealized_pnl_tao || '0') >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-            {formatPercent(portfolio.pnl_summary?.unrealized_pnl_pct || 0)}
-          </div>
-          <div className="text-sm text-gray-500 mt-1">
-            {parseFloat(portfolio.pnl_summary?.total_unrealized_pnl_tao || '0') >= 0 ? '+' : ''}{formatTaoShort(portfolio.pnl_summary?.total_unrealized_pnl_tao || 0)} τ
-          </div>
-        </div>
-
-        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-          <div className="text-sm text-gray-400 mb-1">Weekly Yield</div>
-          <div className="text-2xl font-bold text-green-400">+{formatTaoShort(portfolio.yield_summary?.weekly_yield_tao || 0)} τ</div>
-          <div className="text-sm text-gray-500 mt-1">~{formatTaoShort(portfolio.yield_summary?.monthly_yield_tao || 0)} τ/month</div>
-        </div>
-      </div>
+      {/* Portfolio Overview – dual currency, rolling returns, projections */}
+      <PortfolioOverviewCards />
 
       {/* Portfolio Risk & Market Pulse */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -349,7 +263,7 @@ export default function Dashboard() {
                 HHI: {Math.round(hhi).toLocaleString()}
                 {largestPos && (
                   <span className="ml-2">
-                    · Largest: {largestPos.subnet_name || `SN${largestPos.netuid}`} ({parseFloat(largestPos.weight_pct).toFixed(1)}%)
+                    · Largest: {largestPos.subnet_name || `SN${largestPos.netuid}`} ({safeFloat(largestPos.weight_pct).toFixed(1)}%)
                   </span>
                 )}
               </div>
@@ -383,7 +297,7 @@ export default function Dashboard() {
                 <span className="text-sm text-gray-400">Portfolio 24h</span>
                 {market_pulse.portfolio_24h_change_pct != null ? (
                   <span className={`text-xl font-bold font-mono ${
-                    parseFloat(market_pulse.portfolio_24h_change_pct) >= 0
+                    safeFloat(market_pulse.portfolio_24h_change_pct) >= 0
                       ? 'text-green-400'
                       : 'text-red-400'
                   }`}>
@@ -415,7 +329,7 @@ export default function Dashboard() {
                 <span className="text-sm text-gray-400">24h Volume</span>
                 <span className="font-mono text-sm text-gray-300">
                   {market_pulse.total_volume_24h_tao != null
-                    ? formatCompact(parseFloat(market_pulse.total_volume_24h_tao)) + ' τ'
+                    ? formatCompact(safeFloat(market_pulse.total_volume_24h_tao)) + ' τ'
                     : '--'}
                 </span>
               </div>
@@ -423,7 +337,7 @@ export default function Dashboard() {
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-gray-400">Buy Pressure</span>
                   <span className={`font-mono text-sm ${
-                    parseFloat(market_pulse.net_buy_pressure_pct) >= 0
+                    safeFloat(market_pulse.net_buy_pressure_pct) >= 0
                       ? 'text-green-400'
                       : 'text-red-400'
                   }`}>
@@ -440,7 +354,7 @@ export default function Dashboard() {
                     <span className="text-sm text-gray-300">{market_pulse.top_mover_name}</span>
                     {market_pulse.top_mover_change_24h != null && (
                       <span className={`ml-2 font-mono text-sm ${
-                        parseFloat(market_pulse.top_mover_change_24h) >= 0
+                        safeFloat(market_pulse.top_mover_change_24h) >= 0
                           ? 'text-green-400'
                           : 'text-red-400'
                       }`}>
@@ -466,98 +380,42 @@ export default function Dashboard() {
           <div>
             <div className="flex justify-between text-sm mb-1">
               <span className="text-gray-400">Root (SN0)</span>
-              <span>{formatTao(portfolio.allocation.root_tao)} ({parseFloat(portfolio.allocation.root_pct).toFixed(1)}%)</span>
+              <span>{formatTao(portfolio.allocation.root_tao)} ({safeFloat(portfolio.allocation.root_pct).toFixed(1)}%)</span>
             </div>
             <div className="w-full bg-gray-700 rounded-full h-2">
               <div
                 className="bg-blue-500 h-2 rounded-full"
-                style={{ width: `${Math.min(parseFloat(portfolio.allocation.root_pct), 100)}%` }}
+                style={{ width: `${Math.min(safeFloat(portfolio.allocation.root_pct), 100)}%` }}
               ></div>
             </div>
           </div>
           <div>
             <div className="flex justify-between text-sm mb-1">
               <span className="text-gray-400">dTAO Sleeve</span>
-              <span>{formatTao(portfolio.allocation.dtao_tao)} ({parseFloat(portfolio.allocation.dtao_pct).toFixed(1)}%)</span>
+              <span>{formatTao(portfolio.allocation.dtao_tao)} ({safeFloat(portfolio.allocation.dtao_pct).toFixed(1)}%)</span>
             </div>
             <div className="w-full bg-gray-700 rounded-full h-2">
               <div
                 className="bg-tao-500 h-2 rounded-full"
-                style={{ width: `${Math.min(parseFloat(portfolio.allocation.dtao_pct), 100)}%` }}
+                style={{ width: `${Math.min(safeFloat(portfolio.allocation.dtao_pct), 100)}%` }}
               ></div>
             </div>
           </div>
           <div>
             <div className="flex justify-between text-sm mb-1">
               <span className="text-gray-400">Unstaked Buffer</span>
-              <span>{formatTao(portfolio.allocation.unstaked_tao)} ({parseFloat(portfolio.allocation.unstaked_pct).toFixed(1)}%)</span>
+              <span>{formatTao(portfolio.allocation.unstaked_tao)} ({safeFloat(portfolio.allocation.unstaked_pct).toFixed(1)}%)</span>
             </div>
             <div className="w-full bg-gray-700 rounded-full h-2">
               <div
                 className="bg-green-500 h-2 rounded-full"
-                style={{ width: `${Math.min(parseFloat(portfolio.allocation.unstaked_pct), 100)}%` }}
+                style={{ width: `${Math.min(safeFloat(portfolio.allocation.unstaked_pct), 100)}%` }}
               ></div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Alerts and Actions Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-          <div className="flex items-center gap-3 mb-4">
-            <div className={`p-2 rounded-lg ${portfolio.overall_regime === 'risk_on' ? 'bg-green-600/20' : portfolio.overall_regime === 'risk_off' ? 'bg-red-600/20' : 'bg-yellow-600/20'}`}>
-              {portfolio.overall_regime === 'risk_on' ? <TrendingUp className="text-green-400" /> :
-               portfolio.overall_regime === 'risk_off' ? <TrendingDown className="text-red-400" /> :
-               <TrendingUp className="text-yellow-400" />}
-            </div>
-            <div>
-              <div className="text-sm text-gray-400">Overall Regime</div>
-              <div className="font-semibold capitalize">{portfolio.overall_regime.replace('_', ' ')}</div>
-            </div>
-          </div>
-          <div className="text-sm text-gray-500">
-            {portfolio.active_positions} positions across {portfolio.eligible_subnets} eligible subnets
-          </div>
-        </div>
-
-        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-          <div className="flex items-center gap-3 mb-4">
-            <div className={`p-2 rounded-lg ${alerts.critical > 0 ? 'bg-red-600/20' : alerts.warning > 0 ? 'bg-yellow-600/20' : 'bg-green-600/20'}`}>
-              <AlertTriangle className={alerts.critical > 0 ? 'text-red-400' : alerts.warning > 0 ? 'text-yellow-400' : 'text-green-400'} />
-            </div>
-            <div>
-              <div className="text-sm text-gray-400">Active Alerts</div>
-              <div className="font-semibold">{alerts.critical + alerts.warning + alerts.info}</div>
-            </div>
-          </div>
-          <div className="flex gap-4 text-sm">
-            {alerts.critical > 0 && <span className="text-red-400">{alerts.critical} critical</span>}
-            {alerts.warning > 0 && <span className="text-yellow-400">{alerts.warning} warning</span>}
-            {alerts.info > 0 && <span className="text-blue-400">{alerts.info} info</span>}
-            {alerts.critical + alerts.warning + alerts.info === 0 && <span className="text-green-400">All clear</span>}
-          </div>
-        </div>
-
-        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-          <div className="flex items-center gap-3 mb-4">
-            <div className={`p-2 rounded-lg ${data.urgent_recommendations > 0 ? 'bg-red-600/20' : 'bg-gray-700'}`}>
-              <ArrowRightLeft className={data.urgent_recommendations > 0 ? 'text-red-400' : 'text-gray-400'} />
-            </div>
-            <div>
-              <div className="text-sm text-gray-400">Pending Trades</div>
-              <div className="font-semibold">{data.pending_recommendations}</div>
-            </div>
-          </div>
-          <div className="text-sm text-gray-500">
-            {data.urgent_recommendations > 0 ? (
-              <span className="text-red-400">{data.urgent_recommendations} urgent</span>
-            ) : (
-              'No urgent actions needed'
-            )}
-          </div>
-        </div>
-      </div>
 
       {/* All Positions Table */}
       {sortedPositions.length > 0 && (
@@ -572,13 +430,6 @@ export default function Dashboard() {
                 <tr className="text-sm text-gray-400">
                   {/* Expand toggle */}
                   <th className="w-8 px-2 py-3" />
-                  <SortableHeader<DashboardSortKey>
-                    label="Health"
-                    sortKey="health_status"
-                    currentSortKey={sortKey}
-                    currentDirection={sortDirection}
-                    onSort={handleSort}
-                  />
                   <SortableHeader<DashboardSortKey>
                     label="Subnet"
                     sortKey="subnet_name"
@@ -690,20 +541,12 @@ function DashboardPositionRow({
   return (
     <>
       <tr
-        className={`hover:bg-gray-700/30 cursor-pointer ${getHealthBgColor(position.health_status)}`}
+        className="hover:bg-gray-700/30 cursor-pointer"
         onClick={onToggle}
       >
         {/* Expand chevron */}
         <td className="px-2 py-3 text-gray-500">
           {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-        </td>
-
-        {/* Health dot */}
-        <td className="px-4 py-3">
-          <div
-            className={`w-3 h-3 rounded-full ${getHealthColor(position.health_status)}`}
-            title={position.health_reason || 'Healthy'}
-          />
         </td>
 
         {/* Subnet name + logo */}
@@ -737,14 +580,14 @@ function DashboardPositionRow({
 
         {/* Weight */}
         <td className="px-4 py-3 text-right font-mono text-sm">
-          {parseFloat(position.weight_pct).toFixed(1)}%
+          {safeFloat(position.weight_pct).toFixed(1)}%
         </td>
 
         {/* Price + 24h Change */}
         <td className="px-4 py-3">
           <div className="text-right">
             {enriched ? (
-              <div className="text-sm font-mono">{parseFloat(enriched.alpha_price_tao).toFixed(6)} τ</div>
+              <div className="text-sm font-mono">{safeFloat(enriched.alpha_price_tao).toFixed(6)} τ</div>
             ) : (
               <div className="text-sm text-gray-600">--</div>
             )}
@@ -757,10 +600,10 @@ function DashboardPositionRow({
           {position.current_apy ? (
             <>
               <div className="font-mono text-sm text-green-400">
-                {parseFloat(position.current_apy).toFixed(1)}%
+                {safeFloat(position.current_apy).toFixed(1)}%
               </div>
               <div className="text-xs text-gray-400 font-mono">
-                +{position.daily_yield_tao ? parseFloat(position.daily_yield_tao).toFixed(4) : '0'} τ/d
+                +{position.daily_yield_tao ? safeFloat(position.daily_yield_tao).toFixed(4) : '0'} τ/d
               </div>
             </>
           ) : (
@@ -772,16 +615,16 @@ function DashboardPositionRow({
         <td className="px-4 py-3 text-right">
           <div className="font-mono text-sm">{formatTao(position.cost_basis_tao)} τ</div>
           <div className="text-xs text-gray-500 font-mono">
-            @ {parseFloat(position.entry_price_tao).toFixed(6)}
+            @ {safeFloat(position.entry_price_tao).toFixed(6)}
           </div>
         </td>
 
         {/* Unrealized P&L */}
         <td className="px-4 py-3 text-right">
-          <span className={`font-mono text-sm ${parseFloat(position.unrealized_pnl_tao) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+          <span className={`font-mono text-sm ${safeFloat(position.unrealized_pnl_tao) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
             {formatTao(position.unrealized_pnl_tao)} τ
           </span>
-          <div className={`text-xs font-mono ${parseFloat(position.unrealized_pnl_pct) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+          <div className={`text-xs font-mono ${safeFloat(position.unrealized_pnl_pct) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
             {formatPercent(position.unrealized_pnl_pct)}
           </div>
         </td>
@@ -803,7 +646,7 @@ function DashboardPositionRow({
       {/* Expanded detail row */}
       {isExpanded && (
         <tr>
-          <td colSpan={12} className="p-0">
+          <td colSpan={11} className="p-0">
             <DashboardPositionDetail position={position} enriched={enriched} />
           </td>
         </tr>
@@ -830,10 +673,10 @@ function DashboardPositionDetail({
           <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Position Details</h4>
           <div className="space-y-1">
             <DashDetailRow label="Entry Date" value={position.entry_date ? new Date(position.entry_date).toLocaleDateString() : '--'} />
-            <DashDetailRow label="Entry Price" value={`${parseFloat(position.entry_price_tao).toFixed(6)} τ`} />
+            <DashDetailRow label="Entry Price" value={`${safeFloat(position.entry_price_tao).toFixed(6)} τ`} />
             <DashDetailRow
               label="Current Price"
-              value={enriched ? `${parseFloat(enriched.alpha_price_tao).toFixed(6)} τ` : '--'}
+              value={enriched ? `${safeFloat(enriched.alpha_price_tao).toFixed(6)} τ` : '--'}
             />
             <DashDetailRow label="Cost Basis" value={`${formatTao(position.cost_basis_tao)} τ`} />
             <DashDetailRow label="Realized P&L" value={`${formatTao(position.realized_pnl_tao)} τ`} />
@@ -855,13 +698,13 @@ function DashboardPositionDetail({
             <DashDetailRow label="Exec NAV (100%)" value={`${formatTao(position.tao_value_exec_100pct)} τ`} />
             <DashDetailRow
               label="Slippage (50%)"
-              value={`${parseFloat(position.exit_slippage_50pct).toFixed(2)}%`}
-              valueColor={parseFloat(position.exit_slippage_50pct) > 5 ? 'text-red-400' : 'text-gray-300'}
+              value={`${safeFloat(position.exit_slippage_50pct).toFixed(2)}%`}
+              valueColor={safeFloat(position.exit_slippage_50pct) > 5 ? 'text-red-400' : 'text-gray-300'}
             />
             <DashDetailRow
               label="Slippage (100%)"
-              value={`${parseFloat(position.exit_slippage_100pct).toFixed(2)}%`}
-              valueColor={parseFloat(position.exit_slippage_100pct) > 10 ? 'text-red-400' : 'text-gray-300'}
+              value={`${safeFloat(position.exit_slippage_100pct).toFixed(2)}%`}
+              valueColor={safeFloat(position.exit_slippage_100pct) > 10 ? 'text-red-400' : 'text-gray-300'}
             />
           </div>
         </div>
@@ -888,20 +731,6 @@ function DashboardPositionDetail({
             ) : (
               <p className="text-xs text-gray-500">No action recommended</p>
             )}
-            <div className="mt-2">
-              <DashDetailRow
-                label="Health"
-                value={position.health_status.toUpperCase()}
-                valueColor={
-                  position.health_status === 'green' ? 'text-green-400' :
-                  position.health_status === 'yellow' ? 'text-yellow-400' :
-                  'text-red-400'
-                }
-              />
-              {position.health_reason && (
-                <p className="text-xs text-gray-500 mt-1">{position.health_reason}</p>
-              )}
-            </div>
           </div>
         </div>
       </div>

@@ -1,9 +1,18 @@
 """Cost basis computation service.
 
 Computes weighted average entry prices and realized P&L from transaction history.
+
+Two P&L sources:
+1. Alpha-based FIFO from stake_transactions — gives per-position entry prices,
+   cost basis, and alpha lot tracking needed for yield decomposition.
+2. TAO-based FIFO from TaoStats accounting/tax API — gives accurate total
+   realized P&L that matches TaoStats' own calculation.  This is authoritative
+   because the accounting endpoint captures batch extrinsics that the dtao/trade
+   endpoint misses.
 """
 
-from datetime import datetime, timezone
+import re
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Dict, List, Optional, Any
 
@@ -101,8 +110,10 @@ class CostBasisService:
         if not transactions:
             return None
 
-        # Use FIFO lot tracking for cost basis
-        # Each lot: (amount_tao, price_per_alpha, timestamp)
+        # Use FIFO lot tracking for cost basis.
+        # Lots track ALPHA quantities (not TAO) so that P&L arithmetic
+        # is correct:  P&L = (exit_price − entry_price) × alpha_sold
+        # where prices are TAO-per-alpha.
         lots: List[Dict] = []
 
         total_staked = Decimal("0")
@@ -125,55 +136,59 @@ class CostBasisService:
                 if first_stake_at is None:
                     first_stake_at = tx.timestamp
 
-                # Add lot to FIFO queue
-                # Use limit_price as entry price if available
+                # Add lot to FIFO queue – keyed by ALPHA quantity
                 entry_price = tx.limit_price if tx.limit_price else Decimal("0")
-                lots.append({
-                    "amount": tx.amount_tao,
-                    "price": entry_price,
-                    "timestamp": tx.timestamp,
-                })
+                alpha_qty = tx.alpha_amount if tx.alpha_amount else Decimal("0")
+                if alpha_qty > 0:
+                    lots.append({
+                        "amount": alpha_qty,       # alpha tokens purchased
+                        "price": entry_price,      # TAO per alpha at purchase
+                        "timestamp": tx.timestamp,
+                    })
 
             elif tx.tx_type == "unstake":
                 unstake_count += 1
                 total_unstaked += tx.amount_tao
                 total_fees += tx.fee_tao
 
-                # Calculate realized P&L using FIFO
+                # Calculate realized P&L using FIFO on alpha quantities
                 exit_price = tx.limit_price if tx.limit_price else Decimal("0")
-                amount_to_sell = tx.amount_tao
+                alpha_to_sell = tx.alpha_amount if tx.alpha_amount else Decimal("0")
 
                 # Process FIFO lots
-                while amount_to_sell > 0 and lots:
+                while alpha_to_sell > 0 and lots:
                     lot = lots[0]
 
-                    if lot["amount"] <= amount_to_sell:
-                        # Use entire lot
-                        sold_amount = lot["amount"]
-                        amount_to_sell -= sold_amount
+                    if lot["amount"] <= alpha_to_sell:
+                        # Consume entire lot
+                        sold_alpha = lot["amount"]
+                        alpha_to_sell -= sold_alpha
                         lots.pop(0)
                     else:
                         # Partial lot
-                        sold_amount = amount_to_sell
-                        lot["amount"] -= sold_amount
-                        amount_to_sell = Decimal("0")
+                        sold_alpha = alpha_to_sell
+                        lot["amount"] -= sold_alpha
+                        alpha_to_sell = Decimal("0")
 
-                    # Calculate realized P&L for this portion
+                    # P&L = (exit_price − entry_price) × alpha_sold
                     if lot["price"] > 0 and exit_price > 0:
-                        # P&L = (exit_price - entry_price) * amount
-                        # Note: prices are alpha per TAO, so higher = better for selling
-                        pnl = (exit_price - lot["price"]) * sold_amount
+                        pnl = (exit_price - lot["price"]) * sold_alpha
                         realized_pnl += pnl
 
-        # Compute weighted average entry price from remaining lots
-        total_remaining = sum(lot["amount"] for lot in lots)
-        if total_remaining > 0:
+                # Any remaining alpha_to_sell is emission yield (zero cost basis).
+                # Revenue on that portion is pure profit.
+                if alpha_to_sell > 0 and exit_price > 0:
+                    realized_pnl += exit_price * alpha_to_sell
+
+        # Compute weighted average entry price from remaining ALPHA lots
+        total_remaining_alpha = sum(lot["amount"] for lot in lots)
+        if total_remaining_alpha > 0:
             weighted_sum = sum(lot["amount"] * lot["price"] for lot in lots)
-            weighted_avg_price = weighted_sum / total_remaining
+            weighted_avg_price = weighted_sum / total_remaining_alpha
         else:
             weighted_avg_price = Decimal("0")
 
-        # Net invested = total staked - cost basis of unstaked
+        # Net invested = total staked - total unstaked (in TAO)
         net_invested = total_staked - total_unstaked
 
         # Upsert cost basis record
@@ -246,6 +261,141 @@ class CostBasisService:
                 # before the new stake is detected by balance history sync)
                 position.unrealized_pnl_tao = Decimal("0")
                 position.unrealized_pnl_pct = Decimal("0")
+
+    async def compute_realized_pnl_from_accounting(self) -> Dict[str, Any]:
+        """Compute realized P&L from TaoStats accounting/tax API using TAO-based FIFO.
+
+        This is the authoritative source for realized P&L because the accounting
+        endpoint captures all trades including batch extrinsics that the dtao/trade
+        endpoint misses.
+
+        Algorithm per subnet:
+          - Buys (debit_amount set): add TAO amount as a FIFO cost lot
+          - Sells (credit_amount set): consume FIFO lots, P&L = proceeds - cost
+
+        Returns:
+            Dict with per-subnet and total realized P&L
+        """
+        from app.services.data.taostats_client import get_taostats_client
+
+        logger.info("Computing realized P&L from accounting/tax data")
+
+        client = get_taostats_client()
+
+        # The API enforces a max 12-month date range.
+        # Use a rolling window ending today.
+        now = datetime.now(timezone.utc)
+        date_end = (now + timedelta(days=1)).strftime("%Y-%m-%d")
+        date_start = (now - timedelta(days=364)).strftime("%Y-%m-%d")
+
+        records = await client.get_all_accounting_tax(
+            coldkey=self.wallet_address,
+            token="TAO",
+            date_start=date_start,
+            date_end=date_end,
+        )
+
+        # Filter to token_swap records and group by subnet
+        swaps_by_subnet: Dict[int, List[Dict]] = {}
+        for rec in records:
+            if rec.get("transaction_type") != "token_swap":
+                continue
+
+            # Parse subnet from additional_data (e.g. "SN64", "SN3")
+            subnet_str = rec.get("additional_data", "") or ""
+            match = re.match(r"SN(\d+)", subnet_str)
+            if not match:
+                continue
+            netuid = int(match.group(1))
+
+            swaps_by_subnet.setdefault(netuid, []).append(rec)
+
+        # Sort each subnet's trades by timestamp.
+        # CRITICAL: within the same timestamp, sells MUST come before buys.
+        # Exit-and-reenter trades (sell then immediate rebuy) share a timestamp;
+        # if the buy sorts first, the subsequent sell would incorrectly consume
+        # the fresh buy lot alongside the old lots.
+        for netuid in swaps_by_subnet:
+            swaps_by_subnet[netuid].sort(
+                key=lambda r: (
+                    r.get("timestamp", ""),
+                    0 if r.get("credit_amount") else 1,  # sells (credit) before buys (debit)
+                )
+            )
+
+        # Run TAO-based FIFO per subnet
+        total_realized = Decimal("0")
+        per_subnet: Dict[int, Decimal] = {}
+
+        for netuid, trades in swaps_by_subnet.items():
+            lots: List[Decimal] = []  # FIFO queue of TAO cost lots
+            realized = Decimal("0")
+
+            for trade in trades:
+                debit = trade.get("debit_amount")
+                credit = trade.get("credit_amount")
+
+                if debit and not credit:
+                    # Buy: TAO spent → add cost lot
+                    lots.append(Decimal(str(debit)))
+                elif credit and not debit:
+                    # Sell: TAO received → consume ALL remaining FIFO lots.
+                    # Each sell is a full or partial exit; consuming all lots
+                    # gives the correct per-subnet total because:
+                    #  - Full exits: obviously consume everything
+                    #  - Exit-and-reenter (sell then immediate rebuy at same timestamp):
+                    #    the subsequent buy re-establishes a fresh cost lot at market price,
+                    #    so the total P&L is identical to consuming all lots on the sell.
+                    proceeds = Decimal(str(credit))
+                    cost = sum(lots)
+                    lots.clear()
+                    realized += proceeds - cost
+
+            per_subnet[netuid] = realized
+            total_realized += realized
+
+        logger.info(
+            "Accounting-based realized P&L computed",
+            total_realized=float(total_realized),
+            subnets=len(per_subnet),
+        )
+
+        # Update PositionCostBasis records with accounting-derived realized P&L
+        async with get_db_context() as db:
+            for netuid, realized in per_subnet.items():
+                stmt = select(PositionCostBasis).where(
+                    PositionCostBasis.wallet_address == self.wallet_address,
+                    PositionCostBasis.netuid == netuid,
+                )
+                result = await db.execute(stmt)
+                cost_basis = result.scalar_one_or_none()
+
+                if cost_basis is None:
+                    # Create record for subnets that only exist in accounting data
+                    cost_basis = PositionCostBasis(
+                        wallet_address=self.wallet_address,
+                        netuid=netuid,
+                        total_staked_tao=Decimal("0"),
+                        total_unstaked_tao=Decimal("0"),
+                        net_invested_tao=Decimal("0"),
+                        weighted_avg_entry_price=Decimal("0"),
+                        total_fees_tao=Decimal("0"),
+                        stake_count=0,
+                        unstake_count=0,
+                        computed_at=datetime.now(timezone.utc),
+                    )
+                    db.add(cost_basis)
+
+                cost_basis.realized_pnl_tao = realized
+                cost_basis.computed_at = datetime.now(timezone.utc)
+
+            await db.commit()
+
+        return {
+            "total_realized_pnl": total_realized,
+            "per_subnet": {k: float(v) for k, v in per_subnet.items()},
+            "subnets_processed": len(per_subnet),
+        }
 
     async def get_cost_basis(self, netuid: int) -> Optional[PositionCostBasis]:
         """Get cost basis for a specific position."""

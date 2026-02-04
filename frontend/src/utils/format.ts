@@ -2,6 +2,13 @@
  * Shared formatting utilities used across Dashboard, Positions, and Subnets tabs.
  */
 
+/** Safe parseFloat that returns `fallback` for null, undefined, empty string, or NaN. */
+export function safeFloat(value: string | number | null | undefined, fallback: number = 0): number {
+  if (value == null || value === '') return fallback
+  const num = typeof value === 'string' ? parseFloat(value) : value
+  return isNaN(num) ? fallback : num
+}
+
 export function formatTao(value: string | number): string {
   const num = typeof value === 'string' ? parseFloat(value) : value
   if (isNaN(num)) return '--'
@@ -56,24 +63,6 @@ export function getRegimeBgColor(regime: string | null): string {
     case 'quarantine': return 'bg-orange-600/20 text-orange-400'
     case 'dead': return 'bg-red-800/20 text-red-600'
     default: return 'bg-yellow-600/20 text-yellow-400'
-  }
-}
-
-export function getHealthColor(status: string): string {
-  switch (status) {
-    case 'green': return 'bg-green-500'
-    case 'yellow': return 'bg-yellow-500'
-    case 'red': return 'bg-red-500'
-    default: return 'bg-gray-500'
-  }
-}
-
-export function getHealthBgColor(status: string): string {
-  switch (status) {
-    case 'green': return 'bg-green-600/10 border-green-600/30'
-    case 'yellow': return 'bg-yellow-600/10 border-yellow-600/30'
-    case 'red': return 'bg-red-600/10 border-red-600/30'
-    default: return ''
   }
 }
 

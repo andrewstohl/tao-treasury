@@ -2,14 +2,17 @@ import { ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard,
+  TrendingUp,
   Globe,
   AlertTriangle,
   ArrowRightLeft,
   RefreshCw,
-  Shield
+  Shield,
+  DollarSign,
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../services/api'
+import type { PortfolioOverview } from '../../types'
 
 interface LayoutProps {
   children: ReactNode
@@ -17,6 +20,7 @@ interface LayoutProps {
 
 const navItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/analysis', label: 'Analysis', icon: TrendingUp },
   { path: '/subnets', label: 'Subnets', icon: Globe },
   { path: '/strategy', label: 'Strategy', icon: Shield },
   { path: '/alerts', label: 'Alerts', icon: AlertTriangle },
@@ -33,12 +37,25 @@ export default function Layout({ children }: LayoutProps) {
     refetchInterval: 30000,
   })
 
+  const { data: overview } = useQuery<PortfolioOverview>({
+    queryKey: ['portfolio-overview'],
+    queryFn: api.getPortfolioOverview,
+    refetchInterval: 30000,
+  })
+
   const refreshMutation = useMutation({
     mutationFn: api.triggerRefresh,
     onSuccess: () => {
       queryClient.invalidateQueries()
     },
   })
+
+  const taoPrice = overview?.tao_price?.price_usd
+    ? parseFloat(overview.tao_price.price_usd)
+    : null
+  const taoChange = overview?.tao_price?.change_24h_pct
+    ? parseFloat(overview.tao_price.change_24h_pct)
+    : null
 
   return (
     <div className="min-h-screen flex">
@@ -49,7 +66,27 @@ export default function Layout({ children }: LayoutProps) {
           <p className="text-xs text-gray-500 mt-1">Management Console</p>
         </div>
 
-        <nav className="mt-4">
+        {/* TAO Price */}
+        {taoPrice != null && (
+          <div className="mx-4 mb-2 px-3 py-2 bg-gray-900/60 rounded-lg flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-xs text-gray-400">
+              <DollarSign className="w-3.5 h-3.5" />
+              <span>TAO</span>
+            </div>
+            <div className="text-right">
+              <span className="text-sm font-mono text-white font-semibold">
+                ${taoPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+              {taoChange != null && (
+                <span className={`ml-1.5 text-xs font-mono ${taoChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {taoChange >= 0 ? '+' : ''}{taoChange.toFixed(1)}%
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
+        <nav className="mt-2">
           {navItems.map((item) => {
             const isActive = location.pathname === item.path
             const Icon = item.icon

@@ -27,6 +27,26 @@ export const api = {
     return data
   },
 
+  getPortfolioOverview: async () => {
+    const { data } = await client.get('/api/v1/portfolio/overview')
+    return data
+  },
+
+  getAttribution: async (days: number = 7) => {
+    const { data } = await client.get(`/api/v1/portfolio/attribution?days=${days}`)
+    return data
+  },
+
+  getScenarios: async () => {
+    const { data } = await client.get('/api/v1/portfolio/scenarios')
+    return data
+  },
+
+  getRiskMetrics: async (days: number = 90) => {
+    const { data } = await client.get(`/api/v1/portfolio/risk-metrics?days=${days}`)
+    return data
+  },
+
   getPortfolioHistory: async (days: number = 30) => {
     const { data } = await client.get(`/api/v1/portfolio/history?days=${days}`)
     return data
