@@ -24,7 +24,7 @@ export function formatTaoShort(value: string | number): string {
 export function formatPercent(value: string | number): string {
   const num = typeof value === 'string' ? parseFloat(value) : value
   if (isNaN(num)) return '--'
-  return `${num >= 0 ? '+' : ''}${num.toFixed(2)}%`
+  return `${num.toFixed(2)}%`
 }
 
 export function formatApy(value: string | number): string {

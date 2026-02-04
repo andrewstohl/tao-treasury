@@ -9,6 +9,7 @@ import {
   RefreshCw,
   Shield,
   DollarSign,
+  BookOpen,
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../services/api'
@@ -25,6 +26,7 @@ const navItems = [
   { path: '/strategy', label: 'Strategy', icon: Shield },
   { path: '/alerts', label: 'Alerts', icon: AlertTriangle },
   { path: '/recommendations', label: 'Rebalance', icon: ArrowRightLeft },
+  { path: '/examples', label: 'Examples', icon: BookOpen },
 ]
 
 export default function Layout({ children }: LayoutProps) {
@@ -88,7 +90,9 @@ export default function Layout({ children }: LayoutProps) {
 
         <nav className="mt-2">
           {navItems.map((item) => {
-            const isActive = location.pathname === item.path
+            const isActive = item.path === '/'
+              ? location.pathname === '/'
+              : location.pathname.startsWith(item.path)
             const Icon = item.icon
             return (
               <Link

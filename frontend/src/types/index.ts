@@ -364,6 +364,10 @@ export interface OverviewYield {
   yield_1d_tao: string
   yield_7d_tao: string
   yield_30d_tao: string
+  // Yield decomposition: total = unrealized (open) + realized (closed)
+  total_yield: DualCurrencyValue
+  unrealized_yield: DualCurrencyValue
+  realized_yield: DualCurrencyValue
 }
 
 export interface CompoundingProjection {

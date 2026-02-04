@@ -14,7 +14,7 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.portfolio import PortfolioSnapshot, NAVHistory
 from app.models.position import Position
-from app.models.transaction import PositionYieldHistory
+from app.models.transaction import PositionCostBasis, PositionYieldHistory
 from app.models.subnet import Subnet
 from app.models.alert import Alert
 from app.models.trade import TradeRecommendation
@@ -803,7 +803,7 @@ async def get_portfolio_overview(
     annualized_yield = daily_yield * 365
     portfolio_apy = snapshot.portfolio_apy or Decimal("0")
 
-    # 6a. Compute cumulative yield from emission alpha (not PositionYieldHistory).
+    # 6a. Compute UNREALIZED yield from emission alpha on open positions.
     #
     #     For each open position we know:
     #       - alpha_balance:     total alpha tokens currently held
@@ -819,7 +819,7 @@ async def get_portfolio_overview(
     pos_result = await db.execute(pos_stmt)
     open_positions = pos_result.scalars().all()
 
-    cumulative_yield_tao = Decimal("0")
+    unrealized_yield_tao = Decimal("0")
     for pos in open_positions:
         if (
             pos.entry_price_tao
@@ -832,7 +832,19 @@ async def get_portfolio_overview(
             emission_alpha = pos.alpha_balance - alpha_purchased
             if emission_alpha > 0:
                 current_alpha_price = pos.tao_value_mid / pos.alpha_balance
-                cumulative_yield_tao += emission_alpha * current_alpha_price
+                unrealized_yield_tao += emission_alpha * current_alpha_price
+
+    # 6b. Query REALIZED yield from PositionCostBasis (survives position closure).
+    #     This is the TAO value of emission alpha sold during unstakes.
+    ry_stmt = select(
+        func.coalesce(func.sum(PositionCostBasis.realized_yield_tao), 0)
+    ).where(PositionCostBasis.wallet_address == wallet)
+    ry_result = await db.execute(ry_stmt)
+    realized_yield_tao_val = ry_result.scalar() or Decimal("0")
+
+    # 6c. Total yield = unrealized (open positions) + realized (closed/partial exits)
+    total_yield_tao = unrealized_yield_tao + realized_yield_tao_val
+    cumulative_yield_tao = total_yield_tao  # backwards compat
 
     yield_income = OverviewYield(
         daily=DualCurrencyValue(
@@ -856,6 +868,19 @@ async def get_portfolio_overview(
         yield_1d_tao=daily_yield,
         yield_7d_tao=weekly_yield,
         yield_30d_tao=monthly_yield,
+        # Yield decomposition
+        total_yield=DualCurrencyValue(
+            tao=total_yield_tao,
+            usd=Decimal(str(round(float(total_yield_tao) * tao_usd, 2))),
+        ),
+        unrealized_yield=DualCurrencyValue(
+            tao=unrealized_yield_tao,
+            usd=Decimal(str(round(float(unrealized_yield_tao) * tao_usd, 2))),
+        ),
+        realized_yield=DualCurrencyValue(
+            tao=realized_yield_tao_val,
+            usd=Decimal(str(round(float(realized_yield_tao_val) * tao_usd, 2))),
+        ),
     )
 
     # 7. Compounding projection

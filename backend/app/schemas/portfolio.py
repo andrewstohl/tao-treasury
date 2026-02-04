@@ -226,6 +226,10 @@ class OverviewYield(BaseModel):
     yield_1d_tao: Decimal = Field(default=Decimal("0"))
     yield_7d_tao: Decimal = Field(default=Decimal("0"))
     yield_30d_tao: Decimal = Field(default=Decimal("0"))
+    # Yield decomposition: total = unrealized (open positions) + realized (closed)
+    total_yield: DualCurrencyValue = Field(default_factory=DualCurrencyValue)
+    unrealized_yield: DualCurrencyValue = Field(default_factory=DualCurrencyValue)
+    realized_yield: DualCurrencyValue = Field(default_factory=DualCurrencyValue)
 
 
 class CompoundingProjection(BaseModel):

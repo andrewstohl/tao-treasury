@@ -120,6 +120,9 @@ class CostBasisService:
         total_unstaked = Decimal("0")
         total_fees = Decimal("0")
         realized_pnl = Decimal("0")
+        realized_price_pnl = Decimal("0")   # P&L from alpha price changes on purchased lots
+        realized_yield_tao = Decimal("0")   # TAO from selling emission alpha (zero cost basis)
+        realized_yield_alpha = Decimal("0") # Emission alpha tokens sold
         stake_count = 0
         unstake_count = 0
         first_stake_at = None
@@ -174,11 +177,15 @@ class CostBasisService:
                     if lot["price"] > 0 and exit_price > 0:
                         pnl = (exit_price - lot["price"]) * sold_alpha
                         realized_pnl += pnl
+                        realized_price_pnl += pnl
 
                 # Any remaining alpha_to_sell is emission yield (zero cost basis).
-                # Revenue on that portion is pure profit.
+                # Revenue on that portion is pure profit — tracked separately.
                 if alpha_to_sell > 0 and exit_price > 0:
-                    realized_pnl += exit_price * alpha_to_sell
+                    yield_income = exit_price * alpha_to_sell
+                    realized_pnl += yield_income
+                    realized_yield_tao += yield_income
+                    realized_yield_alpha += alpha_to_sell
 
         # Compute weighted average entry price from remaining ALPHA lots
         total_remaining_alpha = sum(lot["amount"] for lot in lots)
@@ -211,6 +218,8 @@ class CostBasisService:
         cost_basis.net_invested_tao = net_invested
         cost_basis.weighted_avg_entry_price = weighted_avg_price
         cost_basis.realized_pnl_tao = realized_pnl
+        cost_basis.realized_yield_tao = realized_yield_tao
+        cost_basis.realized_yield_alpha = realized_yield_alpha
         cost_basis.total_fees_tao = total_fees
         cost_basis.stake_count = stake_count
         cost_basis.unstake_count = unstake_count
@@ -224,6 +233,8 @@ class CostBasisService:
             total_staked=total_staked,
             avg_price=weighted_avg_price,
             realized_pnl=realized_pnl,
+            realized_yield_tao=realized_yield_tao,
+            realized_yield_alpha=realized_yield_alpha,
         )
 
         return cost_basis

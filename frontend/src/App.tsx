@@ -6,6 +6,7 @@ import Subnets from './pages/Subnets'
 import Alerts from './pages/Alerts'
 import Recommendations from './pages/Recommendations'
 import Strategy from './pages/Strategy'
+import Examples from './pages/Examples'
 
 function App() {
   return (
@@ -17,6 +18,7 @@ function App() {
         <Route path="/alerts" element={<Alerts />} />
         <Route path="/recommendations" element={<Recommendations />} />
         <Route path="/strategy" element={<Strategy />} />
+        <Route path="/examples/*" element={<Examples />} />
       </Routes>
     </Layout>
   )

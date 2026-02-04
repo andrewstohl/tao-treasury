@@ -131,7 +131,18 @@ class PositionCostBasis(Base):
     # Realized P&L
     realized_pnl_tao: Mapped[Decimal] = mapped_column(
         Numeric(20, 9), nullable=False, default=Decimal("0")
-    )  # Realized gains/losses from unstaking
+    )  # Realized gains/losses from unstaking (total: price gain + yield)
+
+    # Realized yield decomposition — separates emission yield from price gain
+    # so that yield survives position closure (Position rows get deleted).
+    realized_yield_tao: Mapped[Decimal] = mapped_column(
+        Numeric(20, 9), nullable=False, default=Decimal("0"),
+        server_default="0",
+    )  # TAO value of emission alpha realized on unstakes
+    realized_yield_alpha: Mapped[Decimal] = mapped_column(
+        Numeric(20, 9), nullable=False, default=Decimal("0"),
+        server_default="0",
+    )  # Emission alpha tokens realized on unstakes
 
     # Fee tracking
     total_fees_tao: Mapped[Decimal] = mapped_column(
