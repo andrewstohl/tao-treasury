@@ -4,35 +4,24 @@ import {
   Activity,
   ChevronRight,
   ChevronDown,
+  Search,
+  X,
 } from 'lucide-react'
 import { api } from '../services/api'
 import type { Dashboard as DashboardType, EnrichedSubnetListResponse, EnrichedSubnet, VolatilePoolData, PositionSummary, ClosedPosition } from '../types'
-import { formatTao, formatPercent, safeFloat } from '../utils/format'
-import SortableHeader, { useSortToggle, type SortDirection } from '../components/common/SortableHeader'
+import { formatTao, safeFloat } from '../utils/format'
 import SparklineCell from '../components/common/cells/SparklineCell'
-import PriceChangeCell from '../components/common/cells/PriceChangeCell'
 import RegimeBadge from '../components/common/cells/RegimeBadge'
 import ViabilityBadge from '../components/common/cells/ViabilityBadge'
 import SubnetExpandedRow, { FlowRow } from '../components/common/SubnetExpandedRow'
 import PortfolioOverviewCards from '../components/dashboard/PortfolioOverviewCards'
-import PerformanceRisk from '../components/dashboard/PerformanceRisk'
 
-type DashboardSortKey =
-  | 'subnet_name'
-  | 'tao_value_mid'
-  | 'weight_pct'
-  | 'price_change_24h'
-  | 'current_apy'
-  | 'cost_basis_tao'
-  | 'unrealized_pnl_pct'
-  | 'flow_regime'
+type PositionTab = 'open' | 'closed' | 'all'
 
 export default function Dashboard() {
-  const [sortKey, setSortKey] = useState<DashboardSortKey | null>('tao_value_mid')
-  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [expandedNetuid, setExpandedNetuid] = useState<number | null>(null)
-
-  const handleSort = useSortToggle(sortKey, sortDirection, setSortKey, setSortDirection)
+  const [positionTab, setPositionTab] = useState<PositionTab>('open')
+  const [searchQuery, setSearchQuery] = useState('')
 
   const { data, isLoading, error } = useQuery<DashboardType>({
     queryKey: ['dashboard'],
@@ -56,65 +45,33 @@ export default function Dashboard() {
     return map
   }, [enrichedData?.subnets])
 
-  const sortedPositions = useMemo(() => {
+  // Sort open positions by TAO value descending
+  const openPositions = useMemo(() => {
     const positions = data?.top_positions || []
-    if (!sortKey || !sortDirection) return positions
+    return [...positions].sort(
+      (a, b) => safeFloat(b.tao_value_mid) - safeFloat(a.tao_value_mid)
+    )
+  }, [data?.top_positions])
 
-    return [...positions].sort((a, b) => {
-      let aVal: number | string
-      let bVal: number | string
+  // Filtered positions
+  const filteredOpen = useMemo(() => {
+    if (!searchQuery) return openPositions
+    const q = searchQuery.toLowerCase()
+    return openPositions.filter(p =>
+      (p.subnet_name || '').toLowerCase().includes(q) ||
+      String(p.netuid).includes(q)
+    )
+  }, [openPositions, searchQuery])
 
-      switch (sortKey as DashboardSortKey) {
-        case 'subnet_name':
-          aVal = a.subnet_name || `SN${a.netuid}`
-          bVal = b.subnet_name || `SN${b.netuid}`
-          break
-        case 'tao_value_mid':
-          aVal = safeFloat(a.tao_value_mid)
-          bVal = safeFloat(b.tao_value_mid)
-          break
-        case 'weight_pct':
-          aVal = safeFloat(a.weight_pct)
-          bVal = safeFloat(b.weight_pct)
-          break
-        case 'price_change_24h': {
-          const aV = enrichedLookup.get(a.netuid)?.volatile?.price_change_24h
-          const bV = enrichedLookup.get(b.netuid)?.volatile?.price_change_24h
-          aVal = aV ?? 0
-          bVal = bV ?? 0
-          break
-        }
-        case 'current_apy':
-          aVal = safeFloat(a.current_apy)
-          bVal = safeFloat(b.current_apy)
-          break
-        case 'cost_basis_tao':
-          aVal = safeFloat(a.cost_basis_tao)
-          bVal = safeFloat(b.cost_basis_tao)
-          break
-        case 'unrealized_pnl_pct':
-          aVal = safeFloat(a.unrealized_pnl_pct)
-          bVal = safeFloat(b.unrealized_pnl_pct)
-          break
-        case 'flow_regime':
-          aVal = a.flow_regime || 'neutral'
-          bVal = b.flow_regime || 'neutral'
-          break
-        default:
-          return 0
-      }
-
-      if (typeof aVal === 'string' && typeof bVal === 'string') {
-        return sortDirection === 'asc'
-          ? aVal.localeCompare(bVal)
-          : bVal.localeCompare(aVal)
-      }
-
-      return sortDirection === 'asc'
-        ? (aVal as number) - (bVal as number)
-        : (bVal as number) - (aVal as number)
-    })
-  }, [data?.top_positions, sortKey, sortDirection, enrichedLookup])
+  const filteredClosed = useMemo(() => {
+    const positions = data?.closed_positions || []
+    if (!searchQuery) return positions
+    const q = searchQuery.toLowerCase()
+    return positions.filter(p =>
+      (p.subnet_name || '').toLowerCase().includes(q) ||
+      String(p.netuid).includes(q)
+    )
+  }, [data?.closed_positions, searchQuery])
 
   if (isLoading) {
     return (
@@ -133,14 +90,60 @@ export default function Dashboard() {
   }
 
   const { portfolio, action_items } = data
+  const taoPrice = safeFloat(portfolio.tao_price_usd)
+  const walletAddresses = portfolio?.wallet_address ? [portfolio.wallet_address] : []
+  const truncateAddress = (addr: string) => `${addr.slice(0, 6)}...${addr.slice(-5)}`
+
+  const openCount = data.top_positions?.length || 0
+  const closedCount = data.closed_positions?.length || 0
+
+  const tabs: { key: PositionTab; label: string; count: number }[] = [
+    { key: 'open', label: 'Open Positions', count: openCount },
+    { key: 'closed', label: 'Closed Positions', count: closedCount },
+    { key: 'all', label: 'All Positions', count: openCount + closedCount },
+  ]
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Dashboard</h1>
-        <div className="text-sm text-gray-500">
-          Last updated: {new Date(data.generated_at).toLocaleTimeString()}
+      </div>
+
+      {/* Wallet Address Bar */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-3">
+          <div className="flex-1 flex items-center gap-2 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5">
+            <Search className="w-4 h-4 text-gray-500 flex-shrink-0" />
+            <input
+              type="text"
+              placeholder="Add address"
+              className="flex-1 bg-transparent text-sm text-gray-300 placeholder-gray-500 outline-none"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  // Future: trigger add wallet address
+                }
+              }}
+            />
+          </div>
+          <button className="px-5 py-2.5 bg-tao-600 hover:bg-tao-500 rounded-lg text-sm font-medium text-white transition-colors">
+            Add
+          </button>
         </div>
+        {walletAddresses.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {walletAddresses.map((addr) => (
+              <div
+                key={addr}
+                className="flex items-center gap-2 px-3 py-1.5 bg-gray-700/60 rounded-full text-sm"
+              >
+                <span className="font-mono text-gray-300">{truncateAddress(addr)}</span>
+                <button className="text-gray-500 hover:text-gray-300 transition-colors">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Action Items */}
@@ -179,378 +182,354 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Portfolio Overview – dual currency, rolling returns, projections */}
-      <PortfolioOverviewCards />
-
-      {/* Allocation & Market Pulse */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Allocation Card */}
-        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-          <h3 className="text-lg font-semibold mb-4">Allocation</h3>
-          <div className="space-y-3">
-            <div>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="text-gray-400">Root (SN0)</span>
-                <span>{formatTao(portfolio.allocation.root_tao)} ({safeFloat(portfolio.allocation.root_pct).toFixed(1)}%)</span>
-              </div>
-              <div className="w-full bg-gray-700 rounded-full h-2">
-                <div
-                  className="bg-blue-500 h-2 rounded-full"
-                  style={{ width: `${Math.min(safeFloat(portfolio.allocation.root_pct), 100)}%` }}
-                ></div>
-              </div>
-            </div>
-            <div>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="text-gray-400">dTAO Sleeve</span>
-                <span>{formatTao(portfolio.allocation.dtao_tao)} ({safeFloat(portfolio.allocation.dtao_pct).toFixed(1)}%)</span>
-              </div>
-              <div className="w-full bg-gray-700 rounded-full h-2">
-                <div
-                  className="bg-tao-500 h-2 rounded-full"
-                  style={{ width: `${Math.min(safeFloat(portfolio.allocation.dtao_pct), 100)}%` }}
-                ></div>
-              </div>
-            </div>
-            <div>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="text-gray-400">Unstaked Buffer</span>
-                <span>{formatTao(portfolio.allocation.unstaked_tao)} ({safeFloat(portfolio.allocation.unstaked_pct).toFixed(1)}%)</span>
-              </div>
-              <div className="w-full bg-gray-700 rounded-full h-2">
-                <div
-                  className="bg-green-500 h-2 rounded-full"
-                  style={{ width: `${Math.min(safeFloat(portfolio.allocation.unstaked_pct), 100)}%` }}
-                ></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Performance & Risk Card */}
-        <PerformanceRisk />
+      {/* Portfolio Overview Cards */}
+      <div className="mb-3">
+        <PortfolioOverviewCards />
       </div>
 
-      {/* All Positions Table */}
-      {sortedPositions.length > 0 && (
-        <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-700 flex items-center justify-between">
-            <h3 className="text-lg font-semibold">All Positions</h3>
-            <span className="text-sm text-gray-500">{sortedPositions.length} positions</span>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1200px]">
-              <thead className="bg-gray-900/50">
-                <tr className="text-sm text-gray-400">
-                  {/* Expand toggle */}
-                  <th className="w-8 px-2 py-3" />
-                  <SortableHeader<DashboardSortKey>
-                    label="Subnet"
-                    sortKey="subnet_name"
-                    currentSortKey={sortKey}
-                    currentDirection={sortDirection}
-                    onSort={handleSort}
-                  />
-                  <th className="px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">
-                    7d Chart
-                  </th>
-                  <SortableHeader<DashboardSortKey>
-                    label="TAO Value"
-                    sortKey="tao_value_mid"
-                    currentSortKey={sortKey}
-                    currentDirection={sortDirection}
-                    onSort={handleSort}
-                    align="right"
-                  />
-                  <SortableHeader<DashboardSortKey>
-                    label="Weight"
-                    sortKey="weight_pct"
-                    currentSortKey={sortKey}
-                    currentDirection={sortDirection}
-                    onSort={handleSort}
-                    align="right"
-                  />
-                  <SortableHeader<DashboardSortKey>
-                    label="Price / 24h"
-                    sortKey="price_change_24h"
-                    currentSortKey={sortKey}
-                    currentDirection={sortDirection}
-                    onSort={handleSort}
-                    align="right"
-                  />
-                  <SortableHeader<DashboardSortKey>
-                    label="APY / Yield"
-                    sortKey="current_apy"
-                    currentSortKey={sortKey}
-                    currentDirection={sortDirection}
-                    onSort={handleSort}
-                    align="right"
-                  />
-                  <SortableHeader<DashboardSortKey>
-                    label="Cost / Entry"
-                    sortKey="cost_basis_tao"
-                    currentSortKey={sortKey}
-                    currentDirection={sortDirection}
-                    onSort={handleSort}
-                    align="right"
-                  />
-                  <SortableHeader<DashboardSortKey>
-                    label="P&L"
-                    sortKey="unrealized_pnl_pct"
-                    currentSortKey={sortKey}
-                    currentDirection={sortDirection}
-                    onSort={handleSort}
-                    align="right"
-                  />
-                  <th className="px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">
-                    Viability
-                  </th>
-                  <SortableHeader<DashboardSortKey>
-                    label="Regime"
-                    sortKey="flow_regime"
-                    currentSortKey={sortKey}
-                    currentDirection={sortDirection}
-                    onSort={handleSort}
-                  />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-700">
-                {sortedPositions.map((position) => {
-                  const enriched = enrichedLookup.get(position.netuid)
-                  const v = enriched?.volatile ?? null
-                  const isExpanded = expandedNetuid === position.netuid
-                  return (
-                    <DashboardPositionRow
-                      key={position.netuid}
-                      position={position}
-                      enriched={enriched ?? null}
-                      v={v}
-                      isExpanded={isExpanded}
-                      onToggle={() => setExpandedNetuid(isExpanded ? null : position.netuid)}
-                    />
-                  )
-                })}
-
-                {/* Free TAO balance row */}
-                {safeFloat(data?.free_tao_balance) > 0 && (
-                  <tr className="bg-gray-900/30 text-gray-500">
-                    <td className="px-2 py-2.5" />
-                    <td className="px-4 py-2.5">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full flex-shrink-0 bg-green-900/40 flex items-center justify-center text-green-500 text-xs font-bold">τ</div>
-                        <div className="min-w-0">
-                          <div className="font-medium text-sm text-gray-400">Free TAO</div>
-                          <div className="text-xs text-gray-600">Unstaked buffer</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-2 py-2.5" />
-                    <td className="px-4 py-2.5 text-right">
-                      <div className="font-mono text-sm text-gray-400">{formatTao(data?.free_tao_balance ?? '0')} τ</div>
-                    </td>
-                    <td colSpan={7} />
-                  </tr>
-                )}
-
-                {/* Closed positions */}
-                {(data?.closed_positions ?? []).length > 0 && (
-                  <>
-                    <tr className="bg-gray-900/50">
-                      <td colSpan={11} className="px-4 py-2 text-xs text-gray-500 uppercase tracking-wider font-medium">
-                        Closed Positions ({data!.closed_positions.length})
-                      </td>
-                    </tr>
-                    {data!.closed_positions.map((cp) => (
-                      <ClosedPositionRow key={cp.netuid} position={cp} enrichedLookup={enrichedLookup} />
-                    ))}
-                  </>
-                )}
-              </tbody>
-            </table>
-          </div>
+      {/* Positions Section */}
+      <div className="space-y-4">
+        {/* Tabs */}
+        <div className="flex items-center border-b border-gray-700">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setPositionTab(tab.key)}
+              className={`px-1 pb-2.5 mr-6 text-sm font-medium transition-colors border-b-2 ${
+                positionTab === tab.key
+                  ? 'text-white border-tao-400'
+                  : 'text-gray-500 hover:text-gray-300 border-transparent'
+              }`}
+            >
+              {tab.label}
+              <span className="ml-1.5 text-xs text-gray-600">({tab.count})</span>
+            </button>
+          ))}
         </div>
-      )}
+
+        {/* Filters */}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 w-64">
+            <Search className="w-4 h-4 text-gray-500 flex-shrink-0" />
+            <input
+              type="text"
+              placeholder="Search subnets..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="flex-1 bg-transparent text-sm text-gray-300 placeholder-gray-500 outline-none"
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery('')} className="text-gray-500 hover:text-gray-300">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          <select className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300">
+            <option value="all">Wallet: All</option>
+            {walletAddresses.map(addr => (
+              <option key={addr} value={addr}>{truncateAddress(addr)}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Open Position Cards */}
+        {(positionTab === 'open' || positionTab === 'all') && filteredOpen.length > 0 && (
+          <div className="space-y-3">
+            {positionTab === 'all' && (
+              <div className="text-xs text-gray-500 uppercase tracking-wider font-medium">
+                Open Positions ({filteredOpen.length})
+              </div>
+            )}
+            {filteredOpen.map((position) => {
+              const enriched = enrichedLookup.get(position.netuid)
+              const v = enriched?.volatile ?? null
+              const isExpanded = expandedNetuid === position.netuid
+              return (
+                <PositionCard
+                  key={position.netuid}
+                  position={position}
+                  enriched={enriched ?? null}
+                  v={v}
+                  taoPrice={taoPrice}
+                  isExpanded={isExpanded}
+                  onToggle={() => setExpandedNetuid(isExpanded ? null : position.netuid)}
+                />
+              )
+            })}
+          </div>
+        )}
+
+        {/* Free TAO balance */}
+        {(positionTab === 'open' || positionTab === 'all') && safeFloat(data?.free_tao_balance) > 0 && (
+          <div className="bg-gray-800/50 rounded-lg border border-gray-700 px-5 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-green-900/40 flex items-center justify-center text-green-500 text-sm font-bold">τ</div>
+              <div>
+                <div className="font-medium text-sm text-gray-400">Free TAO</div>
+                <div className="text-xs text-gray-600">Unstaked buffer</div>
+              </div>
+            </div>
+            <div className="tabular-nums text-sm text-gray-400">{formatTao(data?.free_tao_balance ?? '0')} τ</div>
+          </div>
+        )}
+
+        {/* Closed Position Cards */}
+        {(positionTab === 'closed' || positionTab === 'all') && filteredClosed.length > 0 && (
+          <div className="space-y-3">
+            {positionTab === 'all' && (
+              <div className="text-xs text-gray-500 uppercase tracking-wider font-medium pt-2">
+                Closed Positions ({filteredClosed.length})
+              </div>
+            )}
+            {filteredClosed.map((position) => {
+              const enriched = enrichedLookup.get(position.netuid)
+              return (
+                <ClosedPositionCard
+                  key={position.netuid}
+                  position={position}
+                  enriched={enriched ?? null}
+                />
+              )
+            })}
+          </div>
+        )}
+
+        {/* Empty state */}
+        {((positionTab === 'open' && filteredOpen.length === 0) ||
+          (positionTab === 'closed' && filteredClosed.length === 0) ||
+          (positionTab === 'all' && filteredOpen.length === 0 && filteredClosed.length === 0)) && (
+          <div className="text-center py-8 text-gray-500">
+            {searchQuery ? 'No positions match your search.' : 'No positions found.'}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
 
-function DashboardPositionRow({
+function PositionCard({
   position,
   enriched,
   v,
+  taoPrice,
   isExpanded,
   onToggle,
 }: {
   position: PositionSummary
   enriched: EnrichedSubnet | null
   v: VolatilePoolData | null
+  taoPrice: number
   isExpanded: boolean
   onToggle: () => void
 }) {
+  const entryPrice = safeFloat(position.entry_price_tao)
+  const costBasis = safeFloat(position.cost_basis_tao)
+  const alphaBalance = safeFloat(position.alpha_balance)
+  const currentPrice = enriched ? safeFloat(enriched.alpha_price_tao) : 0
+  const taoValue = safeFloat(position.tao_value_mid)
+
+  // Yield: alpha earned from emissions, valued at current price
+  const originalAlpha = entryPrice > 0 ? costBasis / entryPrice : 0
+  const yieldAlpha = alphaBalance - originalAlpha
+  const yieldTao = yieldAlpha * currentPrice
+
+  // Alpha: price appreciation on original position
+  const alphaPnlTao = originalAlpha * (currentPrice - entryPrice)
+
+  const currentValueUsd = taoValue * taoPrice
+  const unrealizedPnl = safeFloat(position.unrealized_pnl_tao)
+  const apy = safeFloat(position.current_apy)
+
+  const pnlColor = (val: number) => val >= 0 ? 'text-green-400' : 'text-red-400'
+
+  // Viability label
+  const viabilityLabel = enriched?.viability_tier
+    ? `${enriched.viability_tier === 'tier_1' ? 'Prime' : enriched.viability_tier === 'tier_2' ? 'Eligible' : enriched.viability_tier === 'tier_3' ? 'Watchlist' : 'Excluded'}${enriched.viability_score ? ` - ${parseFloat(enriched.viability_score).toFixed(0)}` : ''}`
+    : null
+
   return (
-    <>
-      <tr
-        className="hover:bg-gray-700/30 cursor-pointer"
+    <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+      {/* Upper half */}
+      <div
+        className="flex items-center gap-4 px-5 py-3 cursor-pointer hover:bg-gray-700/30 transition-colors"
         onClick={onToggle}
       >
-        {/* Expand chevron */}
-        <td className="px-2 py-3 text-gray-500">
+        <div className="text-gray-500 flex-shrink-0">
           {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-        </td>
-
-        {/* Subnet name + logo */}
-        <td className="px-4 py-3">
-          <div className="flex items-center gap-2">
-            {enriched?.identity?.logo_url && (
-              <img
-                src={enriched.identity.logo_url}
-                alt=""
-                className="w-6 h-6 rounded-full flex-shrink-0 bg-gray-700"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-              />
-            )}
-            <div className="min-w-0">
-              <div className="font-medium text-sm">{position.subnet_name || `SN${position.netuid}`}</div>
-              <div className="text-xs text-gray-500">SN{position.netuid}</div>
-            </div>
-          </div>
-        </td>
-
-        {/* 7d Sparkline */}
-        <td className="px-2 py-3 align-middle">
-          <SparklineCell data={v?.sparkline_7d} />
-        </td>
-
-        {/* TAO Value + alpha */}
-        <td className="px-4 py-3 text-right">
-          <div className="font-mono text-sm">{formatTao(position.tao_value_mid)} τ</div>
-          <div className="text-xs text-gray-500 font-mono">{formatTao(position.alpha_balance)} α</div>
-        </td>
-
-        {/* Weight */}
-        <td className="px-4 py-3 text-right font-mono text-sm">
-          {safeFloat(position.weight_pct).toFixed(1)}%
-        </td>
-
-        {/* Price + 24h Change */}
-        <td className="px-4 py-3">
-          <div className="text-right">
-            {enriched ? (
-              <div className="text-sm font-mono">{safeFloat(enriched.alpha_price_tao).toFixed(6)} τ</div>
-            ) : (
-              <div className="text-sm text-gray-600">--</div>
-            )}
-            <PriceChangeCell change24h={v?.price_change_24h} />
-          </div>
-        </td>
-
-        {/* APY + Daily Yield */}
-        <td className="px-4 py-3 text-right">
-          {position.current_apy ? (
-            <>
-              <div className="font-mono text-sm text-green-400">
-                {safeFloat(position.current_apy).toFixed(1)}%
-              </div>
-              <div className="text-xs text-gray-400 font-mono">
-                +{position.daily_yield_tao ? safeFloat(position.daily_yield_tao).toFixed(4) : '0'} τ/d
-              </div>
-            </>
-          ) : (
-            <span className="text-gray-600 text-sm">--</span>
-          )}
-        </td>
-
-        {/* Cost Basis + Entry Price */}
-        <td className="px-4 py-3 text-right">
-          <div className="font-mono text-sm">{formatTao(position.cost_basis_tao)} τ</div>
-          <div className="text-xs text-gray-500 font-mono">
-            @ {safeFloat(position.entry_price_tao).toFixed(6)}
-          </div>
-        </td>
-
-        {/* Unrealized P&L */}
-        <td className="px-4 py-3 text-right">
-          <span className={`font-mono text-sm ${safeFloat(position.unrealized_pnl_tao) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-            {formatTao(position.unrealized_pnl_tao)} τ
-          </span>
-          <div className={`text-xs font-mono ${safeFloat(position.unrealized_pnl_pct) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-            {formatPercent(position.unrealized_pnl_pct)}
-          </div>
-        </td>
-
-        {/* Viability */}
-        <td className="px-4 py-3">
-          <ViabilityBadge
-            tier={enriched?.viability_tier}
-            score={enriched?.viability_score}
+        </div>
+        {enriched?.identity?.logo_url ? (
+          <img
+            src={enriched.identity.logo_url}
+            alt=""
+            className="w-7 h-7 rounded-full flex-shrink-0 bg-gray-700"
+            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
           />
-        </td>
+        ) : (
+          <div className="w-7 h-7 rounded-full bg-gray-700 flex items-center justify-center text-xs text-gray-400 font-bold flex-shrink-0">
+            {position.netuid}
+          </div>
+        )}
+        <span className="font-semibold text-base font-display text-white">{position.subnet_name || `SN${position.netuid}`}</span>
+        <span className="text-xs text-gray-500">SN{position.netuid}</span>
+      </div>
 
-        {/* Regime */}
-        <td className="px-4 py-3">
-          <RegimeBadge regime={position.flow_regime} />
-        </td>
-      </tr>
+      {/* Divider */}
+      <div className="border-t border-gray-700" />
 
-      {/* Expanded detail row */}
+      {/* Lower half */}
+      <div
+        className="flex items-center gap-2 px-5 py-3 cursor-pointer hover:bg-gray-700/30 transition-colors"
+        onClick={onToggle}
+      >
+        <div className="w-8 flex-shrink-0" />
+        <div className="flex-1">
+          <MetricCell
+            label="Current Value"
+            value={`$${currentValueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          />
+        </div>
+        <div className="flex-1">
+          <MetricCell
+            label="TAO Value"
+            value={`${formatTao(taoValue)} τ`}
+          />
+        </div>
+        <div className="flex-1">
+          <MetricCell
+            label="Yield"
+            value={`${yieldTao >= 0 ? '+' : ''}${yieldTao.toFixed(4)} τ`}
+            valueColor={pnlColor(yieldTao)}
+          />
+        </div>
+        <div className="flex-1">
+          <MetricCell
+            label="Alpha"
+            value={`${alphaPnlTao >= 0 ? '+' : ''}${alphaPnlTao.toFixed(4)} τ`}
+            valueColor={pnlColor(alphaPnlTao)}
+          />
+        </div>
+        <div className="flex-1">
+          <MetricCell
+            label="Profit/Loss"
+            value={`${unrealizedPnl >= 0 ? '+' : ''}${formatTao(unrealizedPnl)} τ`}
+            valueColor={pnlColor(unrealizedPnl)}
+          />
+        </div>
+        <div className="flex-1">
+          <MetricCell
+            label="APY"
+            value={apy > 0 ? `${apy.toFixed(1)}%` : '--'}
+          />
+        </div>
+        <div className="flex-1">
+          <div className="text-center">
+            <div className="text-xs text-gray-500 mb-0.5">Viability</div>
+            <div>{viabilityLabel ? (
+              <ViabilityBadge tier={enriched?.viability_tier} score={enriched?.viability_score} />
+            ) : <span className="text-sm text-gray-300">--</span>}</div>
+          </div>
+        </div>
+        <div className="flex-1">
+          <div className="text-center">
+            <div className="text-xs text-gray-500 mb-0.5">Regime</div>
+            <div><RegimeBadge regime={position.flow_regime} /></div>
+          </div>
+        </div>
+        <div className="w-64 flex-shrink-0">
+          <div className="text-center">
+            <div className="text-xs text-gray-500 mb-0.5">7D Performance</div>
+            <div><SparklineCell data={v?.sparkline_7d} /></div>
+          </div>
+        </div>
+      </div>
+
+      {/* Expanded detail */}
       {isExpanded && (
-        <tr>
-          <td colSpan={11} className="p-0">
-            <DashboardPositionDetail position={position} enriched={enriched} />
-          </td>
-        </tr>
+        <div className="border-t border-gray-700">
+          <DashboardPositionDetail position={position} enriched={enriched} />
+        </div>
       )}
-    </>
+    </div>
   )
 }
 
-function ClosedPositionRow({
+function ClosedPositionCard({
   position,
-  enrichedLookup,
+  enriched,
 }: {
   position: ClosedPosition
-  enrichedLookup: Map<number, EnrichedSubnet>
+  enriched: EnrichedSubnet | null
 }) {
-  const enriched = enrichedLookup.get(position.netuid)
   const pnl = safeFloat(position.realized_pnl_tao)
+  const staked = safeFloat(position.total_staked_tao)
+  const pnlColor = pnl >= 0 ? 'text-green-400' : 'text-red-400'
 
   return (
-    <tr className="text-gray-500 hover:bg-gray-700/20">
-      <td className="px-2 py-2" />
-      <td className="px-4 py-2">
-        <div className="flex items-center gap-2">
-          {enriched?.identity?.logo_url && (
-            <img
-              src={enriched.identity.logo_url}
-              alt=""
-              className="w-5 h-5 rounded-full flex-shrink-0 bg-gray-700 opacity-50"
-              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-            />
-          )}
-          <div className="min-w-0">
-            <div className="text-sm text-gray-500">{position.subnet_name}</div>
-            <div className="text-xs text-gray-600">SN{position.netuid}</div>
+    <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden opacity-70">
+      {/* Upper half */}
+      <div className="flex items-center gap-4 px-5 py-3">
+        {enriched?.identity?.logo_url ? (
+          <img
+            src={enriched.identity.logo_url}
+            alt=""
+            className="w-7 h-7 rounded-full flex-shrink-0 bg-gray-700 opacity-60"
+            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+          />
+        ) : (
+          <div className="w-7 h-7 rounded-full bg-gray-700 flex items-center justify-center text-xs text-gray-500 font-bold flex-shrink-0">
+            {position.netuid}
           </div>
-        </div>
-      </td>
-      <td className="px-2 py-2" />
-      <td className="px-4 py-2 text-right font-mono text-sm text-gray-600">0 τ</td>
-      <td className="px-4 py-2" />
-      <td className="px-4 py-2" />
-      <td className="px-4 py-2" />
-      <td className="px-4 py-2 text-right">
-        <div className="font-mono text-sm text-gray-600">{formatTao(position.total_staked_tao)} τ</div>
-        <div className="text-xs text-gray-600">closed</div>
-      </td>
-      <td className="px-4 py-2 text-right">
-        <span className={`font-mono text-sm ${pnl >= 0 ? 'text-green-400/70' : 'text-red-400/70'}`}>
-          {formatTao(position.realized_pnl_tao)} τ
-        </span>
-        <div className="text-xs text-gray-600">realized</div>
-      </td>
-      <td className="px-4 py-2" />
-      <td className="px-4 py-2" />
-    </tr>
+        )}
+        <span className="font-medium text-sm text-gray-400">{position.subnet_name || `SN${position.netuid}`}</span>
+        <span className="text-xs text-gray-600">SN{position.netuid}</span>
+        <span className="text-xs px-2 py-0.5 rounded bg-gray-700 text-gray-500">Closed</span>
+      </div>
+
+      {/* Divider */}
+      <div className="border-t border-gray-700" />
+
+      {/* Lower half */}
+      <div className="grid grid-cols-5 gap-4 px-5 py-3">
+        <MetricCell
+          label="Total Staked"
+          value={`${formatTao(staked)} τ`}
+        />
+        <MetricCell
+          label="Total Returned"
+          value={`${formatTao(position.total_unstaked_tao)} τ`}
+        />
+        <MetricCell
+          label="Realized P&L"
+          value={`${pnl >= 0 ? '+' : ''}${formatTao(pnl)} τ`}
+          valueColor={pnlColor}
+        />
+        <MetricCell
+          label="Opened"
+          value={position.first_entry ? new Date(position.first_entry).toLocaleDateString() : '--'}
+        />
+        <MetricCell
+          label="Last Trade"
+          value={position.last_trade ? new Date(position.last_trade).toLocaleDateString() : '--'}
+        />
+      </div>
+    </div>
+  )
+}
+
+function MetricCell({
+  label,
+  value,
+  valueColor,
+}: {
+  label: string
+  value: string
+  valueColor?: string
+}) {
+  return (
+    <div className="text-center">
+      <div className="text-xs text-gray-500 mb-0.5">{label}</div>
+      <div className={`tabular-nums text-sm ${valueColor || 'text-white'}`}>{value}</div>
+    </div>
   )
 }
 
@@ -667,7 +646,7 @@ function DashboardPositionDetail({
         </div>
       </div>
 
-      {/* Row 2+3: About, then Pool Composition + Subnet Info (via SubnetExpandedRow with taoflow hidden) */}
+      {/* Row 2+3: About, then Pool Composition + Subnet Info */}
       <SubnetExpandedRow
         volatile={v}
         identity={enriched?.identity}
@@ -703,7 +682,7 @@ function DashDetailRow({
   return (
     <div className="flex justify-between">
       <span className="text-gray-500">{label}</span>
-      <span className={`font-mono ${valueColor || 'text-gray-300'}`}>{value}</span>
+      <span className={`tabular-nums ${valueColor || 'text-gray-300'}`}>{value}</span>
     </div>
   )
 }

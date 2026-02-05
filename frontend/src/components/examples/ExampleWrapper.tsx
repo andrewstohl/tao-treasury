@@ -23,7 +23,7 @@ export default function ExampleWrapper({
         <h2 className="text-xl font-bold">{title}</h2>
         <p className="text-sm text-gray-400 mt-1">{description}</p>
         <p className="text-xs text-gray-600 mt-0.5">
-          Source: <span className="font-mono">{sourceNotebook}</span>
+          Source: <span className="tabular-nums">{sourceNotebook}</span>
         </p>
       </div>
       {isLoading ? (

@@ -75,7 +75,7 @@ export default function PerformanceAttribution() {
         <div className="md:col-span-2 bg-gray-800 rounded-lg border border-gray-700 p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="text-sm text-gray-400">Return Decomposition</div>
-            <div className={`text-lg font-bold font-mono ${totalReturn >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+            <div className={`text-lg font-bold tabular-nums ${totalReturn >= 0 ? 'text-green-400' : 'text-red-400'}`}>
               {totalReturn >= 0 ? '+' : ''}{formatTao(attr.total_return_tao)} τ
               <span className="text-sm ml-1">({formatPercent(totalPct)})</span>
             </div>
@@ -162,7 +162,7 @@ function WaterfallChart({ steps }: { steps: WaterfallStep[] }) {
                   className="absolute inset-y-0 left-0 bg-gray-600 rounded"
                   style={{ width: `${barWidth}%` }}
                 />
-                <span className="absolute inset-y-0 flex items-center px-2 text-xs font-mono text-white z-10">
+                <span className="absolute inset-y-0 flex items-center px-2 text-xs tabular-nums text-white z-10">
                   {formatTao(step.value_tao)} τ
                 </span>
               </div>
@@ -184,7 +184,7 @@ function WaterfallChart({ steps }: { steps: WaterfallStep[] }) {
                 style={{ width: `${barWidth}%` }}
               />
               <span
-                className={`absolute inset-y-0 flex items-center px-2 text-xs font-mono z-10 ${
+                className={`absolute inset-y-0 flex items-center px-2 text-xs tabular-nums z-10 ${
                   isPositive ? 'text-green-400' : 'text-red-400'
                 }`}
               >
@@ -228,11 +228,11 @@ function AttributionPill({
         {icon}
         {label}
       </div>
-      <div className={`font-mono text-sm font-semibold ${color}`}>
+      <div className={`tabular-nums text-sm font-semibold ${color}`}>
         {negative ? '-' : val >= 0 ? '+' : ''}
         {formatTao(negative ? tao : Math.abs(val).toString())} τ
       </div>
-      <div className={`text-xs font-mono ${color}`}>
+      <div className={`text-xs tabular-nums ${color}`}>
         {formatPercent(pct)}
       </div>
     </div>
@@ -268,7 +268,7 @@ function IncomeStatementCard({
       <div className="border-t border-gray-700 my-2" />
       <div className="flex justify-between items-center font-semibold">
         <span className="text-gray-300">Net Income</span>
-        <span className={`font-mono ${netVal >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+        <span className={`tabular-nums ${netVal >= 0 ? 'text-green-400' : 'text-red-400'}`}>
           {netVal >= 0 ? '+' : ''}{formatTao(netIncomeTao)} τ
         </span>
       </div>
@@ -299,7 +299,7 @@ function IncomeRow({
   return (
     <div className="flex justify-between text-sm">
       <span className="text-gray-500">{label}</span>
-      <span className={`font-mono ${color}`}>
+      <span className={`tabular-nums ${color}`}>
         {positive && num >= 0 ? '+' : ''}
         {formatTao(value)} τ
       </span>

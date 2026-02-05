@@ -11,6 +11,7 @@ from app import __version__
 from app.api.v1 import router as api_router
 from app.core.database import init_db, close_db
 from app.core.redis import close_redis
+from app.core.scheduler import start_scheduler, stop_scheduler
 
 logger = structlog.get_logger()
 
@@ -25,10 +26,14 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialized")
 
+    # Start background scheduler for automatic data sync
+    start_scheduler()
+
     yield
 
     # Shutdown
     logger.info("Shutting down...")
+    stop_scheduler()
     await close_db()
     await close_redis()
     logger.info("Cleanup complete")

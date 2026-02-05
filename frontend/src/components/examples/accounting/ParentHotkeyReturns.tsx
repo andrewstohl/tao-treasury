@@ -91,14 +91,14 @@ export default function ParentHotkeyReturns() {
                 <tr key={v.hotkey} className="border-b border-gray-800 hover:bg-gray-700/30">
                   <td className="py-1 px-2 text-gray-600">{i + 1}</td>
                   <td className="py-1 px-2 text-gray-300">{v.name}</td>
-                  <td className="py-1 px-2 text-right font-mono text-gray-300">
+                  <td className="py-1 px-2 text-right tabular-nums text-gray-300">
                     {v.totalStake.toFixed(2)}
                   </td>
                   <td className="py-1 px-2 text-right text-gray-400">{v.subnets}</td>
-                  <td className="py-1 px-2 text-right font-mono text-gray-400">
+                  <td className="py-1 px-2 text-right tabular-nums text-gray-400">
                     {(v.take * 100).toFixed(1)}%
                   </td>
-                  <td className="py-1 px-2 text-right font-mono text-green-400">
+                  <td className="py-1 px-2 text-right tabular-nums text-green-400">
                     {v.estimatedReturn.toFixed(6)}
                   </td>
                 </tr>

@@ -70,7 +70,7 @@ export default function StakeEarnings() {
 
       <div className="mb-4 text-sm">
         <span className="text-gray-400">Net Change ({days}d): </span>
-        <span className={`font-mono font-semibold ${totalChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+        <span className={`tabular-nums font-semibold ${totalChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
           {totalChange >= 0 ? '+' : ''}{totalChange.toFixed(4)} τ
         </span>
       </div>
@@ -111,9 +111,9 @@ export default function StakeEarnings() {
                   const bal = balIdx >= 0 ? balances[balIdx].staked : 0
                   return (
                     <tr key={d.date} className="border-b border-gray-800">
-                      <td className="py-1 px-2 text-gray-400 font-mono">{d.date}</td>
-                      <td className="py-1 px-2 text-right font-mono text-gray-300">{bal.toFixed(4)}</td>
-                      <td className={`py-1 px-2 text-right font-mono ${d.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      <td className="py-1 px-2 text-gray-400 tabular-nums">{d.date}</td>
+                      <td className="py-1 px-2 text-right tabular-nums text-gray-300">{bal.toFixed(4)}</td>
+                      <td className={`py-1 px-2 text-right tabular-nums ${d.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                         {d.change >= 0 ? '+' : ''}{d.change.toFixed(4)}
                       </td>
                     </tr>

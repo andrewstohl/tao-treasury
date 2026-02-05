@@ -175,7 +175,7 @@ function RatioCard({
         {label}
         <Info className="w-3 h-3 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
       </div>
-      <div className={`text-2xl font-bold font-mono ${color}`}>
+      <div className={`text-2xl font-bold tabular-nums ${color}`}>
         {displayValue}
       </div>
       {/* Tooltip on hover */}
@@ -253,7 +253,7 @@ function StatRow({
   return (
     <div className="flex justify-between items-center">
       <span className="text-sm text-gray-400">{label}</span>
-      <span className={`font-mono text-sm font-medium ${color}`}>{value}</span>
+      <span className={`tabular-nums text-sm font-medium ${color}`}>{value}</span>
     </div>
   )
 }
@@ -315,7 +315,7 @@ function ReturnDistribution({
       </div>
 
       {/* X-axis labels */}
-      <div className="flex justify-between text-xs text-gray-600 font-mono">
+      <div className="flex justify-between text-xs text-gray-600 tabular-nums">
         <span>{min.toFixed(1)}%</span>
         <span>0%</span>
         <span>{max.toFixed(1)}%</span>
@@ -325,11 +325,11 @@ function ReturnDistribution({
       <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-gray-700">
         <div className="flex justify-between">
           <span className="text-gray-500">Days</span>
-          <span className="text-gray-300 font-mono">{returns.length}</span>
+          <span className="text-gray-300 tabular-nums">{returns.length}</span>
         </div>
         <div className="flex justify-between">
           <span className="text-gray-500">Median</span>
-          <span className="text-gray-300 font-mono">
+          <span className="text-gray-300 tabular-nums">
             {[...returns].sort((a, b) => a - b)[Math.floor(returns.length / 2)]?.toFixed(2)}%
           </span>
         </div>
@@ -368,17 +368,17 @@ function BenchmarkTable({
               <div className="text-sm text-tao-400">Your Portfolio</div>
             </td>
             <td className="px-4 py-2.5 text-right">
-              <span className={`font-mono text-sm ${portfolioReturn >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              <span className={`tabular-nums text-sm ${portfolioReturn >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                 {formatPercent(portfolioReturn)}
               </span>
             </td>
-            <td className="px-4 py-2.5 text-right font-mono text-sm text-gray-300">
+            <td className="px-4 py-2.5 text-right tabular-nums text-sm text-gray-300">
               {portfolioVol.toFixed(2)}%
             </td>
-            <td className="px-4 py-2.5 text-right font-mono text-sm text-gray-300">
+            <td className="px-4 py-2.5 text-right tabular-nums text-sm text-gray-300">
               {portfolioSharpe.toFixed(2)}
             </td>
-            <td className="px-4 py-2.5 text-right font-mono text-sm text-gray-500">
+            <td className="px-4 py-2.5 text-right tabular-nums text-sm text-gray-500">
               --
             </td>
           </tr>
@@ -399,18 +399,18 @@ function BenchmarkTable({
                   </div>
                 </td>
                 <td className="px-4 py-2.5 text-right">
-                  <span className={`font-mono text-sm ${ret >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  <span className={`tabular-nums text-sm ${ret >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                     {formatPercent(ret)}
                   </span>
                 </td>
-                <td className="px-4 py-2.5 text-right font-mono text-sm text-gray-400">
+                <td className="px-4 py-2.5 text-right tabular-nums text-sm text-gray-400">
                   {vol != null ? `${vol.toFixed(2)}%` : '--'}
                 </td>
-                <td className="px-4 py-2.5 text-right font-mono text-sm text-gray-400">
+                <td className="px-4 py-2.5 text-right tabular-nums text-sm text-gray-400">
                   {sharpe != null ? sharpe.toFixed(2) : '--'}
                 </td>
                 <td className="px-4 py-2.5 text-right">
-                  <span className={`font-mono text-sm font-medium ${alpha >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  <span className={`tabular-nums text-sm font-medium ${alpha >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                     {alpha >= 0 ? '+' : ''}{alpha.toFixed(2)}%
                   </span>
                 </td>

@@ -96,26 +96,26 @@ function ContributionRow({ pc }: { pc: PositionContribution }) {
         <div className="font-medium text-sm">{pc.subnet_name}</div>
         <div className="text-xs text-gray-500">SN{pc.netuid}</div>
       </td>
-      <td className="px-4 py-2.5 text-right font-mono text-sm text-gray-400">
+      <td className="px-4 py-2.5 text-right tabular-nums text-sm text-gray-400">
         {safeFloat(pc.weight_pct).toFixed(1)}%
       </td>
       <td className="px-4 py-2.5 text-right">
-        <span className={`font-mono text-sm ${returnVal >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+        <span className={`tabular-nums text-sm ${returnVal >= 0 ? 'text-green-400' : 'text-red-400'}`}>
           {returnVal >= 0 ? '+' : ''}{formatTao(pc.return_tao)} τ
         </span>
-        <div className={`text-xs font-mono ${returnVal >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+        <div className={`text-xs tabular-nums ${returnVal >= 0 ? 'text-green-400' : 'text-red-400'}`}>
           {formatPercent(pc.return_pct)}
         </div>
       </td>
-      <td className="px-4 py-2.5 text-right font-mono text-sm text-green-400">
+      <td className="px-4 py-2.5 text-right tabular-nums text-sm text-green-400">
         +{formatTao(pc.yield_tao)} τ
       </td>
-      <td className={`px-4 py-2.5 text-right font-mono text-sm ${priceVal >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+      <td className={`px-4 py-2.5 text-right tabular-nums text-sm ${priceVal >= 0 ? 'text-green-400' : 'text-red-400'}`}>
         {priceVal >= 0 ? '+' : ''}{formatTao(pc.price_effect_tao)} τ
       </td>
       <td className="px-4 py-2.5 text-right">
         <div className="flex items-center justify-end gap-2">
-          <span className={`font-mono text-sm font-semibold ${contribVal >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+          <span className={`tabular-nums text-sm font-semibold ${contribVal >= 0 ? 'text-green-400' : 'text-red-400'}`}>
             {contribVal >= 0 ? '+' : ''}{contribVal.toFixed(2)}%
           </span>
           <div className="w-16 bg-gray-700 rounded-full h-1.5">

@@ -244,7 +244,7 @@ export default function Settings() {
         <div className="mb-3">
           <div className="flex items-center gap-2 text-sm">
             <span className="text-gray-400">Weight Total:</span>
-            <span className={`font-mono font-medium ${weightsValid ? 'text-green-400' : 'text-red-400'}`}>
+            <span className={`tabular-nums font-medium ${weightsValid ? 'text-green-400' : 'text-red-400'}`}>
               {weightSum.toFixed(2)}
             </span>
             {!weightsValid && (
@@ -374,7 +374,7 @@ function fmtWr(v: number | null | undefined): string {
 function ReturnCell({ value }: { value: number | null | undefined }) {
   if (value == null) return <span className="text-gray-600">--</span>
   const color = value >= 0 ? 'text-green-400' : 'text-red-400'
-  return <span className={`font-mono ${color}`}>{fmtPct(value)}</span>
+  return <span className={`tabular-nums ${color}`}>{fmtPct(value)}</span>
 }
 
 function BacktestSection() {
@@ -550,7 +550,7 @@ function BacktestSection() {
             </span>
             {hardFailRate != null && (
               <span className="text-gray-400">
-                Pass rate: <span className="font-mono">{((1 - hardFailRate) * 100).toFixed(1)}%</span>
+                Pass rate: <span className="tabular-nums">{((1 - hardFailRate) * 100).toFixed(1)}%</span>
                 {' '}({passObs.toLocaleString()} scored)
               </span>
             )}
@@ -578,13 +578,13 @@ function BacktestSection() {
                   return (
                     <tr key={tier} className={`border-b border-gray-800 ${TIER_BG[tier]}`}>
                       <td className={`py-2 font-medium ${TIER_COLORS[tier]}`}>{TIER_LABELS[tier]}</td>
-                      <td className="text-right py-2 font-mono text-gray-300">{s.count.toLocaleString()}</td>
+                      <td className="text-right py-2 tabular-nums text-gray-300">{s.count.toLocaleString()}</td>
                       <td className="text-right py-2"><ReturnCell value={s.median_return_1d} /></td>
                       <td className="text-right py-2"><ReturnCell value={s.median_return_3d} /></td>
                       <td className="text-right py-2"><ReturnCell value={s.median_return_7d} /></td>
-                      <td className="text-right py-2 font-mono text-gray-300">{fmtWr(s.win_rate_1d)}</td>
-                      <td className="text-right py-2 font-mono text-gray-300">{fmtWr(s.win_rate_3d)}</td>
-                      <td className="text-right py-2 font-mono text-gray-300">{fmtWr(s.win_rate_7d)}</td>
+                      <td className="text-right py-2 tabular-nums text-gray-300">{fmtWr(s.win_rate_1d)}</td>
+                      <td className="text-right py-2 tabular-nums text-gray-300">{fmtWr(s.win_rate_3d)}</td>
+                      <td className="text-right py-2 tabular-nums text-gray-300">{fmtWr(s.win_rate_7d)}</td>
                     </tr>
                   )
                 })}
@@ -609,7 +609,7 @@ function BacktestSection() {
                     <div className="grid grid-cols-2 gap-2">
                       <div className="text-center">
                         <div className="text-[10px] text-gray-600 uppercase">Median</div>
-                        <div className={`text-sm font-mono font-semibold ${medVal == null ? 'text-gray-600' : medPositive ? 'text-green-400' : 'text-red-400'}`}>
+                        <div className={`text-sm tabular-nums font-semibold ${medVal == null ? 'text-gray-600' : medPositive ? 'text-green-400' : 'text-red-400'}`}>
                           {medVal == null ? '--' : fmtPct(medVal)}
                         </div>
                         <div className="mt-0.5">
@@ -622,7 +622,7 @@ function BacktestSection() {
                       </div>
                       <div className="text-center">
                         <div className="text-[10px] text-gray-600 uppercase">Win Rate</div>
-                        <div className={`text-sm font-mono font-semibold ${wrVal == null ? 'text-gray-600' : wrPositive ? 'text-green-400' : 'text-red-400'}`}>
+                        <div className={`text-sm tabular-nums font-semibold ${wrVal == null ? 'text-gray-600' : wrPositive ? 'text-green-400' : 'text-red-400'}`}>
                           {wrVal == null ? '--' : `${wrVal >= 0 ? '+' : ''}${(wrVal * 100).toFixed(1)}pp`}
                         </div>
                         <div className="mt-0.5">
@@ -649,7 +649,7 @@ function BacktestSection() {
                   const total = Object.values(day.tier_counts).reduce((a, b) => a + b, 0) || 1
                   return (
                     <div key={day.date} className="flex items-center gap-2 text-xs">
-                      <span className="text-gray-500 w-20 font-mono">{day.date}</span>
+                      <span className="text-gray-500 w-20 tabular-nums">{day.date}</span>
                       <div className="flex-1 flex h-4 rounded overflow-hidden bg-gray-800">
                         <div className="bg-emerald-600/60" style={{ width: `${(day.tier_counts.tier_1 || 0) / total * 100}%` }} title={`T1: ${day.tier_counts.tier_1 || 0}`} />
                         <div className="bg-green-600/60" style={{ width: `${(day.tier_counts.tier_2 || 0) / total * 100}%` }} title={`T2: ${day.tier_counts.tier_2 || 0}`} />
@@ -818,7 +818,7 @@ function PortfolioSimSection() {
                       step={5}
                       value={tierPcts[opt.key] || 0}
                       onChange={(e) => setTierPcts(prev => ({ ...prev, [opt.key]: Number(e.target.value) }))}
-                      className="w-14 bg-gray-700 border border-gray-600 rounded px-1.5 py-0.5 text-sm text-center text-gray-300 font-mono"
+                      className="w-14 bg-gray-700 border border-gray-600 rounded px-1.5 py-0.5 text-sm text-center text-gray-300 tabular-nums"
                     />
                     <span className="text-xs text-gray-500">%</span>
                   </div>
@@ -925,11 +925,11 @@ function PortfolioSimSection() {
                     onClick={() => setExpandedPeriod(expandedPeriod === period.date ? null : period.date)}
                     className="w-full flex items-center gap-2 text-xs py-1.5 px-2 rounded hover:bg-gray-700/50 text-left"
                   >
-                    <span className="font-mono text-gray-500 w-20">{period.date}</span>
-                    <span className={`font-mono w-16 text-right ${period.period_return >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    <span className="tabular-nums text-gray-500 w-20">{period.date}</span>
+                    <span className={`tabular-nums w-16 text-right ${period.period_return >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                       {period.in_root ? '--' : fmtPct(period.period_return)}
                     </span>
-                    <span className="font-mono text-gray-400 w-20 text-right">{period.portfolio_value.toFixed(1)} TAO</span>
+                    <span className="tabular-nums text-gray-400 w-20 text-right">{period.portfolio_value.toFixed(1)} TAO</span>
                     <span className="text-gray-600 flex-1 text-right">
                       {period.in_root ? 'Root (no picks)' : `${period.holdings.length} holdings`}
                     </span>
@@ -949,9 +949,9 @@ function PortfolioSimSection() {
                               {h.tier === 'tier_1' ? 'T1' : h.tier === 'tier_2' ? 'T2' : 'T3'}
                             </span>
                           )}
-                          <span className="text-gray-500 font-mono">{h.score ?? '--'}</span>
-                          <span className="text-gray-500 font-mono">{(h.weight * 100).toFixed(0)}%</span>
-                          <span className={`font-mono w-16 text-right ${h.return_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          <span className="text-gray-500 tabular-nums">{h.score ?? '--'}</span>
+                          <span className="text-gray-500 tabular-nums">{(h.weight * 100).toFixed(0)}%</span>
+                          <span className={`tabular-nums w-16 text-right ${h.return_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                             {fmtPct(h.return_pct)}
                           </span>
                         </div>
@@ -982,7 +982,7 @@ function StatCard({ label, value, sub, color }: { label: string; value: string; 
   return (
     <div className="bg-gray-900/60 rounded-lg p-3 border border-gray-700">
       <div className="text-xs text-gray-500">{label}</div>
-      <div className={`text-xl font-mono font-bold mt-1 ${color}`}>{value}</div>
+      <div className={`text-xl tabular-nums font-bold mt-1 ${color}`}>{value}</div>
       <div className="text-[10px] text-gray-600 mt-0.5">{sub}</div>
     </div>
   )
@@ -1102,7 +1102,7 @@ function FieldControl({ field, value, onChange }: { field: NumericField; value: 
     <div className="space-y-1.5">
       <div className="flex justify-between items-baseline">
         <label className="text-sm text-gray-300">{field.label}</label>
-        <span className="text-sm font-mono text-gray-200">{displayValue}</span>
+        <span className="text-sm tabular-nums text-gray-200">{displayValue}</span>
       </div>
       <input
         type="range"

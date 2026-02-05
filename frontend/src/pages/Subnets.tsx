@@ -626,7 +626,7 @@ function SubnetRow({
 
         {/* Price */}
         {isColVisible('price') && (
-          <td className="px-4 py-3 text-right font-mono text-sm">
+          <td className="px-4 py-3 text-right tabular-nums text-sm">
             {parseFloat(subnet.alpha_price_tao).toFixed(6)} τ
           </td>
         )}
@@ -645,9 +645,9 @@ function SubnetRow({
         {isColVisible('mktcap') && (
           <td className="px-4 py-3 text-right">
             {subnet.rank != null && (
-              <div className="text-xs text-gray-500 font-mono">#{subnet.rank}</div>
+              <div className="text-xs text-gray-500 tabular-nums">#{subnet.rank}</div>
             )}
-            <div className="font-mono text-sm">
+            <div className="tabular-nums text-sm">
               {parseFloat(subnet.market_cap_tao) > 0
                 ? formatCompact(parseFloat(subnet.market_cap_tao)) + ' τ'
                 : '--'}
@@ -668,21 +668,21 @@ function SubnetRow({
 
         {/* Emission */}
         {isColVisible('emission') && (
-          <td className="px-4 py-3 text-right font-mono text-sm">
+          <td className="px-4 py-3 text-right tabular-nums text-sm">
             {(parseFloat(subnet.emission_share) * 100).toFixed(2)}%
           </td>
         )}
 
         {/* Liquidity */}
         {isColVisible('liquidity') && (
-          <td className="px-4 py-3 text-right font-mono text-sm">
+          <td className="px-4 py-3 text-right tabular-nums text-sm">
             {formatTao(subnet.pool_tao_reserve)} τ
           </td>
         )}
 
         {/* APY */}
         {isColVisible('apy') && (
-          <td className="px-4 py-3 text-right font-mono text-sm">
+          <td className="px-4 py-3 text-right tabular-nums text-sm">
             {parseFloat(subnet.validator_apy).toFixed(1)}%
           </td>
         )}
@@ -692,7 +692,7 @@ function SubnetRow({
           const burn = parseFloat(subnet.incentive_burn)
           const burnPct = (burn * 100).toFixed(0)
           return (
-            <td className="px-4 py-3 text-right font-mono text-sm">
+            <td className="px-4 py-3 text-right tabular-nums text-sm">
               <span className={burn >= 1 ? 'text-red-400' : burn >= 0.5 ? 'text-yellow-400' : 'text-gray-300'}>
                 {burnPct}%
               </span>

@@ -437,7 +437,7 @@ export default function Strategy() {
                         <span className="font-medium">{e.name}</span>
                       </td>
                       <td className="py-2">
-                        <span className={`font-mono ${
+                        <span className={`tabular-nums ${
                           (e.score || 0) >= 70 ? 'text-green-400' :
                           (e.score || 0) >= 50 ? 'text-yellow-400' :
                           'text-gray-400'
@@ -483,13 +483,13 @@ export default function Strategy() {
                         <span className="text-gray-500">SN{l.netuid}</span>{' '}
                         <span>{l.subnet_name}</span>
                       </td>
-                      <td className="py-2 text-right font-mono">
+                      <td className="py-2 text-right tabular-nums">
                         {formatTao(l.current_position_tao)} TAO
                       </td>
-                      <td className="py-2 text-right font-mono">
+                      <td className="py-2 text-right tabular-nums">
                         {formatTao(l.max_position_tao)} TAO
                       </td>
-                      <td className="py-2 text-right font-mono">
+                      <td className="py-2 text-right tabular-nums">
                         <span className={l.available_headroom_tao > 0 ? 'text-green-400' : 'text-red-400'}>
                           {formatTao(l.available_headroom_tao)} TAO
                         </span>

@@ -67,15 +67,15 @@ export default function HotkeyProfits() {
       <div className="grid grid-cols-3 gap-4 mb-4 text-sm">
         <div>
           <span className="text-gray-500">Total Income</span>
-          <p className="font-mono text-green-400">{totalIncome.toFixed(4)} τ</p>
+          <p className="tabular-nums text-green-400">{totalIncome.toFixed(4)} τ</p>
         </div>
         <div>
           <span className="text-gray-500">Total Expense</span>
-          <p className="font-mono text-red-400">{totalExpense.toFixed(4)} τ</p>
+          <p className="tabular-nums text-red-400">{totalExpense.toFixed(4)} τ</p>
         </div>
         <div>
           <span className="text-gray-500">Net Profit</span>
-          <p className={`font-mono ${netProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+          <p className={`tabular-nums ${netProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
             {netProfit >= 0 ? '+' : ''}{netProfit.toFixed(4)} τ
           </p>
         </div>

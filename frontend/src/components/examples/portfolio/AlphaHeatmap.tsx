@@ -84,7 +84,7 @@ export default function AlphaHeatmap() {
             <tbody>
               {hotkeys.map(({ hk, vals }) => (
                 <tr key={hk}>
-                  <td className="px-2 py-0.5 font-mono text-gray-400 sticky left-0 bg-gray-800">{hk}</td>
+                  <td className="px-2 py-0.5 tabular-nums text-gray-400 sticky left-0 bg-gray-800">{hk}</td>
                   {displaySubnets.map((sn: number) => {
                     const val = vals[sn] || 0
                     return (

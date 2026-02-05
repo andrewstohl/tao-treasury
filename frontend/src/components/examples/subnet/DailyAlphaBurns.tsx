@@ -50,7 +50,7 @@ export default function DailyAlphaBurns() {
           min={1}
         />
         <span className="text-xs text-gray-500 ml-2">
-          Total Burned: <span className="text-white font-mono">{totalBurned.toFixed(4)} α</span>
+          Total Burned: <span className="text-white tabular-nums">{totalBurned.toFixed(4)} α</span>
         </span>
       </div>
 

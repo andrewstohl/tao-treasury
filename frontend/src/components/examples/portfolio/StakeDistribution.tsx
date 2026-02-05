@@ -72,8 +72,8 @@ export default function StakeDistribution() {
             </PieChart>
           </ResponsiveContainer>
           <div className="text-sm text-gray-400 space-y-1">
-            <p>Total Staked: <span className="text-white font-mono">{total.toFixed(4)} τ</span></p>
-            <p>Subnets: <span className="text-white font-mono">{chartData.length}</span></p>
+            <p>Total Staked: <span className="text-white tabular-nums">{total.toFixed(4)} τ</span></p>
+            <p>Subnets: <span className="text-white tabular-nums">{chartData.length}</span></p>
           </div>
         </div>
       )}

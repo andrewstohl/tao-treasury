@@ -24,7 +24,7 @@ export default function SparklineCell({ data }: SparklineCellProps) {
 
   return (
     <div className="flex items-center justify-center">
-      <LineChart width={120} height={48} data={data} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+      <LineChart width={240} height={48} data={data} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
         <YAxis domain={yDomain} hide />
         <Line
           type="monotone"

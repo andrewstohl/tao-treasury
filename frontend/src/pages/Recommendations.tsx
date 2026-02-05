@@ -97,21 +97,21 @@ export default function Recommendations() {
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 text-sm">
                       <div>
                         <div className="text-gray-500">Size (TAO)</div>
-                        <div className="font-mono">{formatTao(rec.size_tao)}</div>
+                        <div className="tabular-nums">{formatTao(rec.size_tao)}</div>
                       </div>
                       <div>
                         <div className="text-gray-500">Size (Alpha)</div>
-                        <div className="font-mono">{formatTao(rec.size_alpha)}</div>
+                        <div className="tabular-nums">{formatTao(rec.size_alpha)}</div>
                       </div>
                       <div>
                         <div className="text-gray-500">Est. Slippage</div>
-                        <div className={`font-mono ${parseFloat(rec.estimated_slippage_pct) > 5 ? 'text-red-400' : ''}`}>
+                        <div className={`tabular-nums ${parseFloat(rec.estimated_slippage_pct) > 5 ? 'text-red-400' : ''}`}>
                           {parseFloat(rec.estimated_slippage_pct).toFixed(2)}%
                         </div>
                       </div>
                       <div>
                         <div className="text-gray-500">Est. Cost</div>
-                        <div className="font-mono">{formatTao(rec.total_estimated_cost_tao)} τ</div>
+                        <div className="tabular-nums">{formatTao(rec.total_estimated_cost_tao)} τ</div>
                       </div>
                     </div>
 

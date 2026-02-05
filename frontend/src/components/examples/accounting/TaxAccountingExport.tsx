@@ -70,20 +70,20 @@ export default function TaxAccountingExport() {
             <tbody>
               {records.map((rec: any, i: number) => (
                 <tr key={i} className="border-b border-gray-800 hover:bg-gray-700/30">
-                  <td className="py-1 px-2 text-gray-400 font-mono whitespace-nowrap">
+                  <td className="py-1 px-2 text-gray-400 tabular-nums whitespace-nowrap">
                     {(rec.timestamp || rec.date || '').split('T')[0]}
                   </td>
                   <td className="py-1 px-2 text-gray-300">{rec.transaction_type || '-'}</td>
                   <td className="py-1 px-2 text-gray-500 max-w-[200px] truncate">
                     {rec.additional_data || '-'}
                   </td>
-                  <td className="py-1 px-2 text-right font-mono text-red-400">
+                  <td className="py-1 px-2 text-right tabular-nums text-red-400">
                     {rec.debit_amount ? parseFloat(rec.debit_amount).toFixed(4) : ''}
                   </td>
-                  <td className="py-1 px-2 text-right font-mono text-green-400">
+                  <td className="py-1 px-2 text-right tabular-nums text-green-400">
                     {rec.credit_amount ? parseFloat(rec.credit_amount).toFixed(4) : ''}
                   </td>
-                  <td className="py-1 px-2 text-right font-mono text-gray-500">
+                  <td className="py-1 px-2 text-right tabular-nums text-gray-500">
                     {rec.fee_amount ? parseFloat(rec.fee_amount).toFixed(6) : ''}
                   </td>
                 </tr>

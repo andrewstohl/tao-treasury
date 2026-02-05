@@ -1,16 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import {
   ArrowUpDown,
-  DollarSign,
-  Coins,
-  TrendingUp,
-  TrendingDown,
-  Zap,
 } from 'lucide-react'
 import { api } from '../../services/api'
 import { useCurrency } from '../../contexts/CurrencyContext'
 import type { PortfolioOverview, DualCurrencyValue } from '../../types'
-import { formatTao, formatTaoShort, formatUsd, formatPercent, formatApy, safeFloat } from '../../utils/format'
+import { formatTao, formatTaoShort, formatUsd, formatApy, safeFloat } from '../../utils/format'
 
 function DualValue({
   value,
@@ -41,10 +36,10 @@ function DualValue({
 
   return (
     <div>
-      <div className={`text-2xl font-bold ${colorClass}`}>
+      <div className={`text-xl font-bold ${colorClass}`}>
         {prefix}{formatPrimary(primary)}{primarySuffix}
       </div>
-      <div className="text-sm text-gray-500 mt-0.5">
+      <div className="text-sm text-gray-500">
         {prefix}{formatSecondary(secondary)}{secondarySuffix}
       </div>
     </div>
@@ -62,23 +57,16 @@ export default function PortfolioOverviewCards() {
 
   if (isLoading || !overview) {
     return (
-      <div className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {[...Array(4)].map((_, i) => (
-            <div
-              key={i}
-              className="bg-gray-800 rounded-lg p-6 border border-gray-700 animate-pulse h-48"
-            />
-          ))}
-        </div>
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+        {[...Array(4)].map((_, i) => (
+          <div
+            key={i}
+            className="bg-gray-800 rounded-lg p-4 border border-gray-700 animate-pulse h-32"
+          />
+        ))}
       </div>
     )
   }
-
-  const taoPrice = safeFloat(overview.tao_price.price_usd)
-  const taoChange24h = overview.tao_price.change_24h_pct
-    ? safeFloat(overview.tao_price.change_24h_pct)
-    : null
 
   // Core values
   const unrealizedTao = safeFloat(overview.pnl.unrealized.tao)
@@ -103,170 +91,157 @@ export default function PortfolioOverviewCards() {
   const totalAlphaTao = realizedAlphaTao + unrealizedAlphaTao
   const totalAlphaUsd = realizedAlphaUsd + unrealizedAlphaUsd
 
-  return (
-    <div className="space-y-4">
-      {/* TAO Price Strip + Currency Toggle */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4 text-sm">
-          <div className="flex items-center gap-2 text-gray-400">
-            <DollarSign className="w-4 h-4" />
-            <span>TAO</span>
-            <span className="font-mono text-white font-semibold">
-              {formatUsd(taoPrice)}
-            </span>
-            {taoChange24h != null && (
-              <span
-                className={`font-mono text-xs ${
-                  taoChange24h >= 0 ? 'text-green-400' : 'text-red-400'
-                }`}
-              >
-                {formatPercent(taoChange24h)}
-              </span>
-            )}
-          </div>
-          {overview.tao_price.change_7d_pct && (
-            <span className="text-gray-600">
-              7d:{' '}
-              <span
-                className={`font-mono text-xs ${
-                  parseFloat(overview.tao_price.change_7d_pct) >= 0
-                    ? 'text-green-400'
-                    : 'text-red-400'
-                }`}
-              >
-                {formatPercent(overview.tao_price.change_7d_pct)}
-              </span>
-            </span>
-          )}
-        </div>
+  const pnlColor = (v: number) => v >= 0 ? 'text-green-400' : 'text-red-400'
 
+  return (
+    <div className="space-y-3">
+      {/* Currency Toggle - inline right */}
+      <div className="flex items-center justify-start">
         <button
           onClick={toggleCurrency}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600 text-sm text-gray-300 transition-colors"
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-gray-700 hover:bg-gray-600 text-xs text-gray-300 transition-colors"
         >
-          <ArrowUpDown className="w-3.5 h-3.5" />
+          <ArrowUpDown className="w-3 h-3" />
           {currency === 'tao' ? 'τ TAO' : '$ USD'}
         </button>
       </div>
 
       {/* Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
         {/* Card 1: Portfolio Value */}
-        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-          <div className="text-sm text-gray-400 mb-2">Portfolio Value</div>
-          <DualValue value={overview.nav_mid} primaryCurrency={currency} short />
+        <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+          <div className="flex items-start justify-between">
+            <div className="text-xl font-bold font-display text-white">Current Value</div>
+            <div className="text-right">
+              <DualValue value={overview.nav_mid} primaryCurrency={currency} short />
+            </div>
+          </div>
 
-          <div className="mt-3 pt-3 border-t border-gray-700">
-            <div className="grid grid-cols-2 gap-2">
-              <div className="text-left">
-                <div className="text-sm text-gray-500 mb-1">Realized</div>
-                <div className={`font-mono text-sm ${realizedTao >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {currency === 'tao' ? `${formatTaoShort(realizedTao)}τ` : formatUsd(realizedUsd)}
-                </div>
+          <div className="mt-2.5 pt-2.5 border-t border-gray-700 flex justify-between">
+            <div>
+              <div className="text-xs text-gray-500">Realized</div>
+              <div className={`tabular-nums text-sm ${pnlColor(realizedTao)}`}>
+                {currency === 'tao' ? `${formatTaoShort(realizedTao)}τ` : formatUsd(realizedUsd)}
               </div>
-              <div className="text-right">
-                <div className="text-sm text-gray-500 mb-1">Unrealized</div>
-                <div className={`font-mono text-sm ${unrealizedTao >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {currency === 'tao' ? `${formatTaoShort(unrealizedTao)}τ` : formatUsd(unrealizedUsd)}
-                </div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">Unrealized</div>
+              <div className={`tabular-nums text-sm ${pnlColor(unrealizedTao)}`}>
+                {currency === 'tao' ? `${formatTaoShort(unrealizedTao)}τ` : formatUsd(unrealizedUsd)}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">Total</div>
+              <div className={`tabular-nums text-sm ${pnlColor(realizedTao + unrealizedTao)}`}>
+                {currency === 'tao' ? `${formatTaoShort(realizedTao + unrealizedTao)}τ` : formatUsd(realizedUsd + unrealizedUsd)}
               </div>
             </div>
           </div>
         </div>
 
         {/* Card 2: Yield */}
-        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-          <div className="flex items-center gap-2 text-sm text-gray-400 mb-2">
-            <Coins className="w-4 h-4" />
-            <span>Yield</span>
+        <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+          <div className="flex items-start justify-between">
+            <div className="text-xl font-bold font-display text-white">Yield</div>
+            <div className="text-right">
+              <DualValue value={overview.yield_income.total_yield} primaryCurrency={currency} short />
+            </div>
           </div>
 
-          <DualValue value={overview.yield_income.total_yield} primaryCurrency={currency} short />
-
-          <div className="mt-3 pt-3 border-t border-gray-700">
-            <div className="grid grid-cols-2 gap-2">
-              <div className="text-left">
-                <div className="text-sm text-gray-500 mb-1">Realized</div>
-                <div className={`font-mono text-sm ${safeFloat(overview.yield_income.realized_yield.tao) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {currency === 'tao'
-                    ? `${formatTaoShort(overview.yield_income.realized_yield.tao)}τ`
-                    : formatUsd(overview.yield_income.realized_yield.usd)}
-                </div>
+          <div className="mt-2.5 pt-2.5 border-t border-gray-700 flex justify-between">
+            <div>
+              <div className="text-xs text-gray-500">Realized</div>
+              <div className={`tabular-nums text-sm ${pnlColor(safeFloat(overview.yield_income.realized_yield.tao))}`}>
+                {currency === 'tao'
+                  ? `${formatTaoShort(overview.yield_income.realized_yield.tao)}τ`
+                  : formatUsd(overview.yield_income.realized_yield.usd)}
               </div>
-              <div className="text-right">
-                <div className="text-sm text-gray-500 mb-1">Unrealized</div>
-                <div className={`font-mono text-sm ${safeFloat(overview.yield_income.unrealized_yield.tao) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {currency === 'tao'
-                    ? `${formatTaoShort(overview.yield_income.unrealized_yield.tao)}τ`
-                    : formatUsd(overview.yield_income.unrealized_yield.usd)}
-                </div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">Unrealized</div>
+              <div className={`tabular-nums text-sm ${pnlColor(safeFloat(overview.yield_income.unrealized_yield.tao))}`}>
+                {currency === 'tao'
+                  ? `${formatTaoShort(overview.yield_income.unrealized_yield.tao)}τ`
+                  : formatUsd(overview.yield_income.unrealized_yield.usd)}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">Total</div>
+              <div className={`tabular-nums text-sm ${pnlColor(safeFloat(overview.yield_income.total_yield.tao))}`}>
+                {currency === 'tao'
+                  ? `${formatTaoShort(overview.yield_income.total_yield.tao)}τ`
+                  : formatUsd(overview.yield_income.total_yield.usd)}
               </div>
             </div>
           </div>
         </div>
 
         {/* Card 3: Alpha */}
-        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-          <div className="flex items-center gap-2 text-sm text-gray-400 mb-2">
-            {totalAlphaTao >= 0 ? (
-              <TrendingUp className="w-4 h-4 text-green-400" />
-            ) : (
-              <TrendingDown className="w-4 h-4 text-red-400" />
-            )}
-            <span>Alpha</span>
+        <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+          <div className="flex items-start justify-between">
+            <div className="text-xl font-bold font-display text-white">Alpha</div>
+            <div className="text-right">
+              <DualValue
+                value={{ tao: String(totalAlphaTao), usd: String(totalAlphaUsd) }}
+                primaryCurrency={currency}
+                short
+              />
+            </div>
           </div>
 
-          <DualValue
-            value={{ tao: String(totalAlphaTao), usd: String(totalAlphaUsd) }}
-            primaryCurrency={currency}
-            short
-          />
-
-          <div className="mt-3 pt-3 border-t border-gray-700">
-            <div className="grid grid-cols-2 gap-2">
-              <div className="text-left">
-                <div className="text-sm text-gray-500 mb-1">Realized</div>
-                <div className={`font-mono text-sm ${realizedAlphaTao >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {currency === 'tao' ? `${formatTaoShort(realizedAlphaTao)}τ` : formatUsd(realizedAlphaUsd)}
-                </div>
+          <div className="mt-2.5 pt-2.5 border-t border-gray-700 flex justify-between">
+            <div>
+              <div className="text-xs text-gray-500">Realized</div>
+              <div className={`tabular-nums text-sm ${pnlColor(realizedAlphaTao)}`}>
+                {currency === 'tao' ? `${formatTaoShort(realizedAlphaTao)}τ` : formatUsd(realizedAlphaUsd)}
               </div>
-              <div className="text-right">
-                <div className="text-sm text-gray-500 mb-1">Unrealized</div>
-                <div className={`font-mono text-sm ${unrealizedAlphaTao >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {currency === 'tao' ? `${formatTaoShort(unrealizedAlphaTao)}τ` : formatUsd(unrealizedAlphaUsd)}
-                </div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">Unrealized</div>
+              <div className={`tabular-nums text-sm ${pnlColor(unrealizedAlphaTao)}`}>
+                {currency === 'tao' ? `${formatTaoShort(unrealizedAlphaTao)}τ` : formatUsd(unrealizedAlphaUsd)}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">Total</div>
+              <div className={`tabular-nums text-sm ${pnlColor(totalAlphaTao)}`}>
+                {currency === 'tao' ? `${formatTaoShort(totalAlphaTao)}τ` : formatUsd(totalAlphaUsd)}
               </div>
             </div>
           </div>
         </div>
 
         {/* Card 4: APY */}
-        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-          <div className="flex items-center gap-2 text-sm text-gray-400 mb-2">
-            <Zap className="w-4 h-4" />
-            <span>APY</span>
-          </div>
-
-          <div className="text-2xl font-bold text-white">
-            {formatApy(apyNum)}
-          </div>
-          <div className="text-sm text-gray-500 mt-0.5 font-mono">
-            {formatTaoShort(overview.yield_income.daily.tao)}τ/day
-          </div>
-
-          <div className="mt-3 pt-3 border-t border-gray-700">
-            <div className="grid grid-cols-2 gap-2">
-              <div className="text-left">
-                <div className="text-sm text-gray-500 mb-1">7D Proj.</div>
-                <div className="font-mono text-sm text-green-400">
-                  {formatTaoShort(overview.yield_income.weekly.tao)}τ
-                </div>
+        <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+          <div className="flex items-start justify-between">
+            <div className="text-xl font-bold font-display text-white">APY</div>
+            <div className="text-right">
+              <div className="text-xl font-bold text-white">
+                {formatApy(apyNum)}
               </div>
-              <div className="text-right">
-                <div className="text-sm text-gray-500 mb-1">30D Proj.</div>
-                <div className="font-mono text-sm text-green-400">
-                  {formatTaoShort(overview.yield_income.monthly.tao)}τ
-                </div>
+              <div className="text-sm text-gray-500 tabular-nums">
+                {formatTaoShort(overview.yield_income.daily.tao)}τ/day
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-2.5 pt-2.5 border-t border-gray-700 flex justify-between">
+            <div>
+              <div className="text-xs text-gray-500">7d Proj.</div>
+              <div className="tabular-nums text-sm text-green-400">
+                {formatTaoShort(overview.yield_income.weekly.tao)}τ
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">30d Proj.</div>
+              <div className="tabular-nums text-sm text-green-400">
+                {formatTaoShort(overview.yield_income.monthly.tao)}τ
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">365d Proj.</div>
+              <div className="tabular-nums text-sm text-green-400">
+                {formatTaoShort(safeFloat(overview.yield_income.daily.tao) * 365)}τ
               </div>
             </div>
           </div>

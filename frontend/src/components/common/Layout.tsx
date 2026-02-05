@@ -8,13 +8,30 @@ import {
   ArrowRightLeft,
   RefreshCw,
   Shield,
-  DollarSign,
   BookOpen,
   SlidersHorizontal,
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../services/api'
-import type { PortfolioOverview } from '../../types'
+import type { PortfolioOverview, HealthResponse } from '../../types'
+
+function formatRelativeTime(dateString: string | null): string {
+  if (!dateString) return 'Never'
+  const date = new Date(dateString)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffMins = Math.floor(diffMs / 60000)
+
+  if (diffMins < 1) return 'Just now'
+  if (diffMins === 1) return '1 min ago'
+  if (diffMins < 60) return `${diffMins} min ago`
+
+  const diffHours = Math.floor(diffMins / 60)
+  if (diffHours === 1) return '1 hour ago'
+  if (diffHours < 24) return `${diffHours} hours ago`
+
+  return date.toLocaleDateString()
+}
 
 interface LayoutProps {
   children: ReactNode
@@ -35,7 +52,7 @@ export default function Layout({ children }: LayoutProps) {
   const location = useLocation()
   const queryClient = useQueryClient()
 
-  const { data: health } = useQuery({
+  const { data: health } = useQuery<HealthResponse>({
     queryKey: ['health'],
     queryFn: api.getHealth,
     refetchInterval: 30000,
@@ -62,80 +79,84 @@ export default function Layout({ children }: LayoutProps) {
     : null
 
   return (
-    <div className="min-h-screen flex">
-      {/* Sidebar */}
-      <aside className="w-64 bg-gray-800 border-r border-gray-700">
-        <div className="p-4">
-          <h1 className="text-xl font-bold text-tao-400">TAO Treasury</h1>
-          <p className="text-xs text-gray-500 mt-1">Management Console</p>
-        </div>
+    <div className="min-h-screen flex flex-col">
+      {/* Top Navigation Bar */}
+      <header className="bg-gray-800 border-b border-gray-700 px-6 py-0 flex items-center h-14 flex-shrink-0">
+        {/* Left: Logo + TAO Price */}
+        <div className="flex items-center gap-4">
+          <Link to="/" className="flex items-center gap-2">
+            <h1 className="text-lg font-bold text-tao-400 font-display">TAO Treasury</h1>
+          </Link>
 
-        {/* TAO Price */}
-        {taoPrice != null && (
-          <div className="mx-4 mb-2 px-3 py-2 bg-gray-900/60 rounded-lg flex items-center justify-between">
-            <div className="flex items-center gap-1.5 text-xs text-gray-400">
-              <DollarSign className="w-3.5 h-3.5" />
-              <span>TAO</span>
-            </div>
-            <div className="text-right">
-              <span className="text-sm font-mono text-white font-semibold">
+          {taoPrice != null && (
+            <div className="flex items-center gap-2 px-3 py-1 bg-gray-900/60 rounded-md">
+              <span className="text-base tabular-nums text-white font-semibold">
                 ${taoPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
               {taoChange != null && (
-                <span className={`ml-1.5 text-xs font-mono ${taoChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                <span className={`text-sm tabular-nums ${taoChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                   {taoChange >= 0 ? '+' : ''}{taoChange.toFixed(1)}%
                 </span>
               )}
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
-        <nav className="mt-2">
-          {navItems.map((item) => {
-            const isActive = item.path === '/'
-              ? location.pathname === '/'
-              : location.pathname.startsWith(item.path)
-            const Icon = item.icon
-            return (
-              <Link
-                key={item.path}
-                to={item.path}
-                className={`flex items-center gap-3 px-4 py-3 text-sm transition-colors ${
-                  isActive
-                    ? 'bg-tao-600/20 text-tao-400 border-r-2 border-tao-400'
-                    : 'text-gray-400 hover:bg-gray-700/50 hover:text-gray-200'
-                }`}
-              >
-                <Icon size={18} />
-                {item.label}
-              </Link>
-            )
-          })}
-        </nav>
+        {/* Right: Navigation + Status + Refresh */}
+        <div className="flex items-center gap-3 ml-auto">
+          <nav className="flex items-center gap-1">
+            {navItems.map((item) => {
+              const isActive = item.path === '/'
+                ? location.pathname === '/'
+                : location.pathname.startsWith(item.path)
+              const Icon = item.icon
+              return (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors ${
+                    isActive
+                      ? 'bg-tao-600/20 text-tao-400'
+                      : 'text-gray-400 hover:bg-gray-700/50 hover:text-gray-200'
+                  }`}
+                >
+                  <Icon size={15} />
+                  {item.label}
+                </Link>
+              )
+            })}
+          </nav>
 
-        {/* Status */}
-        <div className="absolute bottom-0 left-0 w-64 p-4 border-t border-gray-700">
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-gray-500">Status</span>
-            <span className={`${health?.status === 'healthy' ? 'text-green-400' : 'text-yellow-400'}`}>
-              {health?.status || 'checking...'}
+          {/* Last Synced Status */}
+          <div
+            className={`flex items-center gap-1.5 px-2 py-1 rounded-md ${
+              health?.data_stale ? 'bg-yellow-900/30' : 'bg-gray-700/50'
+            }`}
+            title={health?.last_sync ? `Last synced: ${new Date(health.last_sync).toLocaleString()}` : 'Never synced'}
+          >
+            <div className={`w-2 h-2 rounded-full ${
+              health?.data_stale ? 'bg-yellow-400' :
+              health?.status === 'healthy' ? 'bg-green-400' : 'bg-yellow-400'
+            }`} />
+            <span className={`text-xs ${health?.data_stale ? 'text-yellow-400' : 'text-gray-400'}`}>
+              {formatRelativeTime(health?.last_sync ?? null)}
             </span>
           </div>
-          {health?.data_stale && (
-            <p className="text-xs text-yellow-500 mt-1">Data may be stale</p>
-          )}
+
+          {/* Sync Button */}
           <button
             onClick={() => refreshMutation.mutate()}
             disabled={refreshMutation.isPending}
-            className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded text-xs text-gray-300 disabled:opacity-50"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-700 hover:bg-gray-600 rounded-md text-xs text-gray-300 disabled:opacity-50 transition-colors"
+            title="Sync data from TaoStats"
           >
-            <RefreshCw size={14} className={refreshMutation.isPending ? 'animate-spin' : ''} />
-            {refreshMutation.isPending ? 'Syncing...' : 'Refresh Data'}
+            <RefreshCw size={13} className={refreshMutation.isPending ? 'animate-spin' : ''} />
+            {refreshMutation.isPending ? 'Syncing...' : 'Sync'}
           </button>
         </div>
-      </aside>
+      </header>
 
-      {/* Main content */}
+      {/* Main content — full width */}
       <main className="flex-1 overflow-auto">
         <div className="p-6">
           {children}

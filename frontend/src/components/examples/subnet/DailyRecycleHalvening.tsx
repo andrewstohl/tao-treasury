@@ -58,19 +58,19 @@ export default function DailyRecycleHalvening() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4 text-sm">
         <div>
           <span className="text-gray-500">Total Issuance</span>
-          <p className="font-mono text-white">{totalIssuance > 0 ? totalIssuance.toLocaleString() : 'N/A'} τ</p>
+          <p className="tabular-nums text-white">{totalIssuance > 0 ? totalIssuance.toLocaleString() : 'N/A'} τ</p>
         </div>
         <div>
           <span className="text-gray-500">Daily Emission</span>
-          <p className="font-mono text-white">{dailyEmission > 0 ? dailyEmission.toFixed(2) : 'N/A'} τ</p>
+          <p className="tabular-nums text-white">{dailyEmission > 0 ? dailyEmission.toFixed(2) : 'N/A'} τ</p>
         </div>
         <div>
           <span className="text-gray-500">Avg Daily Recycle</span>
-          <p className="font-mono text-yellow-400">{avgDailyRecycle.toFixed(2)} τ</p>
+          <p className="tabular-nums text-yellow-400">{avgDailyRecycle.toFixed(2)} τ</p>
         </div>
         <div>
           <span className="text-gray-500">Est. Halving Date</span>
-          <p className="font-mono text-tao-400">{halvingDate}</p>
+          <p className="tabular-nums text-tao-400">{halvingDate}</p>
         </div>
       </div>
 

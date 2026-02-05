@@ -690,3 +690,14 @@ export interface BackfillStatus {
   finished_at: string | null
   current_netuid: number | null
 }
+
+export interface HealthResponse {
+  status: 'healthy' | 'degraded'
+  timestamp: string
+  version: string
+  database: string
+  redis: string
+  taostats_api: string
+  last_sync: string | null
+  data_stale: boolean
+}

@@ -141,16 +141,16 @@ function SensitivityRow({
 
   return (
     <tr className={rowClass}>
-      <td className={`px-4 py-2.5 font-mono text-sm ${shockColor}`}>
+      <td className={`px-4 py-2.5 tabular-nums text-sm ${shockColor}`}>
         {isBase ? 'Current' : `${shock > 0 ? '+' : ''}${shock}%`}
       </td>
-      <td className="px-4 py-2.5 text-right font-mono text-sm text-gray-300">
+      <td className="px-4 py-2.5 text-right tabular-nums text-sm text-gray-300">
         {formatUsd(point.tao_price_usd)}
       </td>
-      <td className="px-4 py-2.5 text-right font-mono text-sm text-gray-400">
+      <td className="px-4 py-2.5 text-right tabular-nums text-sm text-gray-400">
         {formatTao(point.nav_tao)} τ
       </td>
-      <td className="px-4 py-2.5 text-right font-mono text-sm text-gray-300">
+      <td className="px-4 py-2.5 text-right tabular-nums text-sm text-gray-300">
         {formatUsd(point.nav_usd)}
       </td>
       <td className="px-4 py-2.5 text-right">
@@ -158,7 +158,7 @@ function SensitivityRow({
           <span className="text-gray-600 text-sm">--</span>
         ) : (
           <span
-            className={`font-mono text-sm ${
+            className={`tabular-nums text-sm ${
               usdChange >= 0 ? 'text-green-400' : 'text-red-400'
             }`}
           >
@@ -172,7 +172,7 @@ function SensitivityRow({
           <span className="text-gray-600 text-sm">--</span>
         ) : (
           <span
-            className={`font-mono text-sm ${
+            className={`tabular-nums text-sm ${
               usdChange >= 0 ? 'text-green-400' : 'text-red-400'
             }`}
           >
@@ -224,7 +224,7 @@ function ScenarioCard({
         <div className="flex items-center gap-4">
           {/* Impact badge */}
           <div className={`px-3 py-1 rounded ${impactBg}`}>
-            <span className={`font-mono text-sm font-semibold ${isNegative ? 'text-red-400' : 'text-green-400'}`}>
+            <span className={`tabular-nums text-sm font-semibold ${isNegative ? 'text-red-400' : 'text-green-400'}`}>
               {usdImpact >= 0 ? '+' : ''}{formatUsd(scenario.usd_impact)}
             </span>
             <span className={`text-xs ml-1 ${isNegative ? 'text-red-400/70' : 'text-green-400/70'}`}>
@@ -247,25 +247,25 @@ function ScenarioCard({
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div>
                 <div className="text-xs text-gray-500">New TAO Price</div>
-                <div className="font-mono text-gray-300">
+                <div className="tabular-nums text-gray-300">
                   {formatUsd(scenario.new_tao_price_usd)}
                 </div>
               </div>
               <div>
                 <div className="text-xs text-gray-500">NAV (TAO)</div>
-                <div className="font-mono text-gray-300">
+                <div className="tabular-nums text-gray-300">
                   {formatTao(scenario.nav_tao)} τ
                 </div>
               </div>
               <div>
                 <div className="text-xs text-gray-500">TAO Impact</div>
-                <div className={`font-mono ${taoImpact >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                <div className={`tabular-nums ${taoImpact >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                   {taoImpact >= 0 ? '+' : ''}{formatTao(scenario.tao_impact)} τ
                 </div>
               </div>
               <div>
                 <div className="text-xs text-gray-500">NAV (USD)</div>
-                <div className="font-mono text-gray-300">
+                <div className="tabular-nums text-gray-300">
                   {formatUsd(scenario.nav_usd)}
                 </div>
               </div>
@@ -312,7 +312,7 @@ function RiskExposureCard({ scenario }: { scenario: ScenarioAnalysis }) {
         {/* TAO Beta */}
         <div className="flex justify-between items-center">
           <span className="text-sm text-gray-400">TAO Beta</span>
-          <span className="font-mono text-sm text-gray-300">
+          <span className="tabular-nums text-sm text-gray-300">
             {safeFloat(risk.tao_beta).toFixed(1)}x
           </span>
         </div>
@@ -322,7 +322,7 @@ function RiskExposureCard({ scenario }: { scenario: ScenarioAnalysis }) {
           <div className="flex justify-between items-center mb-1">
             <span className="text-sm text-gray-400">Exit Slippage</span>
             <span
-              className={`font-mono text-sm ${
+              className={`tabular-nums text-sm ${
                 slippagePct < 2
                   ? 'text-green-400'
                   : slippagePct < 5
@@ -343,7 +343,7 @@ function RiskExposureCard({ scenario }: { scenario: ScenarioAnalysis }) {
           <div className="flex justify-between items-center mb-1">
             <span className="text-sm text-gray-400">Alpha Risk</span>
             <span
-              className={`font-mono text-sm ${
+              className={`tabular-nums text-sm ${
                 dtaoWeight < 30
                   ? 'text-green-400'
                   : dtaoWeight < 60
@@ -386,7 +386,7 @@ function AllocationBar({
     <div>
       <div className="flex justify-between text-xs mb-0.5">
         <span className="text-gray-400">{label}</span>
-        <span className="text-gray-400 font-mono">
+        <span className="text-gray-400 tabular-nums">
           {formatTao(tao)} τ ({pct.toFixed(1)}%)
         </span>
       </div>

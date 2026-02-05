@@ -121,7 +121,7 @@ export default function PerformanceRisk() {
       <div className="flex items-center justify-between mb-3">
         <span className="text-sm text-gray-400">Period Return</span>
         <span
-          className={`text-lg font-bold font-mono ${
+          className={`text-lg font-bold tabular-nums ${
             netTao >= 0 ? 'text-green-400' : 'text-red-400'
           }`}
         >
@@ -143,7 +143,7 @@ export default function PerformanceRisk() {
           {fxChangePct !== null ? (
             <div className="text-right">
               <span
-                className={`font-mono text-sm font-medium ${
+                className={`tabular-nums text-sm font-medium ${
                   fxChangePct >= 0 ? 'text-green-400' : 'text-red-400'
                 }`}
               >
@@ -151,13 +151,13 @@ export default function PerformanceRisk() {
                 {fxChangePct.toFixed(1)}%
               </span>
               {taoPriceStart !== null && taoCurrentPrice !== null && (
-                <div className="text-xs text-gray-500 font-mono">
+                <div className="text-xs text-gray-500 tabular-nums">
                   {formatUsd(taoPriceStart)} → {formatUsd(taoCurrentPrice)}
                 </div>
               )}
             </div>
           ) : (
-            <span className="text-sm text-gray-600 font-mono">--</span>
+            <span className="text-sm text-gray-600 tabular-nums">--</span>
           )}
         </div>
       </div>
@@ -174,7 +174,7 @@ export default function PerformanceRisk() {
               <span className="text-sm text-gray-400">ATH Drawdown</span>
               <div className="text-right flex items-baseline gap-1.5">
                 <span
-                  className={`font-mono text-sm ${
+                  className={`tabular-nums text-sm ${
                     Math.abs(drawdownPct) < 5
                       ? 'text-green-400'
                       : Math.abs(drawdownPct) < 15
@@ -187,7 +187,7 @@ export default function PerformanceRisk() {
                     : `-${Math.abs(drawdownPct).toFixed(1)}%`}
                 </span>
                 {drawdownTao !== null && drawdownPct !== 0 && (
-                  <span className="text-xs text-gray-500 font-mono">
+                  <span className="text-xs text-gray-500 tabular-nums">
                     {formatTaoShort(drawdownTao)} τ
                   </span>
                 )}
@@ -199,7 +199,7 @@ export default function PerformanceRisk() {
           <div className="flex justify-between items-center">
             <span className="text-sm text-gray-400">Daily VaR (95%)</span>
             {var95Tao !== null ? (
-              <span className="font-mono text-sm text-red-400">
+              <span className="tabular-nums text-sm text-red-400">
                 {formatTaoShort(var95Tao)} τ
               </span>
             ) : (
@@ -211,7 +211,7 @@ export default function PerformanceRisk() {
           <div className="flex justify-between items-center">
             <span className="text-sm text-gray-400">Worst Day</span>
             {worstDayPct !== null ? (
-              <span className="font-mono text-sm text-red-400">
+              <span className="tabular-nums text-sm text-red-400">
                 {formatPercent(worstDayPct)}
               </span>
             ) : (
@@ -249,7 +249,7 @@ function AttributionRow({
           style={{ width: `${barWidth}%` }}
         />
         <span
-          className={`absolute inset-y-0 flex items-center px-2 text-xs font-mono z-10 ${
+          className={`absolute inset-y-0 flex items-center px-2 text-xs tabular-nums z-10 ${
             isPositive ? 'text-green-400' : 'text-red-400'
           }`}
         >

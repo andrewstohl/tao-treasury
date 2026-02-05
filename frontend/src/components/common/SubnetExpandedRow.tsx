@@ -203,7 +203,7 @@ function FactorRow({ label, raw, pctile, weighted }: { label: string; raw: strin
   return (
     <div className="text-xs">
       <span className="text-gray-500">{label}:</span>{' '}
-      <span className="font-mono text-gray-300">{raw}</span>
+      <span className="tabular-nums text-gray-300">{raw}</span>
       {pctile != null && (
         <span className="text-gray-500 ml-1">(P{pctile.toFixed(0)} → {weighted?.toFixed(1)})</span>
       )}
@@ -215,7 +215,7 @@ function Row({ label, value, valueColor }: { label: string; value: string; value
   return (
     <div className="flex justify-between">
       <span className="text-gray-500">{label}</span>
-      <span className={`font-mono ${valueColor || 'text-gray-300'}`}>{value}</span>
+      <span className={`tabular-nums ${valueColor || 'text-gray-300'}`}>{value}</span>
     </div>
   )
 }

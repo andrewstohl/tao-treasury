@@ -16,7 +16,7 @@ export default function VolumeBar({ volume24h, buyVolume, sellVolume }: VolumeBa
 
   return (
     <div className="text-right">
-      <div className="text-sm font-mono">{formatCompact(volume24h)} τ</div>
+      <div className="text-sm tabular-nums">{formatCompact(volume24h)} τ</div>
       <div className="w-full h-1.5 bg-gray-700 rounded-full mt-1 overflow-hidden flex">
         <div
           className="bg-green-500 h-full"
