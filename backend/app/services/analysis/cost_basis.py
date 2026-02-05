@@ -187,13 +187,16 @@ class CostBasisService:
                     realized_yield_tao += yield_income
                     realized_yield_alpha += alpha_to_sell
 
-        # Compute weighted average entry price from remaining ALPHA lots
+        # Compute weighted average entry price and book cost from remaining ALPHA lots
+        # Book cost = sum of remaining lots' (alpha × price), i.e. what you paid for what you still hold
         total_remaining_alpha = sum(lot["amount"] for lot in lots)
         if total_remaining_alpha > 0:
             weighted_sum = sum(lot["amount"] * lot["price"] for lot in lots)
             weighted_avg_price = weighted_sum / total_remaining_alpha
+            book_cost = weighted_sum
         else:
             weighted_avg_price = Decimal("0")
+            book_cost = Decimal("0")
 
         # Net invested = total staked - total unstaked (in TAO)
         net_invested = total_staked - total_unstaked
@@ -227,10 +230,15 @@ class CostBasisService:
         cost_basis.last_transaction_at = last_tx_at
         cost_basis.computed_at = datetime.now(timezone.utc)
 
+        # Attach book cost as transient attribute for _update_position_with_cost_basis
+        # (not persisted — computed fresh each run from FIFO lots)
+        cost_basis._book_cost_tao = book_cost  # type: ignore[attr-defined]
+
         logger.debug(
             "Computed cost basis",
             netuid=netuid,
             total_staked=total_staked,
+            book_cost=book_cost,
             avg_price=weighted_avg_price,
             realized_pnl=realized_pnl,
             realized_yield_tao=realized_yield_tao,
@@ -255,21 +263,25 @@ class CostBasisService:
 
         if position:
             position.entry_price_tao = cost_basis.weighted_avg_entry_price
-            position.cost_basis_tao = cost_basis.net_invested_tao
             position.realized_pnl_tao = cost_basis.realized_pnl_tao
 
             if cost_basis.first_stake_at:
                 position.entry_date = cost_basis.first_stake_at
 
-            # Compute unrealized P&L
-            if position.tao_value_mid > 0 and cost_basis.net_invested_tao > 0:
-                position.unrealized_pnl_tao = position.tao_value_mid - cost_basis.net_invested_tao
+            # Use FIFO book cost (cost of remaining lots) instead of net invested.
+            # Book cost = Σ(lot.alpha × lot.entry_price) for remaining lots.
+            # This is the correct cost basis for unrealized P&L because it represents
+            # what was paid for the alpha tokens still held.
+            book_cost = getattr(cost_basis, '_book_cost_tao', cost_basis.net_invested_tao)
+            position.cost_basis_tao = book_cost
+
+            # Compute unrealized P&L against book cost
+            if position.tao_value_mid > 0 and book_cost > 0:
+                position.unrealized_pnl_tao = position.tao_value_mid - book_cost
                 position.unrealized_pnl_pct = (
-                    (position.unrealized_pnl_tao / cost_basis.net_invested_tao) * 100
+                    (position.unrealized_pnl_tao / book_cost) * 100
                 )
             else:
-                # Reset P&L when cost basis is zero/negative (e.g. fully unstaked then re-staked
-                # before the new stake is detected by balance history sync)
                 position.unrealized_pnl_tao = Decimal("0")
                 position.unrealized_pnl_pct = Decimal("0")
 
@@ -371,7 +383,7 @@ class CostBasisService:
             subnets=len(per_subnet),
         )
 
-        # Update PositionCostBasis records with accounting-derived realized P&L
+        # Update PositionCostBasis AND Position records with accounting-derived realized P&L
         async with get_db_context() as db:
             for netuid, realized in per_subnet.items():
                 stmt = select(PositionCostBasis).where(
@@ -399,6 +411,17 @@ class CostBasisService:
 
                 cost_basis.realized_pnl_tao = realized
                 cost_basis.computed_at = datetime.now(timezone.utc)
+
+                # Propagate to the Position record so per-position P&L
+                # matches the portfolio aggregate.
+                pos_stmt = select(Position).where(
+                    Position.wallet_address == self.wallet_address,
+                    Position.netuid == netuid,
+                )
+                pos_result = await db.execute(pos_stmt)
+                position = pos_result.scalar_one_or_none()
+                if position:
+                    position.realized_pnl_tao = realized
 
             await db.commit()
 

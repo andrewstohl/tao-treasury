@@ -32,7 +32,7 @@ router = APIRouter()
 async def list_subnets(
     db: AsyncSession = Depends(get_db),
     eligible_only: bool = Query(default=False),
-    sort_by: str = Query(default="emission_share", regex="^(emission_share|pool_tao_reserve|holder_count|netuid|rank|market_cap_tao)$"),
+    sort_by: str = Query(default="emission_share", regex="^(emission_share|pool_tao_reserve|holder_count|netuid|rank|market_cap_tao|viability_score)$"),
     order: str = Query(default="desc", regex="^(asc|desc)$"),
 ) -> SubnetListResponse:
     """List all subnets with current metrics."""
@@ -62,6 +62,8 @@ async def list_subnets(
             description=s.description,
             owner_address=s.owner_address,
             owner_take=s.owner_take,
+            fee_rate=s.fee_rate,
+            incentive_burn=s.incentive_burn,
             registered_at=s.registered_at,
             age_days=s.age_days,
             emission_share=s.emission_share,
@@ -82,6 +84,9 @@ async def list_subnets(
             is_eligible=s.is_eligible,
             ineligibility_reasons=s.ineligibility_reasons,
             category=s.category,
+            viability_score=s.viability_score,
+            viability_tier=s.viability_tier,
+            viability_factors=s.viability_factors,
             created_at=s.created_at,
             updated_at=s.updated_at,
         )
@@ -313,14 +318,27 @@ async def list_enriched_subnets(
     # 3. Merge and build response
     eligible_count = sum(1 for s in subnets if s.is_eligible)
 
+    # Fill in missing logo_url with TaoStats fallback images
+    TAOSTATS_LOGO_FALLBACK = "https://taostats.io/images/subnets/{netuid}.webp"
+
     enriched = []
     for s in subnets:
+        identity = identity_lookup.get(s.netuid)
+        if identity and not identity.logo_url:
+            identity.logo_url = TAOSTATS_LOGO_FALLBACK.format(netuid=s.netuid)
+        elif not identity:
+            identity = SubnetIdentity(
+                logo_url=TAOSTATS_LOGO_FALLBACK.format(netuid=s.netuid),
+            )
+
         enriched.append(EnrichedSubnetResponse(
             netuid=s.netuid,
             name=s.name,
             description=s.description,
             owner_address=s.owner_address,
             owner_take=s.owner_take,
+            fee_rate=s.fee_rate,
+            incentive_burn=s.incentive_burn,
             registered_at=s.registered_at,
             age_days=s.age_days,
             emission_share=s.emission_share,
@@ -341,8 +359,11 @@ async def list_enriched_subnets(
             is_eligible=s.is_eligible,
             ineligibility_reasons=s.ineligibility_reasons,
             category=s.category,
+            viability_score=s.viability_score,
+            viability_tier=s.viability_tier,
+            viability_factors=s.viability_factors,
             volatile=volatile_lookup.get(s.netuid),
-            identity=identity_lookup.get(s.netuid),
+            identity=identity,
             dev_activity=dev_activity_lookup.get(s.netuid),
         ))
 
@@ -378,6 +399,8 @@ async def get_subnet(
         description=subnet.description,
         owner_address=subnet.owner_address,
         owner_take=subnet.owner_take,
+        fee_rate=subnet.fee_rate,
+        incentive_burn=subnet.incentive_burn,
         registered_at=subnet.registered_at,
         age_days=subnet.age_days,
         emission_share=subnet.emission_share,
@@ -398,6 +421,9 @@ async def get_subnet(
         is_eligible=subnet.is_eligible,
         ineligibility_reasons=subnet.ineligibility_reasons,
         category=subnet.category,
+        viability_score=subnet.viability_score,
+        viability_tier=subnet.viability_tier,
+        viability_factors=subnet.viability_factors,
         created_at=subnet.created_at,
         updated_at=subnet.updated_at,
     )

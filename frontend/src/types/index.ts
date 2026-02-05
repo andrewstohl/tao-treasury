@@ -74,9 +74,21 @@ export interface Portfolio {
   as_of: string
 }
 
+export interface ClosedPosition {
+  netuid: number
+  subnet_name: string
+  total_staked_tao: string
+  total_unstaked_tao: string
+  realized_pnl_tao: string
+  first_entry: string | null
+  last_trade: string | null
+}
+
 export interface Dashboard {
   portfolio: Portfolio
   top_positions: PositionSummary[]
+  closed_positions: ClosedPosition[]
+  free_tao_balance: string
   action_items: ActionItem[]
   alerts: {
     critical: number
@@ -98,6 +110,8 @@ export interface Subnet {
   description: string | null
   owner_address: string | null
   owner_take: string
+  fee_rate: string
+  incentive_burn: string
   registered_at: string | null
   age_days: number
   emission_share: string
@@ -118,6 +132,9 @@ export interface Subnet {
   is_eligible: boolean
   ineligibility_reasons: string | null
   category: string | null
+  viability_score: string | null
+  viability_tier: string | null
+  viability_factors: string | null
   created_at: string
   updated_at: string
 }
@@ -541,4 +558,135 @@ export interface RiskMetrics {
   worst_day_pct: string
   benchmarks: BenchmarkComparison[]
   daily_returns: DailyReturnPoint[]
+}
+
+// ==================== Settings ====================
+
+export interface ViabilityConfig {
+  id: number | null
+  config_name: string
+  is_active: boolean
+  source: 'database' | 'defaults'
+
+  // Hard failure thresholds
+  min_tao_reserve: string
+  min_emission_share: string
+  min_age_days: number
+  min_holders: number
+  max_drawdown_30d: string
+  max_negative_flow_ratio: string
+
+  // Scored metric weights
+  weight_tao_reserve: string
+  weight_net_flow_7d: string
+  weight_emission_share: string
+  weight_price_trend_7d: string
+  weight_subnet_age: string
+  weight_max_drawdown_30d: string
+
+  // Tier boundaries
+  tier_1_min: number
+  tier_2_min: number
+  tier_3_min: number
+
+  // Age cap
+  age_cap_days: number
+
+  // Feature flag
+  enabled: boolean
+
+  // Timestamps
+  created_at: string | null
+  updated_at: string | null
+}
+
+// ==================== Backtest ====================
+
+export interface BacktestTierSummary {
+  count: number
+  avg_return_1d: number | null
+  avg_return_3d: number | null
+  avg_return_7d: number | null
+  median_return_1d: number | null
+  median_return_3d: number | null
+  median_return_7d: number | null
+  win_rate_1d: number | null
+  win_rate_3d: number | null
+  win_rate_7d: number | null
+}
+
+export interface BacktestDayResult {
+  date: string
+  tier_counts: Record<string, number>
+  subnets: unknown[]
+}
+
+export interface BacktestResult {
+  scoring_dates: string[]
+  data_range: { start: string; end: string }
+  summary: Record<string, BacktestTierSummary>
+  tier_separation: Record<string, number | null>
+  daily_results: BacktestDayResult[]
+}
+
+export interface PortfolioEquityPoint {
+  date: string
+  value: number
+  return_pct: number
+  in_root: boolean
+  num_holdings: number
+}
+
+export interface PortfolioHolding {
+  netuid: number
+  name: string
+  tier?: string
+  score: number | null
+  weight: number
+  entry_price: number
+  exit_price: number | null
+  return_pct: number
+}
+
+export interface PortfolioPeriod {
+  date: string
+  holdings: PortfolioHolding[]
+  period_return: number
+  portfolio_value: number
+  in_root: boolean
+}
+
+export interface PortfolioSimResult {
+  start_date: string
+  end_date: string
+  initial_capital: number
+  final_value: number
+  total_return: number
+  num_periods: number
+  periods_in_root: number
+  equity_curve: PortfolioEquityPoint[]
+  periods: PortfolioPeriod[]
+  summary: {
+    total_return_pct: number
+    avg_period_return_pct: number
+    median_period_return_pct: number
+    win_rate: number
+    max_drawdown_pct: number
+    best_period: number
+    worst_period: number
+    avg_holdings_per_period: number
+    tier_weights?: Record<string, number>
+  }
+}
+
+export interface BackfillStatus {
+  running: boolean
+  total_subnets: number
+  completed_subnets: number
+  total_records_created: number
+  total_records_skipped: number
+  errors: string[]
+  started_at: string | null
+  finished_at: string | null
+  current_netuid: number | null
 }

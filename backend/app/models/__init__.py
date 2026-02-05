@@ -11,6 +11,7 @@ from app.models.validator import Validator
 from app.models.transaction import StakeTransaction, PositionCostBasis, DelegationEvent, PositionYieldHistory
 from app.models.reconciliation import ReconciliationRun
 from app.models.signal import SignalRun
+from app.models.viability_config import ViabilityConfig
 
 __all__ = [
     "Subnet",
@@ -31,4 +32,5 @@ __all__ = [
     "PositionYieldHistory",
     "ReconciliationRun",
     "SignalRun",
+    "ViabilityConfig",
 ]

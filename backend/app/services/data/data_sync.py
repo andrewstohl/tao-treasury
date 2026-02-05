@@ -302,6 +302,8 @@ class DataSyncService:
         subnet.description = subnet_data.get("description")
         subnet.owner_address = subnet_data.get("owner", {}).get("ss58") if isinstance(subnet_data.get("owner"), dict) else subnet_data.get("owner")
         subnet.owner_take = Decimal(str(subnet_data.get("owner_take", 0) or 0))
+        subnet.fee_rate = Decimal(str(subnet_data.get("fee_rate", 0) or 0))
+        subnet.incentive_burn = Decimal(str(subnet_data.get("incentive_burn", 0) or 0))
 
         # Registration date and age - API uses registration_timestamp
         registered = subnet_data.get("registration_timestamp") or subnet_data.get("registered_at") or subnet_data.get("created_at")
@@ -407,6 +409,12 @@ class DataSyncService:
         subnet.rank = pool_data.get("rank")
         market_cap_raw = pool_data.get("market_cap", 0) or 0
         subnet.market_cap_tao = rao_to_tao(market_cap_raw)
+
+        # Viability-related fields from pool API
+        subnet.startup_mode = pool_data.get("startup_mode")
+        price_change_7d = pool_data.get("price_change_1_week")
+        if price_change_7d is not None:
+            subnet.price_trend_7d = Decimal(str(price_change_7d))
 
         subnet.updated_at = datetime.now(timezone.utc)
         return subnet

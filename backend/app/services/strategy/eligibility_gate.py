@@ -454,39 +454,38 @@ class EligibilityGate:
     async def _calculate_attractiveness_score(self, subnet: Subnet) -> int:
         """Calculate attractiveness score for eligible subnet (0-100).
 
-        Higher score = more attractive for investment.
+        Delegates to viability_score when available (computed by ViabilityScorer).
+        Falls back to legacy heuristic for subnets not yet scored.
         """
-        score = 50  # Base score
+        if subnet.viability_score is not None:
+            return int(subnet.viability_score)
 
-        # Bonus for positive flow momentum
+        # Legacy fallback
+        score = 50
+
         if subnet.taoflow_7d > 0:
             score += min(20, int(float(subnet.taoflow_7d) * 100))
         if subnet.taoflow_14d > 0:
             score += min(10, int(float(subnet.taoflow_14d) * 50))
 
-        # Bonus for strong emissions
         if subnet.emission_share > Decimal("0.01"):
             score += 10
         if subnet.emission_share > Decimal("0.02"):
             score += 5
 
-        # Bonus for good liquidity
         if subnet.pool_tao_reserve > Decimal("10000"):
             score += 10
         if subnet.pool_tao_reserve > Decimal("50000"):
             score += 5
 
-        # Bonus for holder base
         if subnet.holder_count > 500:
             score += 5
         if subnet.holder_count > 1000:
             score += 5
 
-        # Penalty for high owner take
         if subnet.owner_take > Decimal("0.10"):
             score -= 10
 
-        # Bonus for age/stability
         if subnet.age_days > 90:
             score += 5
 

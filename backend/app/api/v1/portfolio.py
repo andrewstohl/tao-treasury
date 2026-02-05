@@ -28,6 +28,7 @@ from app.schemas.portfolio import (
     YieldSummary,
     PnLSummary,
     PositionSummary,
+    ClosedPositionSummary,
     MarketPulse,
     # Phase 1 – Overview
     PortfolioOverviewResponse,
@@ -536,9 +537,46 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)) -> DashboardResponse
     # Compute market pulse from TaoStats pool data
     market_pulse = await _compute_market_pulse(top_positions)
 
+    # --- Closed positions ---
+    # Find netuids in cost basis table that have no open Position
+    open_netuids = {p.netuid for p in top_positions}
+    cb_stmt = select(PositionCostBasis).where(
+        PositionCostBasis.wallet_address == wallet,
+    )
+    cb_result = await db.execute(cb_stmt)
+    all_cost_basis = cb_result.scalars().all()
+
+    # Batch-load subnet names for closed positions
+    closed_netuids = [cb.netuid for cb in all_cost_basis if cb.netuid not in open_netuids]
+    closed_subnet_names: Dict[int, str] = {}
+    if closed_netuids:
+        sn_stmt = select(Subnet.netuid, Subnet.name).where(Subnet.netuid.in_(closed_netuids))
+        sn_result = await db.execute(sn_stmt)
+        for row in sn_result.fetchall():
+            closed_subnet_names[row[0]] = row[1]
+
+    closed_positions = []
+    for cb in all_cost_basis:
+        if cb.netuid in open_netuids:
+            continue
+        closed_positions.append(ClosedPositionSummary(
+            netuid=cb.netuid,
+            subnet_name=closed_subnet_names.get(cb.netuid, f"Subnet {cb.netuid}"),
+            total_staked_tao=cb.total_staked_tao,
+            total_unstaked_tao=cb.total_unstaked_tao,
+            realized_pnl_tao=cb.realized_pnl_tao,
+            first_entry=cb.first_stake_at,
+            last_trade=cb.last_transaction_at,
+        ))
+
+    # --- Free TAO balance ---
+    free_tao = portfolio.allocation.unstaked_tao
+
     return DashboardResponse(
         portfolio=portfolio,
         top_positions=top_positions,
+        closed_positions=closed_positions,
+        free_tao_balance=free_tao,
         action_items=[],
         alerts=alerts,
         market_pulse=market_pulse,

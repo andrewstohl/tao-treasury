@@ -150,6 +150,57 @@ class Settings(BaseSettings):
         description="Minimum emission share (0.1%)"
     )
 
+    # ==================== Viability Scoring System ====================
+    enable_viability_scoring: bool = Field(
+        default=True,
+        description="Enable viability scoring system for subnet filtering"
+    )
+
+    # Hard failure thresholds
+    viability_min_tao_reserve: Decimal = Field(
+        default=Decimal("500"),
+        description="Minimum TAO reserve for viability"
+    )
+    viability_min_emission_share: Decimal = Field(
+        default=Decimal("0.002"),
+        description="Minimum emission share for viability (0.2%)"
+    )
+    viability_min_age_days: int = Field(
+        default=60,
+        description="Minimum subnet age in days for viability"
+    )
+    viability_min_holders: int = Field(
+        default=20,
+        description="Minimum holder count for viability"
+    )
+    viability_max_drawdown_30d: Decimal = Field(
+        default=Decimal("0.40"),
+        description="Maximum 30d drawdown for viability (40%)"
+    )
+    viability_max_negative_flow_ratio: Decimal = Field(
+        default=Decimal("0.30"),
+        description="Maximum 7d negative flow as fraction of TAO reserve (30%)"
+    )
+
+    # Scored metric weights (must sum to 1.0)
+    viability_weight_tao_reserve: Decimal = Field(default=Decimal("0.25"))
+    viability_weight_net_flow_7d: Decimal = Field(default=Decimal("0.25"))
+    viability_weight_emission_share: Decimal = Field(default=Decimal("0.15"))
+    viability_weight_price_trend_7d: Decimal = Field(default=Decimal("0.15"))
+    viability_weight_subnet_age: Decimal = Field(default=Decimal("0.10"))
+    viability_weight_max_drawdown_30d: Decimal = Field(default=Decimal("0.10"))
+
+    # Tier boundaries
+    viability_tier_1_min: int = Field(default=75, description="Min score for Tier 1 (Prime)")
+    viability_tier_2_min: int = Field(default=55, description="Min score for Tier 2 (Eligible)")
+    viability_tier_3_min: int = Field(default=40, description="Min score for Tier 3 (Watchlist)")
+
+    # Age cap for diminishing returns
+    viability_age_cap_days: int = Field(
+        default=365,
+        description="Cap age metric at this many days"
+    )
+
     # Taoflow Regime Thresholds
     flow_persistence_days: int = Field(
         default=3,

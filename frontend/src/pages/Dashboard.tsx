@@ -2,21 +2,20 @@ import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   Activity,
-  BarChart3,
-  Shield,
   ChevronRight,
   ChevronDown,
 } from 'lucide-react'
 import { api } from '../services/api'
-import type { Dashboard as DashboardType, EnrichedSubnetListResponse, EnrichedSubnet, VolatilePoolData, PositionSummary } from '../types'
-import { formatTao, formatTaoShort, formatPercent, formatCompact, safeFloat } from '../utils/format'
+import type { Dashboard as DashboardType, EnrichedSubnetListResponse, EnrichedSubnet, VolatilePoolData, PositionSummary, ClosedPosition } from '../types'
+import { formatTao, formatPercent, safeFloat } from '../utils/format'
 import SortableHeader, { useSortToggle, type SortDirection } from '../components/common/SortableHeader'
 import SparklineCell from '../components/common/cells/SparklineCell'
 import PriceChangeCell from '../components/common/cells/PriceChangeCell'
-import SentimentBadge from '../components/common/cells/SentimentBadge'
 import RegimeBadge from '../components/common/cells/RegimeBadge'
-import SubnetExpandedRow from '../components/common/SubnetExpandedRow'
+import ViabilityBadge from '../components/common/cells/ViabilityBadge'
+import SubnetExpandedRow, { FlowRow } from '../components/common/SubnetExpandedRow'
 import PortfolioOverviewCards from '../components/dashboard/PortfolioOverviewCards'
+import PerformanceRisk from '../components/dashboard/PerformanceRisk'
 
 type DashboardSortKey =
   | 'subnet_name'
@@ -133,40 +132,7 @@ export default function Dashboard() {
     )
   }
 
-  const { portfolio, action_items, market_pulse } = data
-
-  // Compute Portfolio Risk metrics
-  const drawdownPct = Math.abs(safeFloat(portfolio.executable_drawdown_pct))
-  const drawdownLimit = 15
-  const drawdownColor =
-    drawdownPct < 5 ? 'bg-green-500' : drawdownPct < 10 ? 'bg-yellow-500' : 'bg-red-500'
-  const drawdownTextColor =
-    drawdownPct < 5 ? 'text-green-400' : drawdownPct < 10 ? 'text-yellow-400' : 'text-red-400'
-
-  // Compute HHI from position weights
-  const positions = data.top_positions || []
-  const hhi = positions.reduce((sum, p) => {
-    const w = safeFloat(p.weight_pct)
-    return sum + w * w
-  }, 0)
-  const hhiLabel =
-    hhi < 1500 ? 'Well Diversified' : hhi < 2500 ? 'Moderate' : 'Concentrated'
-  const hhiColor =
-    hhi < 1500 ? 'text-green-400' : hhi < 2500 ? 'text-yellow-400' : 'text-red-400'
-
-  // Largest position
-  const largestPos = positions.length > 0
-    ? positions.reduce((max, p) =>
-        safeFloat(p.weight_pct) > safeFloat(max.weight_pct) ? p : max
-      , positions[0])
-    : null
-
-  // Slippage risk: (nav_mid - nav_exec_100pct) / nav_mid
-  const navMid = safeFloat(portfolio.nav_mid)
-  const navExec = safeFloat(portfolio.nav_exec_100pct)
-  const slippagePct = navMid > 0 ? ((navMid - navExec) / navMid) * 100 : 0
-  const slippageColor =
-    slippagePct < 2 ? 'text-green-400' : slippagePct < 5 ? 'text-yellow-400' : 'text-red-400'
+  const { portfolio, action_items } = data
 
   return (
     <div className="space-y-6">
@@ -216,206 +182,54 @@ export default function Dashboard() {
       {/* Portfolio Overview – dual currency, rolling returns, projections */}
       <PortfolioOverviewCards />
 
-      {/* Portfolio Risk & Market Pulse */}
+      {/* Allocation & Market Pulse */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Portfolio Risk Card */}
+        {/* Allocation Card */}
         <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <Shield className="w-5 h-5" />
-            Portfolio Risk
-          </h3>
-          <div className="space-y-4">
-            {/* Drawdown */}
+          <h3 className="text-lg font-semibold mb-4">Allocation</h3>
+          <div className="space-y-3">
             <div>
-              <div className="flex justify-between items-center mb-1">
-                <span className="text-sm text-gray-400">Drawdown</span>
-                <span className={`font-mono text-sm ${drawdownTextColor}`}>
-                  {drawdownPct.toFixed(1)}%
-                </span>
+              <div className="flex justify-between text-sm mb-1">
+                <span className="text-gray-400">Root (SN0)</span>
+                <span>{formatTao(portfolio.allocation.root_tao)} ({safeFloat(portfolio.allocation.root_pct).toFixed(1)}%)</span>
               </div>
-              <div className="relative w-full bg-gray-700 rounded-full h-2.5">
+              <div className="w-full bg-gray-700 rounded-full h-2">
                 <div
-                  className={`${drawdownColor} h-2.5 rounded-full transition-all`}
-                  style={{ width: `${Math.min((drawdownPct / drawdownLimit) * 100, 100)}%` }}
-                />
-                {/* Limit marker at 15% */}
+                  className="bg-blue-500 h-2 rounded-full"
+                  style={{ width: `${Math.min(safeFloat(portfolio.allocation.root_pct), 100)}%` }}
+                ></div>
+              </div>
+            </div>
+            <div>
+              <div className="flex justify-between text-sm mb-1">
+                <span className="text-gray-400">dTAO Sleeve</span>
+                <span>{formatTao(portfolio.allocation.dtao_tao)} ({safeFloat(portfolio.allocation.dtao_pct).toFixed(1)}%)</span>
+              </div>
+              <div className="w-full bg-gray-700 rounded-full h-2">
                 <div
-                  className="absolute top-0 h-2.5 w-0.5 bg-white/60"
-                  style={{ left: '100%' }}
-                  title={`Limit: ${drawdownLimit}%`}
-                />
-              </div>
-              <div className="flex justify-between text-xs text-gray-600 mt-0.5">
-                <span>0%</span>
-                <span>{drawdownLimit}% limit</span>
+                  className="bg-tao-500 h-2 rounded-full"
+                  style={{ width: `${Math.min(safeFloat(portfolio.allocation.dtao_pct), 100)}%` }}
+                ></div>
               </div>
             </div>
-
-            {/* Concentration */}
             <div>
-              <div className="flex justify-between items-center mb-1">
-                <span className="text-sm text-gray-400">Concentration</span>
-                <span className={`font-mono text-sm ${hhiColor}`}>
-                  {hhiLabel}
-                </span>
+              <div className="flex justify-between text-sm mb-1">
+                <span className="text-gray-400">Unstaked Buffer</span>
+                <span>{formatTao(portfolio.allocation.unstaked_tao)} ({safeFloat(portfolio.allocation.unstaked_pct).toFixed(1)}%)</span>
               </div>
-              <div className="text-xs text-gray-500">
-                HHI: {Math.round(hhi).toLocaleString()}
-                {largestPos && (
-                  <span className="ml-2">
-                    · Largest: {largestPos.subnet_name || `SN${largestPos.netuid}`} ({safeFloat(largestPos.weight_pct).toFixed(1)}%)
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Slippage Risk */}
-            <div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-400">Exit Slippage (100%)</span>
-                <span className={`font-mono text-sm ${slippageColor}`}>
-                  {slippagePct.toFixed(2)}%
-                </span>
-              </div>
-              <div className="text-xs text-gray-500 mt-0.5">
-                NAV impact: {formatTaoShort(navMid - navExec)} τ
+              <div className="w-full bg-gray-700 rounded-full h-2">
+                <div
+                  className="bg-green-500 h-2 rounded-full"
+                  style={{ width: `${Math.min(safeFloat(portfolio.allocation.unstaked_pct), 100)}%` }}
+                ></div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Market Pulse Card */}
-        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <BarChart3 className="w-5 h-5" />
-            Market Pulse
-          </h3>
-          {market_pulse && market_pulse.taostats_available ? (
-            <div className="space-y-4">
-              {/* Portfolio 24h Change */}
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-400">Portfolio 24h</span>
-                {market_pulse.portfolio_24h_change_pct != null ? (
-                  <span className={`text-xl font-bold font-mono ${
-                    safeFloat(market_pulse.portfolio_24h_change_pct) >= 0
-                      ? 'text-green-400'
-                      : 'text-red-400'
-                  }`}>
-                    {formatPercent(market_pulse.portfolio_24h_change_pct)}
-                  </span>
-                ) : (
-                  <span className="text-gray-600 font-mono">--</span>
-                )}
-              </div>
-
-              {/* Sentiment */}
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-400">Sentiment</span>
-                <div className="flex items-center gap-2">
-                  {market_pulse.avg_sentiment_index != null && (
-                    <span className="text-sm font-mono text-gray-300">
-                      {Math.round(market_pulse.avg_sentiment_index)}
-                    </span>
-                  )}
-                  <SentimentBadge
-                    sentiment={market_pulse.avg_sentiment_label}
-                    index={market_pulse.avg_sentiment_index}
-                  />
-                </div>
-              </div>
-
-              {/* 24h Volume */}
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-400">24h Volume</span>
-                <span className="font-mono text-sm text-gray-300">
-                  {market_pulse.total_volume_24h_tao != null
-                    ? formatCompact(safeFloat(market_pulse.total_volume_24h_tao)) + ' τ'
-                    : '--'}
-                </span>
-              </div>
-              {market_pulse.net_buy_pressure_pct != null && (
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-400">Buy Pressure</span>
-                  <span className={`font-mono text-sm ${
-                    safeFloat(market_pulse.net_buy_pressure_pct) >= 0
-                      ? 'text-green-400'
-                      : 'text-red-400'
-                  }`}>
-                    {formatPercent(market_pulse.net_buy_pressure_pct)}
-                  </span>
-                </div>
-              )}
-
-              {/* Top Mover */}
-              {market_pulse.top_mover_name && (
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-400">Top Mover</span>
-                  <div className="text-right">
-                    <span className="text-sm text-gray-300">{market_pulse.top_mover_name}</span>
-                    {market_pulse.top_mover_change_24h != null && (
-                      <span className={`ml-2 font-mono text-sm ${
-                        safeFloat(market_pulse.top_mover_change_24h) >= 0
-                          ? 'text-green-400'
-                          : 'text-red-400'
-                      }`}>
-                        {formatPercent(market_pulse.top_mover_change_24h)}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="flex items-center justify-center h-32 text-gray-500 text-sm">
-              Market data temporarily unavailable
-            </div>
-          )}
-        </div>
+        {/* Performance & Risk Card */}
+        <PerformanceRisk />
       </div>
-
-      {/* Allocation */}
-      <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-        <h3 className="text-lg font-semibold mb-4">Allocation</h3>
-        <div className="space-y-3">
-          <div>
-            <div className="flex justify-between text-sm mb-1">
-              <span className="text-gray-400">Root (SN0)</span>
-              <span>{formatTao(portfolio.allocation.root_tao)} ({safeFloat(portfolio.allocation.root_pct).toFixed(1)}%)</span>
-            </div>
-            <div className="w-full bg-gray-700 rounded-full h-2">
-              <div
-                className="bg-blue-500 h-2 rounded-full"
-                style={{ width: `${Math.min(safeFloat(portfolio.allocation.root_pct), 100)}%` }}
-              ></div>
-            </div>
-          </div>
-          <div>
-            <div className="flex justify-between text-sm mb-1">
-              <span className="text-gray-400">dTAO Sleeve</span>
-              <span>{formatTao(portfolio.allocation.dtao_tao)} ({safeFloat(portfolio.allocation.dtao_pct).toFixed(1)}%)</span>
-            </div>
-            <div className="w-full bg-gray-700 rounded-full h-2">
-              <div
-                className="bg-tao-500 h-2 rounded-full"
-                style={{ width: `${Math.min(safeFloat(portfolio.allocation.dtao_pct), 100)}%` }}
-              ></div>
-            </div>
-          </div>
-          <div>
-            <div className="flex justify-between text-sm mb-1">
-              <span className="text-gray-400">Unstaked Buffer</span>
-              <span>{formatTao(portfolio.allocation.unstaked_tao)} ({safeFloat(portfolio.allocation.unstaked_pct).toFixed(1)}%)</span>
-            </div>
-            <div className="w-full bg-gray-700 rounded-full h-2">
-              <div
-                className="bg-green-500 h-2 rounded-full"
-                style={{ width: `${Math.min(safeFloat(portfolio.allocation.unstaked_pct), 100)}%` }}
-              ></div>
-            </div>
-          </div>
-        </div>
-      </div>
-
 
       {/* All Positions Table */}
       {sortedPositions.length > 0 && (
@@ -489,7 +303,7 @@ export default function Dashboard() {
                     align="right"
                   />
                   <th className="px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">
-                    Sentiment
+                    Viability
                   </th>
                   <SortableHeader<DashboardSortKey>
                     label="Regime"
@@ -516,6 +330,41 @@ export default function Dashboard() {
                     />
                   )
                 })}
+
+                {/* Free TAO balance row */}
+                {safeFloat(data?.free_tao_balance) > 0 && (
+                  <tr className="bg-gray-900/30 text-gray-500">
+                    <td className="px-2 py-2.5" />
+                    <td className="px-4 py-2.5">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-full flex-shrink-0 bg-green-900/40 flex items-center justify-center text-green-500 text-xs font-bold">τ</div>
+                        <div className="min-w-0">
+                          <div className="font-medium text-sm text-gray-400">Free TAO</div>
+                          <div className="text-xs text-gray-600">Unstaked buffer</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-2 py-2.5" />
+                    <td className="px-4 py-2.5 text-right">
+                      <div className="font-mono text-sm text-gray-400">{formatTao(data?.free_tao_balance ?? '0')} τ</div>
+                    </td>
+                    <td colSpan={7} />
+                  </tr>
+                )}
+
+                {/* Closed positions */}
+                {(data?.closed_positions ?? []).length > 0 && (
+                  <>
+                    <tr className="bg-gray-900/50">
+                      <td colSpan={11} className="px-4 py-2 text-xs text-gray-500 uppercase tracking-wider font-medium">
+                        Closed Positions ({data!.closed_positions.length})
+                      </td>
+                    </tr>
+                    {data!.closed_positions.map((cp) => (
+                      <ClosedPositionRow key={cp.netuid} position={cp} enrichedLookup={enrichedLookup} />
+                    ))}
+                  </>
+                )}
               </tbody>
             </table>
           </div>
@@ -629,11 +478,11 @@ function DashboardPositionRow({
           </div>
         </td>
 
-        {/* Sentiment */}
+        {/* Viability */}
         <td className="px-4 py-3">
-          <SentimentBadge
-            sentiment={v?.fear_greed_sentiment}
-            index={v?.fear_greed_index}
+          <ViabilityBadge
+            tier={enriched?.viability_tier}
+            score={enriched?.viability_score}
           />
         </td>
 
@@ -655,6 +504,56 @@ function DashboardPositionRow({
   )
 }
 
+function ClosedPositionRow({
+  position,
+  enrichedLookup,
+}: {
+  position: ClosedPosition
+  enrichedLookup: Map<number, EnrichedSubnet>
+}) {
+  const enriched = enrichedLookup.get(position.netuid)
+  const pnl = safeFloat(position.realized_pnl_tao)
+
+  return (
+    <tr className="text-gray-500 hover:bg-gray-700/20">
+      <td className="px-2 py-2" />
+      <td className="px-4 py-2">
+        <div className="flex items-center gap-2">
+          {enriched?.identity?.logo_url && (
+            <img
+              src={enriched.identity.logo_url}
+              alt=""
+              className="w-5 h-5 rounded-full flex-shrink-0 bg-gray-700 opacity-50"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+            />
+          )}
+          <div className="min-w-0">
+            <div className="text-sm text-gray-500">{position.subnet_name}</div>
+            <div className="text-xs text-gray-600">SN{position.netuid}</div>
+          </div>
+        </div>
+      </td>
+      <td className="px-2 py-2" />
+      <td className="px-4 py-2 text-right font-mono text-sm text-gray-600">0 τ</td>
+      <td className="px-4 py-2" />
+      <td className="px-4 py-2" />
+      <td className="px-4 py-2" />
+      <td className="px-4 py-2 text-right">
+        <div className="font-mono text-sm text-gray-600">{formatTao(position.total_staked_tao)} τ</div>
+        <div className="text-xs text-gray-600">closed</div>
+      </td>
+      <td className="px-4 py-2 text-right">
+        <span className={`font-mono text-sm ${pnl >= 0 ? 'text-green-400/70' : 'text-red-400/70'}`}>
+          {formatTao(position.realized_pnl_tao)} τ
+        </span>
+        <div className="text-xs text-gray-600">realized</div>
+      </td>
+      <td className="px-4 py-2" />
+      <td className="px-4 py-2" />
+    </tr>
+  )
+}
+
 function DashboardPositionDetail({
   position,
   enriched,
@@ -664,22 +563,82 @@ function DashboardPositionDetail({
 }) {
   const v = enriched?.volatile
 
+  // Compute P&L breakdown
+  const costBasis = safeFloat(position.cost_basis_tao)
+  const entryPrice = safeFloat(position.entry_price_tao)
+  const currentPrice = enriched ? safeFloat(enriched.alpha_price_tao) : 0
+  const alphaBalance = safeFloat(position.alpha_balance)
+  const unrealizedPnl = safeFloat(position.unrealized_pnl_tao)
+  const unrealizedPct = safeFloat(position.unrealized_pnl_pct)
+
+  // Alpha originally purchased (cost / entry price)
+  const originalAlpha = entryPrice > 0 ? costBasis / entryPrice : 0
+  // Alpha earned from yield/emissions
+  const yieldAlpha = alphaBalance - originalAlpha
+  // Value of earned alpha at current price
+  const yieldValueTao = yieldAlpha * currentPrice
+  // Price change component (original alpha * price delta)
+  const priceChangeTao = originalAlpha * (currentPrice - entryPrice)
+
+  const pnlColor = (val: number) => val >= 0 ? 'text-green-400' : 'text-red-400'
+
   return (
     <div className="bg-gray-900/50">
-      {/* Position-specific details */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-4 text-sm border-b border-gray-800">
-        {/* Column 1: Position Details */}
+      {/* Row 1: Performance (left) + Taoflow & Trading (right) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 text-sm border-b border-gray-800">
+        {/* Performance */}
         <div className="space-y-2">
-          <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Position Details</h4>
+          <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Performance</h4>
           <div className="space-y-1">
             <DashDetailRow label="Entry Date" value={position.entry_date ? new Date(position.entry_date).toLocaleDateString() : '--'} />
-            <DashDetailRow label="Entry Price" value={`${safeFloat(position.entry_price_tao).toFixed(6)} τ`} />
+            <DashDetailRow label="Cost Basis" value={`${formatTao(position.cost_basis_tao)} τ`} />
+            <DashDetailRow label="Entry Price" value={`${entryPrice.toFixed(6)} τ`} />
             <DashDetailRow
               label="Current Price"
-              value={enriched ? `${safeFloat(enriched.alpha_price_tao).toFixed(6)} τ` : '--'}
+              value={currentPrice > 0 ? `${currentPrice.toFixed(6)} τ` : '--'}
             />
-            <DashDetailRow label="Cost Basis" value={`${formatTao(position.cost_basis_tao)} τ`} />
-            <DashDetailRow label="Realized P&L" value={`${formatTao(position.realized_pnl_tao)} τ`} />
+            <div className="border-t border-gray-700 my-1" />
+            <DashDetailRow label="Alpha Purchased" value={`${originalAlpha.toFixed(2)} α`} />
+            <DashDetailRow
+              label="Alpha from Yield"
+              value={`+${yieldAlpha.toFixed(2)} α`}
+              valueColor="text-green-400"
+            />
+            <DashDetailRow label="Total Alpha" value={`${alphaBalance.toFixed(2)} α`} />
+            <div className="border-t border-gray-700 my-1" />
+            <DashDetailRow
+              label="Price Impact"
+              value={`${priceChangeTao >= 0 ? '+' : ''}${priceChangeTao.toFixed(4)} τ`}
+              valueColor={pnlColor(priceChangeTao)}
+            />
+            <DashDetailRow
+              label="Yield Earned"
+              value={`+${yieldValueTao.toFixed(4)} τ`}
+              valueColor="text-green-400"
+            />
+            <DashDetailRow
+              label="Unrealized P&L"
+              value={`${unrealizedPnl >= 0 ? '+' : ''}${unrealizedPnl.toFixed(4)} τ (${unrealizedPct >= 0 ? '+' : ''}${unrealizedPct.toFixed(2)}%)`}
+              valueColor={pnlColor(unrealizedPnl)}
+            />
+            {safeFloat(position.realized_pnl_tao) !== 0 && (
+              <DashDetailRow
+                label="Realized P&L"
+                value={`${formatTao(position.realized_pnl_tao)} τ`}
+                valueColor={pnlColor(safeFloat(position.realized_pnl_tao))}
+              />
+            )}
+            <div className="border-t border-gray-700 my-1" />
+            <DashDetailRow
+              label="Current APY"
+              value={safeFloat(position.current_apy) > 0 ? `${safeFloat(position.current_apy).toFixed(1)}%` : '--'}
+              valueColor="text-green-400"
+            />
+            <DashDetailRow
+              label="Daily Yield"
+              value={safeFloat(position.daily_yield_tao) > 0 ? `+${safeFloat(position.daily_yield_tao).toFixed(4)} τ` : '--'}
+              valueColor="text-green-400"
+            />
             {position.validator_hotkey && (
               <DashDetailRow
                 label="Validator"
@@ -689,59 +648,33 @@ function DashboardPositionDetail({
           </div>
         </div>
 
-        {/* Column 2: Exit Analysis */}
+        {/* Taoflow & Trading */}
         <div className="space-y-2">
-          <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Exit Analysis</h4>
+          <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Taoflow & Trading</h4>
           <div className="space-y-1">
-            <DashDetailRow label="Mid NAV" value={`${formatTao(position.tao_value_mid)} τ`} />
-            <DashDetailRow label="Exec NAV (50%)" value={`${formatTao(position.tao_value_exec_50pct)} τ`} />
-            <DashDetailRow label="Exec NAV (100%)" value={`${formatTao(position.tao_value_exec_100pct)} τ`} />
-            <DashDetailRow
-              label="Slippage (50%)"
-              value={`${safeFloat(position.exit_slippage_50pct).toFixed(2)}%`}
-              valueColor={safeFloat(position.exit_slippage_50pct) > 5 ? 'text-red-400' : 'text-gray-300'}
-            />
-            <DashDetailRow
-              label="Slippage (100%)"
-              value={`${safeFloat(position.exit_slippage_100pct).toFixed(2)}%`}
-              valueColor={safeFloat(position.exit_slippage_100pct) > 10 ? 'text-red-400' : 'text-gray-300'}
-            />
-          </div>
-        </div>
-
-        {/* Column 3: Recommendation */}
-        <div className="space-y-2">
-          <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Recommendation</h4>
-          <div className="space-y-1">
-            {position.recommended_action ? (
-              <>
-                <div className="flex items-center gap-2 mb-2">
-                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                    position.recommended_action === 'sell' ? 'bg-red-600/20 text-red-400' :
-                    position.recommended_action === 'buy' ? 'bg-green-600/20 text-green-400' :
-                    'bg-yellow-600/20 text-yellow-400'
-                  }`}>
-                    {position.recommended_action.toUpperCase()}
-                  </span>
-                </div>
-                {position.action_reason && (
-                  <p className="text-xs text-gray-400 leading-relaxed">{position.action_reason}</p>
-                )}
-              </>
-            ) : (
-              <p className="text-xs text-gray-500">No action recommended</p>
-            )}
+            <FlowRow label="1d Flow" value={enriched?.taoflow_1d} />
+            <FlowRow label="3d Flow" value={enriched?.taoflow_3d} />
+            <FlowRow label="7d Flow" value={enriched?.taoflow_7d} />
+            <FlowRow label="14d Flow" value={enriched?.taoflow_14d} />
+            <div className="border-t border-gray-700 my-1" />
+            <DashDetailRow label="Buys (24h)" value={v?.buys_24h != null ? String(v.buys_24h) : '--'} />
+            <DashDetailRow label="Sells (24h)" value={v?.sells_24h != null ? String(v.sells_24h) : '--'} />
+            <DashDetailRow label="Buyers (24h)" value={v?.buyers_24h != null ? String(v.buyers_24h) : '--'} />
+            <DashDetailRow label="Sellers (24h)" value={v?.sellers_24h != null ? String(v.sellers_24h) : '--'} />
+            <DashDetailRow label="24h High" value={v?.high_24h != null ? v.high_24h.toFixed(6) + ' τ' : '--'} />
+            <DashDetailRow label="24h Low" value={v?.low_24h != null ? v.low_24h.toFixed(6) + ' τ' : '--'} />
           </div>
         </div>
       </div>
 
-      {/* Market context: SubnetExpandedRow */}
+      {/* Row 2+3: About, then Pool Composition + Subnet Info (via SubnetExpandedRow with taoflow hidden) */}
       <SubnetExpandedRow
         volatile={v}
         identity={enriched?.identity}
-        devActivity={enriched?.dev_activity}
         ownerAddress={enriched?.owner_address}
         ownerTake={enriched?.owner_take}
+        feeRate={enriched?.fee_rate}
+        incentiveBurn={enriched?.incentive_burn}
         ageDays={enriched?.age_days}
         holderCount={enriched?.holder_count}
         ineligibilityReasons={enriched?.ineligibility_reasons}
@@ -749,6 +682,10 @@ function DashboardPositionDetail({
         taoflow3d={enriched?.taoflow_3d}
         taoflow7d={enriched?.taoflow_7d}
         taoflow14d={enriched?.taoflow_14d}
+        viabilityScore={enriched?.viability_score}
+        viabilityTier={enriched?.viability_tier}
+        viabilityFactors={enriched?.viability_factors}
+        showTaoflow={false}
       />
     </div>
   )

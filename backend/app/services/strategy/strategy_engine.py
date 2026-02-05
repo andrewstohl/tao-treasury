@@ -125,6 +125,14 @@ class StrategyEngine:
             portfolio_regime_result = await regime_calculator.compute_portfolio_regime()
             portfolio_regime = portfolio_regime_result[0].value  # Extract regime string from tuple
 
+            # 1.5. Update viability scores (before eligibility so it can reference tiers)
+            try:
+                from app.services.strategy.viability_scorer import viability_scorer
+                viability_summary = await viability_scorer.update_all_viability()
+                logger.info("Viability scoring complete", **viability_summary)
+            except Exception as e:
+                logger.error("Viability scoring failed", error=str(e))
+
             # 2. Update eligibility
             eligibility_summary = await eligibility_gate.update_subnet_eligibility()
 

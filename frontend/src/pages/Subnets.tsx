@@ -7,9 +7,9 @@ import { formatTao, formatCompact } from '../utils/format'
 import SortableHeader, { useSortToggle, type SortDirection } from '../components/common/SortableHeader'
 import SparklineCell from '../components/common/cells/SparklineCell'
 import PriceChangeCell from '../components/common/cells/PriceChangeCell'
-import SentimentBadge from '../components/common/cells/SentimentBadge'
 import VolumeBar from '../components/common/cells/VolumeBar'
 import RegimeBadge from '../components/common/cells/RegimeBadge'
+import ViabilityBadge from '../components/common/cells/ViabilityBadge'
 import SubnetExpandedRow from '../components/common/SubnetExpandedRow'
 
 type SortKey =
@@ -22,7 +22,9 @@ type SortKey =
   | 'emission_share'
   | 'pool_tao_reserve'
   | 'validator_apy'
+  | 'incentive_burn'
   | 'flow_regime'
+  | 'viability_score'
 
 // --- Column visibility ---
 type ColumnKey =
@@ -34,8 +36,9 @@ type ColumnKey =
   | 'emission'
   | 'liquidity'
   | 'apy'
-  | 'sentiment'
+  | 'burn'
   | 'regime'
+  | 'viability'
   | 'status'
 
 const ALL_COLUMNS: { key: ColumnKey; label: string }[] = [
@@ -47,8 +50,9 @@ const ALL_COLUMNS: { key: ColumnKey; label: string }[] = [
   { key: 'emission', label: 'Emission' },
   { key: 'liquidity', label: 'Liquidity' },
   { key: 'apy', label: 'APY' },
-  { key: 'sentiment', label: 'Sentiment' },
+  { key: 'burn', label: 'Burn Rate' },
   { key: 'regime', label: 'Regime' },
+  { key: 'viability', label: 'Viability' },
   { key: 'status', label: 'Status' },
 ]
 
@@ -56,11 +60,19 @@ const COLUMNS_STORAGE_KEY = 'tao-subnets-columns'
 const ALL_COLUMN_KEYS = ALL_COLUMNS.map((c) => c.key)
 
 function loadVisibleColumns(): Set<ColumnKey> {
+  const allKeys = new Set(ALL_COLUMN_KEYS)
   try {
     const stored = localStorage.getItem(COLUMNS_STORAGE_KEY)
     if (stored) {
-      const parsed: ColumnKey[] = JSON.parse(stored)
-      if (Array.isArray(parsed) && parsed.length > 0) return new Set(parsed)
+      const parsed: string[] = JSON.parse(stored)
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // Keep only keys that still exist, and auto-show any newly added columns
+        const valid = new Set(parsed.filter((k) => allKeys.has(k as ColumnKey)) as ColumnKey[])
+        for (const key of ALL_COLUMN_KEYS) {
+          if (!valid.has(key)) valid.add(key)
+        }
+        return valid
+      }
     }
   } catch {
     // ignore
@@ -74,16 +86,7 @@ function saveVisibleColumns(cols: Set<ColumnKey>) {
 
 // --- Filter types ---
 type RegimeFilter = 'all' | 'risk_on' | 'neutral' | 'risk_off' | 'quarantine' | 'dead'
-type SentimentFilter = 'all' | 'fear' | 'neutral' | 'greed'
-
-function getSentimentBucket(sentiment: string | null | undefined): 'fear' | 'neutral' | 'greed' | null {
-  if (!sentiment) return null
-  const lower = sentiment.toLowerCase()
-  if (lower.includes('fear')) return 'fear'
-  if (lower.includes('greed')) return 'greed'
-  if (lower === 'neutral') return 'neutral'
-  return null
-}
+type ViabilityFilter = 'all' | 'tier_1' | 'tier_2' | 'tier_3' | 'tier_4'
 
 export default function Subnets() {
   const [eligibleOnly, setEligibleOnly] = useState(false)
@@ -94,7 +97,7 @@ export default function Subnets() {
   // Search & filters
   const [searchQuery, setSearchQuery] = useState('')
   const [regimeFilter, setRegimeFilter] = useState<RegimeFilter>('all')
-  const [sentimentFilter, setSentimentFilter] = useState<SentimentFilter>('all')
+  const [viabilityFilter, setViabilityFilter] = useState<ViabilityFilter>('all')
 
   // Column visibility
   const [visibleColumns, setVisibleColumns] = useState<Set<ColumnKey>>(loadVisibleColumns)
@@ -159,12 +162,9 @@ export default function Subnets() {
       subnets = subnets.filter((s) => s.flow_regime === regimeFilter)
     }
 
-    // Sentiment filter
-    if (sentimentFilter !== 'all') {
-      subnets = subnets.filter((s) => {
-        const bucket = getSentimentBucket(s.volatile?.fear_greed_sentiment)
-        return bucket === sentimentFilter
-      })
+    // Viability tier filter
+    if (viabilityFilter !== 'all') {
+      subnets = subnets.filter((s) => s.viability_tier === viabilityFilter)
     }
 
     // Sort
@@ -214,9 +214,17 @@ export default function Subnets() {
           aVal = parseFloat(a.validator_apy)
           bVal = parseFloat(b.validator_apy)
           break
+        case 'incentive_burn':
+          aVal = parseFloat(a.incentive_burn)
+          bVal = parseFloat(b.incentive_burn)
+          break
         case 'flow_regime':
           aVal = a.flow_regime
           bVal = b.flow_regime
+          break
+        case 'viability_score':
+          aVal = a.viability_score != null ? parseFloat(a.viability_score) : -Infinity
+          bVal = b.viability_score != null ? parseFloat(b.viability_score) : -Infinity
           break
         default:
           return 0
@@ -232,12 +240,12 @@ export default function Subnets() {
         ? (aVal as number) - (bVal as number)
         : (bVal as number) - (aVal as number)
     })
-  }, [data?.subnets, searchQuery, regimeFilter, sentimentFilter, sortKey, sortDirection])
+  }, [data?.subnets, searchQuery, regimeFilter, viabilityFilter, sortKey, sortDirection])
 
   // Compute colSpan: expand(1) + subnet(1) + visible optional columns
   const colSpan = 2 + visibleColumns.size
 
-  const hasActiveFilters = searchQuery.trim() !== '' || regimeFilter !== 'all' || sentimentFilter !== 'all'
+  const hasActiveFilters = searchQuery.trim() !== '' || regimeFilter !== 'all' || viabilityFilter !== 'all'
 
   if (isLoading) {
     return (
@@ -325,16 +333,17 @@ export default function Subnets() {
           </select>
         </div>
 
-        {/* Sentiment filter */}
+        {/* Viability tier filter */}
         <select
-          value={sentimentFilter}
-          onChange={(e) => setSentimentFilter(e.target.value as SentimentFilter)}
+          value={viabilityFilter}
+          onChange={(e) => setViabilityFilter(e.target.value as ViabilityFilter)}
           className="bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300 px-2 py-2 focus:outline-none focus:border-tao-500"
         >
-          <option value="all">All Sentiment</option>
-          <option value="fear">Fear</option>
-          <option value="neutral">Neutral</option>
-          <option value="greed">Greed</option>
+          <option value="all">All Viability</option>
+          <option value="tier_1">Prime (75+)</option>
+          <option value="tier_2">Eligible (55-74)</option>
+          <option value="tier_3">Watchlist (40-54)</option>
+          <option value="tier_4">Excluded (&lt;40)</option>
         </select>
 
         {/* Column visibility toggle */}
@@ -388,7 +397,7 @@ export default function Subnets() {
             onClick={() => {
               setSearchQuery('')
               setRegimeFilter('all')
-              setSentimentFilter('all')
+              setViabilityFilter('all')
             }}
             className="text-xs text-gray-400 hover:text-gray-200 underline"
           >
@@ -501,15 +510,29 @@ export default function Subnets() {
                     align="right"
                   />
                 )}
-                {isColVisible('sentiment') && (
-                  <th className="px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">
-                    Sentiment
-                  </th>
+                {isColVisible('burn') && (
+                  <SortableHeader<SortKey>
+                    label="Burn Rate"
+                    sortKey="incentive_burn"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={handleSort}
+                    align="right"
+                  />
                 )}
                 {isColVisible('regime') && (
                   <SortableHeader<SortKey>
                     label="Regime"
                     sortKey="flow_regime"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={handleSort}
+                  />
+                )}
+                {isColVisible('viability') && (
+                  <SortableHeader<SortKey>
+                    label="Viability"
+                    sortKey="viability_score"
                     currentSortKey={sortKey}
                     currentDirection={sortDirection}
                     onSort={handleSort}
@@ -664,20 +687,30 @@ function SubnetRow({
           </td>
         )}
 
-        {/* Sentiment */}
-        {isColVisible('sentiment') && (
-          <td className="px-4 py-3">
-            <SentimentBadge
-              sentiment={v?.fear_greed_sentiment}
-              index={v?.fear_greed_index}
-            />
-          </td>
-        )}
+        {/* Burn Rate */}
+        {isColVisible('burn') && (() => {
+          const burn = parseFloat(subnet.incentive_burn)
+          const burnPct = (burn * 100).toFixed(0)
+          return (
+            <td className="px-4 py-3 text-right font-mono text-sm">
+              <span className={burn >= 1 ? 'text-red-400' : burn >= 0.5 ? 'text-yellow-400' : 'text-gray-300'}>
+                {burnPct}%
+              </span>
+            </td>
+          )
+        })()}
 
         {/* Regime */}
         {isColVisible('regime') && (
           <td className="px-4 py-3">
             <RegimeBadge regime={subnet.flow_regime} />
+          </td>
+        )}
+
+        {/* Viability */}
+        {isColVisible('viability') && (
+          <td className="px-4 py-3">
+            <ViabilityBadge tier={subnet.viability_tier} score={subnet.viability_score} />
           </td>
         )}
 
@@ -704,9 +737,10 @@ function SubnetRow({
             <SubnetExpandedRow
               volatile={v}
               identity={subnet.identity}
-              devActivity={subnet.dev_activity}
               ownerAddress={subnet.owner_address}
               ownerTake={subnet.owner_take}
+              feeRate={subnet.fee_rate}
+              incentiveBurn={subnet.incentive_burn}
               ageDays={subnet.age_days}
               holderCount={subnet.holder_count}
               ineligibilityReasons={subnet.ineligibility_reasons}
@@ -714,6 +748,9 @@ function SubnetRow({
               taoflow3d={subnet.taoflow_3d}
               taoflow7d={subnet.taoflow_7d}
               taoflow14d={subnet.taoflow_14d}
+              viabilityScore={subnet.viability_score}
+              viabilityTier={subnet.viability_tier}
+              viabilityFactors={subnet.viability_factors}
             />
           </td>
         </tr>

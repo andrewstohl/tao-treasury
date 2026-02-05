@@ -52,6 +52,12 @@ from app.services.strategy.macro_regime_detector import (
     MacroRegimeDetector,
     macro_regime_detector,
 )
+from app.services.strategy.viability_scorer import (
+    ViabilityTier,
+    ViabilityResult,
+    ViabilityScorer,
+    viability_scorer,
+)
 
 __all__ = [
     # Regime
@@ -89,4 +95,9 @@ __all__ = [
     "MacroSignals",
     "MacroRegimeDetector",
     "macro_regime_detector",
+    # Viability scoring
+    "ViabilityTier",
+    "ViabilityResult",
+    "ViabilityScorer",
+    "viability_scorer",
 ]

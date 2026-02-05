@@ -133,6 +133,17 @@ class PositionSummary(BaseModel):
         from_attributes = True
 
 
+class ClosedPositionSummary(BaseModel):
+    """Summary of a closed (fully exited) position."""
+    netuid: int
+    subnet_name: str
+    total_staked_tao: Decimal = Field(default=Decimal("0"))
+    total_unstaked_tao: Decimal = Field(default=Decimal("0"))
+    realized_pnl_tao: Decimal = Field(default=Decimal("0"))
+    first_entry: Optional[datetime] = None
+    last_trade: Optional[datetime] = None
+
+
 class ActionItem(BaseModel):
     """Single actionable recommendation."""
     priority: str  # "high", "medium", "low"
@@ -168,6 +179,8 @@ class DashboardResponse(BaseModel):
     """Complete dashboard response."""
     portfolio: PortfolioSummary
     top_positions: List[PositionSummary] = Field(default_factory=list)
+    closed_positions: List[ClosedPositionSummary] = Field(default_factory=list)
+    free_tao_balance: Decimal = Field(default=Decimal("0"))
     action_items: List[ActionItem] = Field(default_factory=list)
     alerts: AlertSummary
     market_pulse: Optional[MarketPulse] = None

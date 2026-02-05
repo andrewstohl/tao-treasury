@@ -34,6 +34,10 @@ class Subnet(Base):
     owner_address: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     owner_take: Mapped[Decimal] = mapped_column(Numeric(10, 6), default=Decimal("0"))
 
+    # Fee & burn parameters
+    fee_rate: Mapped[Decimal] = mapped_column(Numeric(20, 18), default=Decimal("0"))
+    incentive_burn: Mapped[Decimal] = mapped_column(Numeric(20, 18), default=Decimal("0"))
+
     # Registration and age
     registered_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     age_days: Mapped[int] = mapped_column(Integer, default=0)
@@ -80,6 +84,14 @@ class Subnet(Base):
     is_eligible: Mapped[bool] = mapped_column(Boolean, default=False)
     ineligibility_reasons: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    # Viability scoring
+    viability_score: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 1), nullable=True)
+    viability_tier: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    viability_factors: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON
+    startup_mode: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    price_trend_7d: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 6), nullable=True)
+    max_drawdown_30d: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 6), nullable=True)
+
     # Category for concentration limits
     category: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
@@ -94,6 +106,7 @@ class Subnet(Base):
     __table_args__ = (
         Index("ix_subnets_eligible_netuid", "is_eligible", "netuid"),
         Index("ix_subnets_flow_regime", "flow_regime"),
+        Index("ix_subnets_viability_tier", "viability_tier"),
     )
 
 

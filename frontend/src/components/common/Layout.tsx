@@ -10,6 +10,7 @@ import {
   Shield,
   DollarSign,
   BookOpen,
+  SlidersHorizontal,
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../services/api'
@@ -26,6 +27,7 @@ const navItems = [
   { path: '/strategy', label: 'Strategy', icon: Shield },
   { path: '/alerts', label: 'Alerts', icon: AlertTriangle },
   { path: '/recommendations', label: 'Rebalance', icon: ArrowRightLeft },
+  { path: '/settings', label: 'Settings', icon: SlidersHorizontal },
   { path: '/examples', label: 'Examples', icon: BookOpen },
 ]
 

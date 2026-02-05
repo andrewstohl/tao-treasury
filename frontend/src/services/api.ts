@@ -149,4 +149,51 @@ export const api = {
     const { data } = await client.get('/api/v1/strategy/recommendation-summary')
     return data
   },
+
+  // Settings
+  getViabilityConfig: async () => {
+    const { data } = await client.get('/api/v1/settings/viability')
+    return data
+  },
+
+  updateViabilityConfig: async (config: Record<string, unknown>) => {
+    const { data } = await client.put('/api/v1/settings/viability', config)
+    return data
+  },
+
+  resetViabilityConfig: async () => {
+    const { data } = await client.post('/api/v1/settings/viability/reset')
+    return data
+  },
+
+  // Backtest
+  runBacktest: async (intervalDays: number = 1) => {
+    const { data } = await client.get(`/api/v1/backtest/run?interval_days=${intervalDays}`)
+    return data
+  },
+
+  simulatePortfolio: async (intervalDays: number = 3, tier: string = 'tier_1', startDate?: string, initialCapital: number = 100, tierWeights?: Record<string, number>) => {
+    const params = new URLSearchParams({
+      interval_days: String(intervalDays),
+      initial_capital: String(initialCapital),
+      tier,
+    })
+    if (startDate) params.append('start_date', startDate)
+    if (tierWeights) {
+      const tw = Object.entries(tierWeights).map(([t, w]) => `${t}:${w}`).join(',')
+      params.append('tier_weights', tw)
+    }
+    const { data } = await client.get(`/api/v1/backtest/simulate?${params}`)
+    return data
+  },
+
+  triggerBackfill: async (lookbackDays: number = 365) => {
+    const { data } = await client.post(`/api/v1/backtest/backfill?lookback_days=${lookbackDays}`)
+    return data
+  },
+
+  getBackfillStatus: async () => {
+    const { data } = await client.get('/api/v1/backtest/backfill/status')
+    return data
+  },
 }

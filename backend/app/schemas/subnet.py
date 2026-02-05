@@ -18,6 +18,10 @@ class SubnetResponse(BaseModel):
     owner_address: Optional[str] = None
     owner_take: Decimal = Field(default=Decimal("0"))
 
+    # Fee & burn parameters
+    fee_rate: Decimal = Field(default=Decimal("0"))
+    incentive_burn: Decimal = Field(default=Decimal("0"))
+
     # Age
     registered_at: Optional[datetime] = None
     age_days: int = 0
@@ -55,6 +59,11 @@ class SubnetResponse(BaseModel):
     is_eligible: bool = False
     ineligibility_reasons: Optional[str] = None
     category: Optional[str] = None
+
+    # Viability scoring
+    viability_score: Optional[Decimal] = None
+    viability_tier: Optional[str] = None
+    viability_factors: Optional[str] = None
 
     # Timestamps
     created_at: datetime
@@ -147,6 +156,10 @@ class EnrichedSubnetResponse(BaseModel):
     owner_address: Optional[str] = None
     owner_take: Decimal = Field(default=Decimal("0"))
 
+    # Fee & burn parameters
+    fee_rate: Decimal = Field(default=Decimal("0"))
+    incentive_burn: Decimal = Field(default=Decimal("0"))
+
     # Age
     registered_at: Optional[datetime] = None
     age_days: int = 0
@@ -184,6 +197,11 @@ class EnrichedSubnetResponse(BaseModel):
     is_eligible: bool = False
     ineligibility_reasons: Optional[str] = None
     category: Optional[str] = None
+
+    # Viability scoring
+    viability_score: Optional[Decimal] = None
+    viability_tier: Optional[str] = None
+    viability_factors: Optional[str] = None
 
     # Volatile data (null when TaoStats unavailable)
     volatile: Optional[VolatilePoolData] = None

@@ -69,3 +69,23 @@ export function getRegimeBgColor(regime: string | null): string {
 export function formatRegimeLabel(regime: string): string {
   return regime.replace(/_/g, ' ')
 }
+
+export function getViabilityTierBgColor(tier: string | null | undefined): string {
+  switch (tier) {
+    case 'tier_1': return 'bg-emerald-600/20 text-emerald-400'
+    case 'tier_2': return 'bg-green-600/20 text-green-400'
+    case 'tier_3': return 'bg-yellow-600/20 text-yellow-400'
+    case 'tier_4': return 'bg-red-600/20 text-red-400'
+    default: return 'bg-gray-700/30 text-gray-600'
+  }
+}
+
+export function formatViabilityTierLabel(tier: string | null | undefined): string {
+  switch (tier) {
+    case 'tier_1': return 'Prime'
+    case 'tier_2': return 'Eligible'
+    case 'tier_3': return 'Watchlist'
+    case 'tier_4': return 'Excluded'
+    default: return '--'
+  }
+}
