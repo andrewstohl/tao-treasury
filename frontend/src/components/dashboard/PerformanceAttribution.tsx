@@ -23,7 +23,7 @@ export default function PerformanceAttribution() {
   const { data: attr, isLoading } = useQuery<Attribution>({
     queryKey: ['attribution', days],
     queryFn: () => api.getAttribution(days),
-    refetchInterval: 60000,
+    refetchInterval: 120000,  // 2 min - reduced to avoid rate limits
   })
 
   if (isLoading) {

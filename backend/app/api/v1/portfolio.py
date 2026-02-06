@@ -10,10 +10,10 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.portfolio import PortfolioSnapshot, NAVHistory
 from app.models.position import Position
+from app.models.wallet import Wallet
 from app.models.transaction import PositionCostBasis, PositionYieldHistory
 from app.models.subnet import Subnet
 from app.models.alert import Alert
@@ -67,11 +67,54 @@ logger = structlog.get_logger()
 router = APIRouter()
 
 
+async def _get_active_wallets(db: AsyncSession) -> List[str]:
+    """Get list of active wallet addresses from database."""
+    stmt = select(Wallet.address).where(Wallet.is_active == True).order_by(Wallet.created_at)  # noqa: E712
+    result = await db.execute(stmt)
+    return [row[0] for row in result.fetchall()]
+
+
+async def _resolve_wallet(db: AsyncSession, wallet: Optional[str] = None) -> Optional[str]:
+    """Resolve which wallet to use.
+
+    If wallet is specified, use it. Otherwise get first active wallet from DB.
+    Returns None if no wallets configured.
+    """
+    if wallet:
+        return wallet
+    wallets = await _get_active_wallets(db)
+    return wallets[0] if wallets else None
+
+
 @router.get("", response_model=PortfolioSummary)
-async def get_portfolio(db: AsyncSession = Depends(get_db)) -> PortfolioSummary:
+async def get_portfolio(
+    wallet: Optional[str] = Query(default=None, description="Wallet address to query. If not provided, uses first active wallet."),
+    db: AsyncSession = Depends(get_db),
+) -> PortfolioSummary:
     """Get current portfolio summary."""
-    settings = get_settings()
-    wallet = settings.wallet_address
+    wallet = await _resolve_wallet(db, wallet)
+    if not wallet:
+        # Return empty summary if no wallets configured
+        return PortfolioSummary(
+            wallet_address="",
+            nav_mid=Decimal("0"),
+            nav_exec_50pct=Decimal("0"),
+            nav_exec_100pct=Decimal("0"),
+            tao_price_usd=Decimal("0"),
+            nav_usd=Decimal("0"),
+            allocation=AllocationBreakdown(),
+            yield_summary=YieldSummary(),
+            pnl_summary=PnLSummary(),
+            executable_drawdown_pct=Decimal("0"),
+            drawdown_from_ath_pct=Decimal("0"),
+            nav_ath=Decimal("0"),
+            active_positions=0,
+            eligible_subnets=0,
+            overall_regime="neutral",
+            daily_turnover_pct=Decimal("0"),
+            weekly_turnover_pct=Decimal("0"),
+            as_of=datetime.now(timezone.utc),
+        )
 
     # Get latest portfolio snapshot
     stmt = (
@@ -167,11 +210,19 @@ async def get_portfolio(db: AsyncSession = Depends(get_db)) -> PortfolioSummary:
 @router.get("/history", response_model=PortfolioHistoryResponse)
 async def get_portfolio_history(
     days: int = Query(default=30, ge=1, le=365),
+    wallet: Optional[str] = Query(default=None, description="Wallet address to query"),
     db: AsyncSession = Depends(get_db),
 ) -> PortfolioHistoryResponse:
     """Get portfolio NAV history."""
-    settings = get_settings()
-    wallet = settings.wallet_address
+    wallet = await _resolve_wallet(db, wallet)
+    if not wallet:
+        return PortfolioHistoryResponse(
+            wallet_address="",
+            history=[],
+            total_days=0,
+            cumulative_return_pct=Decimal("0"),
+            max_drawdown_pct=Decimal("0"),
+        )
 
     stmt = (
         select(NAVHistory)
@@ -272,17 +323,20 @@ async def _get_top_positions(db: AsyncSession, wallet: str, limit: int = 10) -> 
 @router.get("/positions", response_model=list[PositionSummary])
 async def get_positions(
     limit: int = Query(default=100, ge=1, le=500),
+    wallet: Optional[str] = Query(default=None, description="Wallet address to query"),
     db: AsyncSession = Depends(get_db),
 ) -> list[PositionSummary]:
     """Get all positions sorted by TAO value."""
-    settings = get_settings()
-    wallet = settings.wallet_address
+    wallet = await _resolve_wallet(db, wallet)
+    if not wallet:
+        return []
     return await _get_top_positions(db, wallet, limit)
 
 
 @router.get("/yield-history")
 async def get_yield_history(
     days: int = Query(default=30, ge=1, le=90),
+    wallet: Optional[str] = Query(default=None, description="Wallet address to query"),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Get actual yield history from stake balance tracking.
@@ -293,8 +347,18 @@ async def get_yield_history(
     from app.models.transaction import PositionYieldHistory
     from datetime import timedelta
 
-    settings = get_settings()
-    wallet = settings.wallet_address
+    wallet = await _resolve_wallet(db, wallet)
+    if not wallet:
+        return {
+            "wallet_address": "",
+            "days_requested": days,
+            "days_with_data": 0,
+            "total_yield_tao": "0",
+            "avg_daily_yield_tao": "0",
+            "avg_apy": "0",
+            "daily_breakdown": [],
+            "records_count": 0,
+        }
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
     # Get yield history records
@@ -484,14 +548,57 @@ async def _compute_market_pulse(
 
 
 @router.get("/dashboard", response_model=DashboardResponse)
-async def get_dashboard(db: AsyncSession = Depends(get_db)) -> DashboardResponse:
+async def get_dashboard(
+    wallet: Optional[str] = Query(default=None, description="Wallet address to query"),
+    db: AsyncSession = Depends(get_db),
+) -> DashboardResponse:
     """Get complete dashboard data."""
-    settings = get_settings()
-    wallet = settings.wallet_address
     now = datetime.now(timezone.utc)
+    wallet = await _resolve_wallet(db, wallet)
+
+    # Get all active wallets for the response
+    all_wallets = await _get_active_wallets(db)
+
+    # Handle case when no wallets are configured
+    if not wallet:
+        empty_portfolio = PortfolioSummary(
+            wallet_address="",
+            nav_mid=Decimal("0"),
+            nav_exec_50pct=Decimal("0"),
+            nav_exec_100pct=Decimal("0"),
+            tao_price_usd=Decimal("0"),
+            nav_usd=Decimal("0"),
+            allocation=AllocationBreakdown(),
+            yield_summary=YieldSummary(),
+            pnl_summary=PnLSummary(),
+            executable_drawdown_pct=Decimal("0"),
+            drawdown_from_ath_pct=Decimal("0"),
+            nav_ath=Decimal("0"),
+            active_positions=0,
+            eligible_subnets=0,
+            overall_regime="neutral",
+            daily_turnover_pct=Decimal("0"),
+            weekly_turnover_pct=Decimal("0"),
+            as_of=now,
+        )
+        return DashboardResponse(
+            portfolio=empty_portfolio,
+            wallets=all_wallets,
+            top_positions=[],
+            closed_positions=[],
+            free_tao_balance=Decimal("0"),
+            action_items=[],
+            alerts=AlertSummary(critical=0, warning=0, info=0),
+            market_pulse=None,
+            pending_recommendations=0,
+            urgent_recommendations=0,
+            last_sync=data_sync_service.last_sync,
+            data_stale=data_sync_service.is_data_stale(),
+            generated_at=now,
+        )
 
     # Get portfolio summary
-    portfolio = await get_portfolio(db)
+    portfolio = await get_portfolio(wallet=wallet, db=db)
 
     # Count alerts by severity
     alert_stmt = (
@@ -575,6 +682,7 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)) -> DashboardResponse
 
     return DashboardResponse(
         portfolio=portfolio,
+        wallets=all_wallets,
         top_positions=top_positions,
         closed_positions=closed_positions,
         free_tao_balance=free_tao,
@@ -1005,14 +1113,16 @@ async def _compute_conversion_exposure(
 
 @router.get("/overview", response_model=PortfolioOverviewResponse)
 async def get_portfolio_overview(
+    wallet: Optional[str] = Query(default=None, description="Wallet address to query"),
     db: AsyncSession = Depends(get_db),
 ) -> PortfolioOverviewResponse:
     """Enhanced portfolio overview with dual-currency metrics, rolling returns,
     and compounding projections.
     """
-    settings = get_settings()
-    wallet = settings.wallet_address
     now = datetime.now(timezone.utc)
+    wallet = await _resolve_wallet(db, wallet)
+    if not wallet:
+        return PortfolioOverviewResponse(as_of=now)
 
     # 1. Get latest portfolio snapshot for current values
     snap_stmt = (

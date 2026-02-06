@@ -17,6 +17,7 @@ from app.core.config import get_settings
 from app.schemas.common import HealthResponse
 from app.services.data.taostats_client import taostats_client
 from app.services.data.data_sync import data_sync_service
+from app.core.scheduler import get_scheduler_status
 
 router = APIRouter()
 
@@ -53,6 +54,9 @@ async def health_check(db: AsyncSession = Depends(get_db)) -> HealthResponse:
     # Overall status
     all_healthy = all(s == "healthy" for s in [db_status, redis_status, api_status])
 
+    # Get scheduler status
+    scheduler_status = get_scheduler_status()
+
     return HealthResponse(
         status="healthy" if all_healthy else "degraded",
         timestamp=now,
@@ -62,6 +66,7 @@ async def health_check(db: AsyncSession = Depends(get_db)) -> HealthResponse:
         taostats_api=api_status,
         last_sync=data_sync_service.last_sync,
         data_stale=data_sync_service.is_data_stale(),
+        scheduler=scheduler_status,
     )
 
 

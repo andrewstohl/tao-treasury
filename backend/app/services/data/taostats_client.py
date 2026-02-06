@@ -796,7 +796,7 @@ class TaoStatsClient:
             page += 1
 
             # Rate limit protection
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(1.0)  # Respect rate limit: 60 req/min = 1 req/sec
 
         logger.info("Fetched all trades", count=len(all_trades), pages=page)
         return all_trades
@@ -879,7 +879,7 @@ class TaoStatsClient:
             page += 1
 
             # Rate limit protection
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(1.0)  # Respect rate limit: 60 req/min = 1 req/sec
 
         logger.info("Fetched all extrinsics", count=len(all_extrinsics), pages=page)
         return all_extrinsics
@@ -958,7 +958,7 @@ class TaoStatsClient:
                 break
 
             page += 1
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(1.0)  # Respect rate limit: 60 req/min = 1 req/sec
 
         logger.info("Fetched all delegation events", count=len(all_events), pages=page)
         return all_events
@@ -1137,7 +1137,7 @@ class TaoStatsClient:
                 break
 
             page += 1
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(1.0)  # Respect rate limit: 60 req/min = 1 req/sec
 
         logger.info("Fetched all accounting/tax records", count=len(all_records), pages=page)
         return all_records
@@ -1145,13 +1145,38 @@ class TaoStatsClient:
     # ==================== Utility Methods ====================
 
     async def health_check(self) -> bool:
-        """Check if API is accessible."""
+        """Check if API is accessible using cached state.
+
+        Does NOT make a live API call - instead checks if we've had
+        successful API calls recently. This prevents health checks
+        from consuming rate limit quota.
+        """
+        # Check if we're currently rate limited
+        if self._retry_after_until:
+            now = datetime.utcnow()
+            if now < self._retry_after_until:
+                logger.debug("Health check: rate limited", until=self._retry_after_until.isoformat())
+                return False
+
+        # Check if we've had recent successful requests (within last 5 minutes)
+        if self._request_times:
+            latest_request = max(self._request_times)
+            age_seconds = (datetime.utcnow() - latest_request).total_seconds()
+            if age_seconds < 300:  # Had successful request in last 5 min
+                return True
+
+        # No recent activity - check cache for any recent data
         try:
-            await self.get_tao_price()
-            return True
-        except Exception as e:
-            logger.error("TaoStats health check failed", error=str(e))
-            return False
+            cached = await cache.get("tao_price:finney")
+            if cached is not None:
+                return True
+        except Exception:
+            pass
+
+        # No cached data and no recent requests - assume unhealthy
+        # but don't make a new API call
+        logger.debug("Health check: no recent activity or cached data")
+        return False
 
 
 # Lazy singleton client instance

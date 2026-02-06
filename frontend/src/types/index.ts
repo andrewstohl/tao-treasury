@@ -86,6 +86,7 @@ export interface ClosedPosition {
 
 export interface Dashboard {
   portfolio: Portfolio
+  wallets: string[]
   top_positions: PositionSummary[]
   closed_positions: ClosedPosition[]
   free_tao_balance: string
@@ -101,6 +102,19 @@ export interface Dashboard {
   data_stale: boolean
   generated_at: string
   market_pulse: MarketPulse | null
+}
+
+export interface Wallet {
+  address: string
+  label: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface WalletListResponse {
+  wallets: Wallet[]
+  total: number
 }
 
 export interface Subnet {

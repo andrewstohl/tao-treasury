@@ -1,11 +1,12 @@
 import { useState, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Activity,
   ChevronRight,
   ChevronDown,
   Search,
   X,
+  Loader2,
 } from 'lucide-react'
 import { api } from '../services/api'
 import type { Dashboard as DashboardType, EnrichedSubnetListResponse, EnrichedSubnet, VolatilePoolData, PositionSummary, ClosedPosition } from '../types'
@@ -79,12 +80,54 @@ export default function Dashboard() {
   const [positionTab, setPositionTab] = useState<PositionTab>('open')
   const [searchQuery, setSearchQuery] = useState('')
   const [sortOption, setSortOption] = useState<SortOption>('value')
+  const [newWalletAddress, setNewWalletAddress] = useState('')
+
+  const queryClient = useQueryClient()
 
   const { data, isLoading, error } = useQuery<DashboardType>({
     queryKey: ['dashboard'],
     queryFn: api.getDashboard,
-    refetchInterval: 30000,
+    refetchInterval: 120000,  // 2 min - reduced to avoid rate limits
   })
+
+  const [walletError, setWalletError] = useState<string | null>(null)
+
+  const addWalletMutation = useMutation({
+    mutationFn: (address: string) => api.addWallet(address),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      setNewWalletAddress('')
+      setWalletError(null)
+    },
+    onError: (error: unknown) => {
+      // Extract error message from axios response
+      const axiosError = error as { response?: { status?: number; data?: { detail?: string } }; message?: string }
+      if (axiosError.response?.status === 409) {
+        setWalletError('This wallet has already been added')
+      } else if (axiosError.response?.status === 422) {
+        setWalletError('Invalid wallet address format. Please enter a valid SS58 address (47-48 characters)')
+      } else if (axiosError.response?.data?.detail) {
+        setWalletError(axiosError.response.data.detail)
+      } else {
+        setWalletError(axiosError.message || 'Failed to add wallet')
+      }
+    },
+  })
+
+  const deleteWalletMutation = useMutation({
+    mutationFn: (address: string) => api.deleteWallet(address),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+  })
+
+  const handleAddWallet = () => {
+    const address = newWalletAddress.trim()
+    if (address && address.length >= 46) {
+      setWalletError(null)
+      addWalletMutation.mutate(address)
+    }
+  }
 
   const { data: enrichedData } = useQuery<EnrichedSubnetListResponse>({
     queryKey: ['subnets-enriched', false],
@@ -181,9 +224,9 @@ export default function Dashboard() {
     )
   }
 
-  const { portfolio, action_items } = data
+  const { portfolio, action_items, wallets } = data
   const taoPrice = safeFloat(portfolio.tao_price_usd)
-  const walletAddresses = portfolio?.wallet_address ? [portfolio.wallet_address] : []
+  const walletAddresses = wallets || []
   const truncateAddress = (addr: string) => `${addr.slice(0, 6)}...${addr.slice(-5)}`
 
   const openCount = data.top_positions?.length || 0
@@ -198,7 +241,7 @@ export default function Dashboard() {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <h1 className="text-2xl font-bold text-[#2a3ded]">Track</h1>
       </div>
 
       {/* Wallet Address Bar */}
@@ -208,19 +251,29 @@ export default function Dashboard() {
             <Search className="w-4 h-4 text-[#8a8f98] flex-shrink-0" />
             <input
               type="text"
-              placeholder="Add address"
+              placeholder="Add wallet address (SS58 format)"
+              value={newWalletAddress}
+              onChange={(e) => setNewWalletAddress(e.target.value)}
               className="flex-1 bg-transparent text-sm text-[#8faabe] placeholder-gray-500 outline-none"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
-                  // Future: trigger add wallet address
+                  handleAddWallet()
                 }
               }}
             />
           </div>
-          <button className="px-5 py-2.5 bg-[#2a3ded] hover:bg-[#3a4dff] rounded-lg text-sm font-medium text-white transition-colors">
+          <button
+            onClick={handleAddWallet}
+            disabled={addWalletMutation.isPending || newWalletAddress.trim().length < 46}
+            className="px-5 py-2.5 bg-[#2a3ded] hover:bg-[#3a4dff] disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm font-medium text-white transition-colors flex items-center gap-2"
+          >
+            {addWalletMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
             Add
           </button>
         </div>
+        {walletError && (
+          <p className="text-sm text-red-400">{walletError}</p>
+        )}
         {walletAddresses.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {walletAddresses.map((addr) => (
@@ -229,12 +282,22 @@ export default function Dashboard() {
                 className="flex items-center gap-2 px-3 py-1.5 bg-[#1e2128]/60 rounded-full text-sm"
               >
                 <span className="font-mono text-[#8faabe]">{truncateAddress(addr)}</span>
-                <button className="text-[#8a8f98] hover:text-[#8faabe] transition-colors">
+                <button
+                  onClick={() => deleteWalletMutation.mutate(addr)}
+                  disabled={deleteWalletMutation.isPending}
+                  className="text-[#8a8f98] hover:text-red-400 transition-colors disabled:opacity-50"
+                  title="Remove wallet"
+                >
                   <X className="w-4 h-4" />
                 </button>
               </div>
             ))}
           </div>
+        )}
+        {walletAddresses.length === 0 && (
+          <p className="text-sm text-[#8a8f98]">
+            No wallets added yet. Enter a wallet address above to start tracking.
+          </p>
         )}
       </div>
 

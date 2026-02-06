@@ -23,6 +23,23 @@ class PaginatedResponse(BaseModel, Generic[T]):
     total_pages: int
 
 
+class SchedulerLastSync(BaseModel):
+    """Last sync result from scheduler."""
+    success: Optional[bool] = None
+    timestamp: Optional[str] = None
+    error: Optional[str] = None
+    consecutive_failures: int = 0
+    rate_limited: bool = False
+
+
+class SchedulerStatus(BaseModel):
+    """Scheduler status for health check."""
+    running: bool
+    next_sync: Optional[str] = None
+    job_count: int = 0
+    last_sync: Optional[SchedulerLastSync] = None
+
+
 class HealthResponse(BaseModel):
     """Health check response."""
     status: str
@@ -33,6 +50,7 @@ class HealthResponse(BaseModel):
     taostats_api: str
     last_sync: Optional[datetime] = None
     data_stale: bool = False
+    scheduler: Optional[SchedulerStatus] = None
 
 
 class ErrorResponse(BaseModel):

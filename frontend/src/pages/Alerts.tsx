@@ -11,7 +11,7 @@ export default function Alerts() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['alerts', activeOnly],
     queryFn: () => api.getAlerts(activeOnly),
-    refetchInterval: 30000,
+    refetchInterval: 120000,  // 2 min - reduced to avoid rate limits
   })
 
   const ackMutation = useMutation({

@@ -45,13 +45,13 @@ export default function Strategy() {
   const { data: analysis, isLoading: analysisLoading } = useQuery<StrategyAnalysis>({
     queryKey: ['strategy-analysis'],
     queryFn: api.getStrategyAnalysis,
-    refetchInterval: 60000,
+    refetchInterval: 120000,  // 2 min - reduced to avoid rate limits
   })
 
   const { data: constraints, isLoading: constraintsLoading } = useQuery<ConstraintStatus>({
     queryKey: ['constraints'],
     queryFn: api.getConstraintStatus,
-    refetchInterval: 60000,
+    refetchInterval: 120000,  // 2 min - reduced to avoid rate limits
   })
 
   const { data: eligible } = useQuery<EligibleSubnet[]>({

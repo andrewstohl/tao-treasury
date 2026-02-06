@@ -21,6 +21,7 @@ from app.models.position import Position, PositionSnapshot
 from app.models.portfolio import PortfolioSnapshot
 from app.models.slippage import SlippageSurface
 from app.models.validator import Validator
+from app.models.wallet import Wallet
 from app.models.transaction import DelegationEvent, PositionCostBasis, PositionYieldHistory
 from app.services.data.taostats_client import taostats_client, TaoStatsError
 from app.services.data.coingecko_client import fetch_tao_price as cg_fetch_tao_price
@@ -76,10 +77,15 @@ class DataSyncService:
     """Service for synchronizing data from TaoStats to local database."""
 
     def __init__(self):
-        settings = get_settings()
-        self.wallet_address = settings.wallet_address
         self._last_sync: Optional[datetime] = None
         self._last_sync_results: Dict[str, Any] = {}
+
+    async def get_active_wallets(self) -> List[str]:
+        """Get list of active wallet addresses from database."""
+        async with get_db_context() as db:
+            stmt = select(Wallet.address).where(Wallet.is_active == True)  # noqa: E712
+            result = await db.execute(stmt)
+            return [row[0] for row in result.fetchall()]
 
     async def sync_all(self, include_analysis: bool = True) -> Dict[str, Any]:
         """Run full data synchronization.
@@ -87,7 +93,12 @@ class DataSyncService:
         Args:
             include_analysis: If True, run transaction sync, cost basis, NAV, and risk analysis.
         """
-        logger.info("Starting full data sync", wallet=self.wallet_address, include_analysis=include_analysis)
+        wallets = await self.get_active_wallets()
+        logger.info("Starting full data sync", wallets=wallets, include_analysis=include_analysis)
+
+        if not wallets:
+            logger.warning("No active wallets configured - skipping wallet-specific sync")
+            # Still sync subnet/pool data even without wallets
         results = {
             "subnets": 0,
             "pools": 0,
@@ -457,20 +468,35 @@ class DataSyncService:
         return snapshot
 
     async def sync_positions(self) -> int:
-        """Sync wallet positions from TaoStats.
+        """Sync wallet positions from TaoStats for all active wallets.
 
         Partial failure protection: Validates response before updating.
         Note: Empty positions list may be valid (wallet has no stakes).
         """
-        logger.info("Syncing positions", wallet=self.wallet_address)
+        wallets = await self.get_active_wallets()
+        if not wallets:
+            logger.info("No active wallets - skipping position sync")
+            return 0
+
+        total_count = 0
+        for wallet_address in wallets:
+            count = await self._sync_positions_for_wallet(wallet_address)
+            total_count += count
+
+        _record_sync_status("positions", True, total_count)
+        return total_count
+
+    async def _sync_positions_for_wallet(self, wallet_address: str) -> int:
+        """Sync positions for a single wallet."""
+        logger.info("Syncing positions", wallet=wallet_address)
 
         try:
             # Get account data
-            account_response = await taostats_client.get_account(self.wallet_address)
+            account_response = await taostats_client.get_account(wallet_address)
             account_data = account_response.get("data", [{}])[0] if account_response.get("data") else {}
 
             # Get stake balances (use coldkey to get all dTAO positions)
-            stake_response = await taostats_client.get_stake_balance(coldkey=self.wallet_address)
+            stake_response = await taostats_client.get_stake_balance(coldkey=wallet_address)
             stakes_data = stake_response.get("data", [])
 
             # Note: Empty stakes_data is valid - wallet may have no stakes
@@ -495,33 +521,32 @@ class DataSyncService:
 
                 # Delete positions that no longer exist in the API
                 delete_stmt = delete(Position).where(
-                    Position.wallet_address == self.wallet_address,
+                    Position.wallet_address == wallet_address,
                     Position.netuid.notin_(api_netuids) if api_netuids else True
                 )
                 result = await db.execute(delete_stmt)
                 if result.rowcount > 0:
-                    logger.info("Removed stale positions", count=result.rowcount)
+                    logger.info("Removed stale positions", wallet=wallet_address, count=result.rowcount)
 
                 for netuid, stake_data in stakes_by_netuid.items():
-                    await self._upsert_position(db, stake_data)
-                    await self._create_position_snapshot(db, stake_data)
+                    await self._upsert_position(db, wallet_address, stake_data)
+                    await self._create_position_snapshot(db, wallet_address, stake_data)
                     count += 1
 
                 await db.commit()
-                logger.info("Positions synced", count=count)
-                _record_sync_status("positions", True, count)
+                logger.info("Positions synced", wallet=wallet_address, count=count)
                 return count
 
         except Exception as e:
-            logger.error("Failed to sync positions", error=str(e))
+            logger.error("Failed to sync positions", wallet=wallet_address, error=str(e))
             _record_sync_status("positions", False, 0)
             raise
 
-    async def _upsert_position(self, db: AsyncSession, stake_data: Dict) -> Position:
+    async def _upsert_position(self, db: AsyncSession, wallet_address: str, stake_data: Dict) -> Position:
         """Insert or update position record."""
         netuid = stake_data.get("netuid")
         stmt = select(Position).where(
-            Position.wallet_address == self.wallet_address,
+            Position.wallet_address == wallet_address,
             Position.netuid == netuid,
         )
         result = await db.execute(stmt)
@@ -537,7 +562,7 @@ class DataSyncService:
 
         if position is None:
             position = Position(
-                wallet_address=self.wallet_address,
+                wallet_address=wallet_address,
                 netuid=netuid,
                 subnet_name=subnet_name,
                 created_at=now,
@@ -577,7 +602,7 @@ class DataSyncService:
 
         return position
 
-    async def _create_position_snapshot(self, db: AsyncSession, stake_data: Dict) -> PositionSnapshot:
+    async def _create_position_snapshot(self, db: AsyncSession, wallet_address: str, stake_data: Dict) -> PositionSnapshot:
         """Create position snapshot for history."""
         netuid = stake_data.get("netuid")
         alpha_balance = rao_to_tao(stake_data.get("balance", 0) or 0)
@@ -590,7 +615,7 @@ class DataSyncService:
             alpha_price = Decimal("0")
 
         snapshot = PositionSnapshot(
-            wallet_address=self.wallet_address,
+            wallet_address=wallet_address,
             netuid=netuid,
             timestamp=datetime.now(timezone.utc),
             alpha_balance=alpha_balance,
@@ -604,16 +629,14 @@ class DataSyncService:
         """Sync validator yield data from TaoStats.
 
         Uses the validator/yield endpoint which provides per-subnet APY data.
-        Fetches validators specifically for subnets we have positions in.
+        Fetches validators specifically for subnets we have positions in (across all wallets).
         """
         logger.info("Syncing validators with yield data")
 
         try:
             async with get_db_context() as db:
-                # First, get the list of netuids we have positions in
-                pos_stmt = select(Position.netuid).where(
-                    Position.wallet_address == self.wallet_address
-                ).distinct()
+                # First, get the list of netuids we have positions in (across all wallets)
+                pos_stmt = select(Position.netuid).distinct()
                 pos_result = await db.execute(pos_stmt)
                 position_netuids = [row[0] for row in pos_result.fetchall()]
 
@@ -797,12 +820,13 @@ class DataSyncService:
 
         Maps validator APY to each position based on validator_hotkey,
         calculates unrealized P&L and estimated daily/weekly yields.
+        Works across all active wallets.
         """
         logger.info("Syncing position yields")
 
         async with get_db_context() as db:
-            # Get all positions
-            pos_stmt = select(Position).where(Position.wallet_address == self.wallet_address)
+            # Get all positions (across all wallets)
+            pos_stmt = select(Position)
             pos_result = await db.execute(pos_stmt)
             positions = pos_result.scalars().all()
 
@@ -927,13 +951,28 @@ class DataSyncService:
 
         return surface
 
-    async def create_portfolio_snapshot(self) -> PortfolioSnapshot:
-        """Create portfolio-level snapshot."""
-        logger.info("Creating portfolio snapshot")
+    async def create_portfolio_snapshot(self) -> List[PortfolioSnapshot]:
+        """Create portfolio-level snapshot for all active wallets."""
+        wallets = await self.get_active_wallets()
+        if not wallets:
+            logger.info("No active wallets - skipping portfolio snapshot")
+            return []
+
+        snapshots = []
+        for wallet_address in wallets:
+            snapshot = await self._create_portfolio_snapshot_for_wallet(wallet_address)
+            if snapshot:
+                snapshots.append(snapshot)
+
+        return snapshots
+
+    async def _create_portfolio_snapshot_for_wallet(self, wallet_address: str) -> Optional[PortfolioSnapshot]:
+        """Create portfolio-level snapshot for a single wallet."""
+        logger.info("Creating portfolio snapshot", wallet=wallet_address)
 
         async with get_db_context() as db:
             # Get all positions
-            stmt = select(Position).where(Position.wallet_address == self.wallet_address)
+            stmt = select(Position).where(Position.wallet_address == wallet_address)
             result = await db.execute(stmt)
             positions = result.scalars().all()
 
@@ -955,7 +994,7 @@ class DataSyncService:
 
             # Get wallet TAO balance
             try:
-                account_data = await taostats_client.get_account(self.wallet_address)
+                account_data = await taostats_client.get_account(wallet_address)
                 account_info = account_data.get("data", [{}])[0] if account_data.get("data") else {}
                 tao_balance = rao_to_tao(account_info.get("balance_free", 0) or 0)
                 root_stake = rao_to_tao(account_info.get("balance_staked_root", 0) or 0)
@@ -991,7 +1030,7 @@ class DataSyncService:
             cb_stmt = select(
                 func.coalesce(func.sum(PositionCostBasis.realized_pnl_tao), 0),
                 func.coalesce(func.sum(PositionCostBasis.net_invested_tao), 0),
-            ).where(PositionCostBasis.wallet_address == self.wallet_address)
+            ).where(PositionCostBasis.wallet_address == wallet_address)
             cb_result = await db.execute(cb_stmt)
             cb_row = cb_result.fetchone()
             total_realized_pnl = cb_row[0] if cb_row else Decimal("0")
@@ -1002,7 +1041,7 @@ class DataSyncService:
             total_cost_basis = nav_mid - total_realized_pnl - total_unrealized_pnl
 
             snapshot = PortfolioSnapshot(
-                wallet_address=self.wallet_address,
+                wallet_address=wallet_address,
                 timestamp=datetime.now(timezone.utc),
                 total_tao_balance=tao_balance,
                 nav_mid=nav_mid,
@@ -1034,13 +1073,27 @@ class DataSyncService:
         """Sync delegation events (staking/unstaking history) from TaoStats.
 
         Fetches all historical delegation events and stores them for
-        accurate yield and income tracking.
+        accurate yield and income tracking. Works across all active wallets.
         """
-        logger.info("Syncing delegation events", wallet=self.wallet_address)
+        wallets = await self.get_active_wallets()
+        if not wallets:
+            logger.info("No active wallets - skipping delegation events sync")
+            return 0
+
+        total_count = 0
+        for wallet_address in wallets:
+            count = await self._sync_delegation_events_for_wallet(wallet_address)
+            total_count += count
+
+        return total_count
+
+    async def _sync_delegation_events_for_wallet(self, wallet_address: str) -> int:
+        """Sync delegation events for a single wallet."""
+        logger.info("Syncing delegation events", wallet=wallet_address)
 
         try:
             events = await taostats_client.get_all_delegation_events(
-                coldkey=self.wallet_address,
+                coldkey=wallet_address,
                 max_pages=50,
             )
 
@@ -1089,7 +1142,7 @@ class DataSyncService:
                         hotkey = hotkey_data
 
                     delegation_event = DelegationEvent(
-                        wallet_address=self.wallet_address,
+                        wallet_address=wallet_address,
                         event_id=event_id,
                         block_number=block,
                         timestamp=timestamp,
@@ -1121,9 +1174,23 @@ class DataSyncService:
 
         Uses daily stake balance snapshots to compute actual yield received.
         Note: The TaoStats stake_balance/history API requires a hotkey parameter,
-        so we use the validator_hotkey from each position.
+        so we use the validator_hotkey from each position. Works across all wallets.
         """
-        logger.info("Syncing stake balance history", wallet=self.wallet_address, days=days)
+        wallets = await self.get_active_wallets()
+        if not wallets:
+            logger.info("No active wallets - skipping stake balance history sync")
+            return 0
+
+        total_records = 0
+        for wallet_address in wallets:
+            count = await self._sync_stake_balance_history_for_wallet(wallet_address, days)
+            total_records += count
+
+        return total_records
+
+    async def _sync_stake_balance_history_for_wallet(self, wallet_address: str, days: int) -> int:
+        """Sync stake balance history for a single wallet."""
+        logger.info("Syncing stake balance history", wallet=wallet_address, days=days)
 
         try:
             # Calculate timestamp range
@@ -1132,7 +1199,7 @@ class DataSyncService:
 
             # Get all positions with their hotkeys
             async with get_db_context() as db:
-                pos_stmt = select(Position).where(Position.wallet_address == self.wallet_address)
+                pos_stmt = select(Position).where(Position.wallet_address == wallet_address)
                 pos_result = await db.execute(pos_stmt)
                 positions = pos_result.scalars().all()
 
@@ -1148,7 +1215,7 @@ class DataSyncService:
                 try:
                     # Use the dtao stake balance history with hotkey
                     response = await taostats_client.get_stake_balance_history(
-                        coldkey=self.wallet_address,
+                        coldkey=wallet_address,
                         hotkey=hotkey,
                         netuid=netuid,
                         timestamp_start=timestamp_start,
@@ -1179,7 +1246,7 @@ class DataSyncService:
 
                             # Check if already exists
                             check_stmt = select(PositionYieldHistory).where(
-                                PositionYieldHistory.wallet_address == self.wallet_address,
+                                PositionYieldHistory.wallet_address == wallet_address,
                                 PositionYieldHistory.netuid == netuid,
                                 PositionYieldHistory.date == date,
                             )
@@ -1198,7 +1265,7 @@ class DataSyncService:
                             day_end = day_start + timedelta(days=1)
 
                             stake_stmt = select(DelegationEvent).where(
-                                DelegationEvent.wallet_address == self.wallet_address,
+                                DelegationEvent.wallet_address == wallet_address,
                                 DelegationEvent.netuid == netuid,
                                 DelegationEvent.timestamp >= day_start,
                                 DelegationEvent.timestamp < day_end,
@@ -1232,7 +1299,7 @@ class DataSyncService:
                                 daily_apy = Decimal("0")
 
                             yield_record = PositionYieldHistory(
-                                wallet_address=self.wallet_address,
+                                wallet_address=wallet_address,
                                 netuid=netuid,
                                 date=date,
                                 alpha_balance_start=alpha_start,
@@ -1260,8 +1327,12 @@ class DataSyncService:
             logger.error("Failed to sync stake balance history", error=str(e))
             return 0
 
-    async def get_actual_yield_summary(self, days: int = 30) -> Dict[str, Any]:
+    async def get_actual_yield_summary(self, days: int = 30, wallet_address: Optional[str] = None) -> Dict[str, Any]:
         """Get actual yield summary from historical data.
+
+        Args:
+            days: Number of days to look back
+            wallet_address: Optional wallet to filter by. If None, returns data for all wallets.
 
         Returns actual realized yield based on balance history,
         not just estimated yield from APY.
@@ -1270,9 +1341,10 @@ class DataSyncService:
             cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
             stmt = select(PositionYieldHistory).where(
-                PositionYieldHistory.wallet_address == self.wallet_address,
                 PositionYieldHistory.date >= cutoff,
             )
+            if wallet_address:
+                stmt = stmt.where(PositionYieldHistory.wallet_address == wallet_address)
             result = await db.execute(stmt)
             history = result.scalars().all()
 

@@ -9,8 +9,8 @@ import './index.css'
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 30000,
-      refetchInterval: 60000,
+      staleTime: 60000,  // 1 min stale time
+      refetchInterval: 120000,  // 2 min default - reduced to avoid rate limits
     },
   },
 })

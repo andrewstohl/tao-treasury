@@ -178,6 +178,7 @@ class MarketPulse(BaseModel):
 class DashboardResponse(BaseModel):
     """Complete dashboard response."""
     portfolio: PortfolioSummary
+    wallets: List[str] = Field(default_factory=list, description="List of all active wallet addresses")
     top_positions: List[PositionSummary] = Field(default_factory=list)
     closed_positions: List[ClosedPositionSummary] = Field(default_factory=list)
     free_tao_balance: Decimal = Field(default=Decimal("0"))

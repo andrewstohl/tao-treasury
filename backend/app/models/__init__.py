@@ -12,6 +12,7 @@ from app.models.transaction import StakeTransaction, PositionCostBasis, Delegati
 from app.models.reconciliation import ReconciliationRun
 from app.models.signal import SignalRun
 from app.models.viability_config import ViabilityConfig
+from app.models.wallet import Wallet
 
 __all__ = [
     "Subnet",
@@ -33,4 +34,5 @@ __all__ = [
     "ReconciliationRun",
     "SignalRun",
     "ViabilityConfig",
+    "Wallet",
 ]

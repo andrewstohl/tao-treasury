@@ -52,7 +52,7 @@ export default function PortfolioOverviewCards() {
   const { data: overview, isLoading } = useQuery<PortfolioOverview>({
     queryKey: ['portfolio-overview'],
     queryFn: api.getPortfolioOverview,
-    refetchInterval: 30000,
+    refetchInterval: 120000,  // 2 min - reduced to avoid rate limits
   })
 
   if (isLoading || !overview) {

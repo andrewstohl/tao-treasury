@@ -20,7 +20,7 @@ class Settings(BaseSettings):
 
     # API Keys and Wallet
     taostats_api_key: str = Field(..., description="TaoStats API key")
-    wallet_address: str = Field(..., description="Coldkey wallet address to track")
+    wallet_address: Optional[str] = Field(default=None, description="Deprecated: Use UI to add wallets instead")
     coingecko_api_key: Optional[str] = Field(default=None, description="CoinGecko API key")
 
     # Database

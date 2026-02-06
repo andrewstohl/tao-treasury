@@ -14,7 +14,7 @@ export default function Recommendations() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['recommendations'],
     queryFn: () => api.getRecommendations('pending'),
-    refetchInterval: 30000,
+    refetchInterval: 120000,  // 2 min - reduced to avoid rate limits
   })
 
   const markExecutedMutation = useMutation({

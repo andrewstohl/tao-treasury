@@ -16,13 +16,13 @@ export default function PerformanceRisk() {
   const { data: attr, isLoading: attrLoading } = useQuery<Attribution>({
     queryKey: ['attribution', days],
     queryFn: () => api.getAttribution(days),
-    refetchInterval: 60000,
+    refetchInterval: 120000,  // 2 min - reduced to avoid rate limits
   })
 
   const { data: overview } = useQuery<PortfolioOverview>({
     queryKey: ['portfolio-overview'],
     queryFn: api.getPortfolioOverview,
-    refetchInterval: 30000,
+    refetchInterval: 120000,  // 2 min - reduced to avoid rate limits
   })
 
   const { data: risk } = useQuery<RiskMetricsType>({

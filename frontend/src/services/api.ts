@@ -16,6 +16,26 @@ export const api = {
     return data
   },
 
+  // Wallets
+  getWallets: async () => {
+    const { data } = await client.get('/api/v1/wallets')
+    return data
+  },
+
+  addWallet: async (address: string, label?: string) => {
+    const { data } = await client.post('/api/v1/wallets', { address, label })
+    return data
+  },
+
+  updateWallet: async (address: string, updates: { label?: string; is_active?: boolean }) => {
+    const { data } = await client.patch(`/api/v1/wallets/${encodeURIComponent(address)}`, updates)
+    return data
+  },
+
+  deleteWallet: async (address: string) => {
+    await client.delete(`/api/v1/wallets/${encodeURIComponent(address)}`)
+  },
+
   // Portfolio
   getPortfolio: async () => {
     const { data } = await client.get('/api/v1/portfolio')
