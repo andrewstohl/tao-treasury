@@ -306,13 +306,13 @@ export default function Subnets() {
       <div className="flex items-center gap-3 flex-wrap">
         {/* Text search */}
         <div className="relative flex-1 min-w-[200px] max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
           <input
             type="text"
             placeholder="Search name or netuid..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-tao-500"
+            className="w-full pl-10 pr-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-tao-500"
           />
         </div>
 
@@ -322,7 +322,7 @@ export default function Subnets() {
           <select
             value={regimeFilter}
             onChange={(e) => setRegimeFilter(e.target.value as RegimeFilter)}
-            className="bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300 px-2 py-2 focus:outline-none focus:border-tao-500"
+            className="bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300 px-4 py-2.5 focus:outline-none focus:border-tao-500"
           >
             <option value="all">All Regimes</option>
             <option value="risk_on">Risk On</option>
@@ -337,7 +337,7 @@ export default function Subnets() {
         <select
           value={viabilityFilter}
           onChange={(e) => setViabilityFilter(e.target.value as ViabilityFilter)}
-          className="bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300 px-2 py-2 focus:outline-none focus:border-tao-500"
+          className="bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300 px-4 py-2.5 focus:outline-none focus:border-tao-500"
         >
           <option value="all">All Viability</option>
           <option value="tier_1">Prime (75+)</option>
@@ -350,7 +350,7 @@ export default function Subnets() {
         <div className="relative" ref={columnMenuRef}>
           <button
             onClick={() => setShowColumnMenu((prev) => !prev)}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm ${
+            className={`flex items-center gap-1.5 px-4 py-2.5 rounded-lg border text-sm ${
               showColumnMenu
                 ? 'bg-gray-700 border-tao-500 text-tao-400'
                 : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'

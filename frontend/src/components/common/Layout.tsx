@@ -85,7 +85,7 @@ export default function Layout({ children }: LayoutProps) {
         {/* Left: Logo + TAO Price */}
         <div className="flex items-center gap-4">
           <Link to="/" className="flex items-center gap-2">
-            <h1 className="text-lg font-bold text-tao-400 font-display">TAO Treasury</h1>
+            <h1 className="text-2xl font-bold text-tao-400 font-display">TAO Treasury</h1>
           </Link>
 
           {taoPrice != null && (
@@ -114,13 +114,13 @@ export default function Layout({ children }: LayoutProps) {
                 <Link
                   key={item.path}
                   to={item.path}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg transition-colors ${
                     isActive
                       ? 'bg-tao-600/20 text-tao-400'
                       : 'text-gray-400 hover:bg-gray-700/50 hover:text-gray-200'
                   }`}
                 >
-                  <Icon size={15} />
+                  <Icon className="w-4 h-4" />
                   {item.label}
                 </Link>
               )
@@ -129,7 +129,7 @@ export default function Layout({ children }: LayoutProps) {
 
           {/* Last Synced Status */}
           <div
-            className={`flex items-center gap-1.5 px-2 py-1 rounded-md ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg ${
               health?.data_stale ? 'bg-yellow-900/30' : 'bg-gray-700/50'
             }`}
             title={health?.last_sync ? `Last synced: ${new Date(health.last_sync).toLocaleString()}` : 'Never synced'}
@@ -138,7 +138,7 @@ export default function Layout({ children }: LayoutProps) {
               health?.data_stale ? 'bg-yellow-400' :
               health?.status === 'healthy' ? 'bg-green-400' : 'bg-yellow-400'
             }`} />
-            <span className={`text-xs ${health?.data_stale ? 'text-yellow-400' : 'text-gray-400'}`}>
+            <span className={`text-sm ${health?.data_stale ? 'text-yellow-400' : 'text-gray-400'}`}>
               {formatRelativeTime(health?.last_sync ?? null)}
             </span>
           </div>
@@ -147,10 +147,10 @@ export default function Layout({ children }: LayoutProps) {
           <button
             onClick={() => refreshMutation.mutate()}
             disabled={refreshMutation.isPending}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-700 hover:bg-gray-600 rounded-md text-xs text-gray-300 disabled:opacity-50 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm text-gray-300 disabled:opacity-50 transition-colors"
             title="Sync data from TaoStats"
           >
-            <RefreshCw size={13} className={refreshMutation.isPending ? 'animate-spin' : ''} />
+            <RefreshCw className={`w-4 h-4 ${refreshMutation.isPending ? 'animate-spin' : ''}`} />
             {refreshMutation.isPending ? 'Syncing...' : 'Sync'}
           </button>
         </div>

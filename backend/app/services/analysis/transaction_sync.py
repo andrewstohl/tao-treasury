@@ -252,6 +252,7 @@ class TransactionSyncService:
         stake/unstake events.
 
         For Root, alpha = TAO (1:1 ratio), so effective_price is always 1.0.
+        USD values are computed using historical TAO prices.
         """
         logger.info("Syncing Root (SN0) transactions from balance history")
 
@@ -260,6 +261,7 @@ class TransactionSyncService:
             "stake_transactions": 0,
             "unstake_transactions": 0,
             "skipped_existing": 0,
+            "usd_enriched": 0,
         }
 
         # Minimum balance change to be considered a stake/unstake (not yield)
@@ -286,6 +288,7 @@ class TransactionSyncService:
             # Fetch stake balance history for Root (90 days)
             import time
             ts_start = int(time.time()) - (90 * 86400)
+            ts_end = int(time.time())
             history = await taostats_client.get_stake_balance_history(
                 coldkey=self.wallet_address,
                 hotkey=hotkey,
@@ -294,6 +297,38 @@ class TransactionSyncService:
                 limit=200,
             )
             snapshots = history.get("data", [])
+
+            # Fetch TAO price history for USD enrichment
+            price_lookup: Dict[str, Decimal] = {}
+            try:
+                price_response = await taostats_client.get_price_history(
+                    timestamp_start=ts_start,
+                    timestamp_end=ts_end,
+                    limit=6000,
+                )
+                for price_rec in price_response.get("data", []):
+                    ts = price_rec.get("created_at") or price_rec.get("timestamp")
+                    if ts:
+                        if isinstance(ts, (int, float)):
+                            date_key = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
+                        else:
+                            date_key = str(ts)[:10]
+                        price = price_rec.get("price") or price_rec.get("close")
+                        if price and date_key not in price_lookup:
+                            price_lookup[date_key] = Decimal(str(price))
+                logger.info("Loaded TAO price history for Root USD enrichment", dates=len(price_lookup))
+            except Exception as e:
+                logger.warning("Failed to fetch TAO price history for Root", error=str(e))
+
+            # Get current TAO price as fallback
+            current_tao_price = Decimal("150")
+            try:
+                price_data = await taostats_client.get_tao_price()
+                price_info = price_data.get("data", [{}])[0]
+                if price_info.get("price"):
+                    current_tao_price = Decimal(str(price_info["price"]))
+            except Exception:
+                pass
 
             if not snapshots:
                 logger.info("No Root balance history found")
@@ -345,10 +380,18 @@ class TransactionSyncService:
                         results["skipped_existing"] += 1
                         continue
 
+                    # Compute USD value using TAO price at transaction time
+                    # For Root: stake IS TAO, so USD = amount × TAO_price
+                    date_key = timestamp_str[:10] if timestamp_str else ""
+                    tao_price_at_tx = price_lookup.get(date_key, current_tao_price)
+                    usd_value = amount * tao_price_at_tx
+                    if tao_price_at_tx != current_tao_price:
+                        results["usd_enriched"] += 1
+
                     tx = StakeTransaction(
                         wallet_address=self.wallet_address,
                         extrinsic_id=extrinsic_id,
-                        block_number=0,
+                        block_number=block_num,
                         timestamp=timestamp,
                         tx_hash=None,
                         tx_type=tx_type,
@@ -358,7 +401,7 @@ class TransactionSyncService:
                         amount_tao=amount,
                         alpha_amount=amount,  # Root alpha = TAO
                         limit_price=Decimal("1"),  # Root price is always 1:1
-                        usd_value=Decimal("0"),
+                        usd_value=usd_value,
                         fee_rao=0,
                         fee_tao=Decimal("0"),
                         success=True,

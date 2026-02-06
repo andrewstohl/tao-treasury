@@ -218,6 +218,41 @@ class DualCurrencyValue(BaseModel):
     usd: Decimal = Field(default=Decimal("0"))
 
 
+class ConversionExposure(BaseModel):
+    """FX / Conversion exposure metrics.
+
+    Tracks the full USD P&L journey from stake time to present,
+    decomposed into:
+    - Alpha/TAO effect: P&L from alpha price changes relative to TAO
+    - TAO/USD effect: P&L from TAO price changes relative to USD
+
+    For Root (SN0) positions: alpha_tao_effect = 0 (no conversion, still TAO).
+    """
+    # Cost basis (at stake time)
+    usd_cost_basis: Decimal = Field(default=Decimal("0"))  # What you put in (USD)
+    tao_cost_basis: Decimal = Field(default=Decimal("0"))  # What you put in (TAO)
+
+    # Current value
+    current_usd_value: Decimal = Field(default=Decimal("0"))  # What you have now (USD)
+    current_tao_value: Decimal = Field(default=Decimal("0"))  # What you have now (TAO)
+
+    # Total P&L
+    total_pnl_usd: Decimal = Field(default=Decimal("0"))
+    total_pnl_pct: Decimal = Field(default=Decimal("0"))
+
+    # Decomposition
+    alpha_tao_effect_usd: Decimal = Field(default=Decimal("0"))  # P&L from α/τ movement
+    tao_usd_effect: Decimal = Field(default=Decimal("0"))  # P&L from τ/$ movement
+
+    # Entry reference
+    weighted_avg_entry_tao_price_usd: Decimal = Field(default=Decimal("0"))
+
+    # Data quality indicators
+    has_complete_usd_history: bool = False
+    positions_with_usd_data: int = 0
+    total_positions: int = 0
+
+
 class OverviewPnL(BaseModel):
     """P&L summary in both TAO and USD."""
     unrealized: DualCurrencyValue = Field(default_factory=DualCurrencyValue)
@@ -292,6 +327,9 @@ class PortfolioOverviewResponse(BaseModel):
     active_positions: int = 0
     eligible_subnets: int = 0
     overall_regime: str = "neutral"
+
+    # FX / Conversion Exposure
+    conversion_exposure: ConversionExposure = Field(default_factory=ConversionExposure)
 
     as_of: datetime
 

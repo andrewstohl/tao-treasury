@@ -181,22 +181,39 @@ class DataSyncService:
                     logger.error("Cost basis computation failed", error=str(e))
                     results["errors"].append(f"Cost basis: {str(e)}")
 
-                # Override realized P&L with accounting/tax data (TAO-based FIFO).
-                # The accounting endpoint captures batch extrinsics that dtao/trade
-                # misses, giving a more complete and accurate realized P&L.
+                # Compute TAO and USD cost basis from accounting/tax API (PRIMARY SOURCE).
+                # The accounting endpoint captures ALL transactions including batch
+                # extrinsics that dtao/trade misses. This is authoritative for:
+                # - TAO staked/unstaked per position
+                # - USD staked/unstaked (enriched with historical prices)
+                # - Realized P&L in both TAO and USD
                 try:
-                    acct_results = await cost_basis_service.compute_realized_pnl_from_accounting()
-                    results["accounting_pnl_computed"] = True
-                    results["accounting_realized_pnl"] = float(
-                        acct_results.get("total_realized_pnl", 0)
+                    acct_cost_basis_results = await cost_basis_service.compute_cost_basis_from_accounting()
+                    results["accounting_cost_basis_computed"] = True
+                    results["accounting_positions_updated"] = (
+                        acct_cost_basis_results.get("positions_updated", 0) +
+                        acct_cost_basis_results.get("positions_created", 0)
                     )
+                    results["total_staked_usd"] = float(acct_cost_basis_results.get("total_staked_usd", 0))
                     logger.info(
-                        "Accounting P&L override applied",
-                        total=float(acct_results.get("total_realized_pnl", 0)),
-                        subnets=acct_results.get("subnets_processed", 0),
+                        "Accounting-based cost basis computed (primary source)",
+                        positions=results["accounting_positions_updated"],
+                        total_staked_usd=results["total_staked_usd"],
                     )
                 except Exception as e:
-                    logger.warning("Accounting P&L computation failed, using trade-based FIFO", error=str(e))
+                    logger.error("Accounting cost basis computation failed", error=str(e))
+                    results["errors"].append(f"Accounting cost basis: {str(e)}")
+                    results["accounting_cost_basis_computed"] = False
+
+                # Also compute TAO-based realized P&L override for portfolio totals
+                try:
+                    acct_pnl_results = await cost_basis_service.compute_realized_pnl_from_accounting()
+                    results["accounting_pnl_computed"] = True
+                    results["accounting_realized_pnl"] = float(
+                        acct_pnl_results.get("total_realized_pnl", 0)
+                    )
+                except Exception as e:
+                    logger.warning("Accounting P&L override failed", error=str(e))
                     results["accounting_pnl_computed"] = False
 
                 # Sync slippage surfaces

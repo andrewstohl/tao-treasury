@@ -36,10 +36,10 @@ function DualValue({
 
   return (
     <div>
-      <div className={`text-xl font-bold ${colorClass}`}>
+      <div className={`text-lg font-bold ${colorClass}`}>
         {prefix}{formatPrimary(primary)}{primarySuffix}
       </div>
-      <div className="text-sm text-gray-500">
+      <div className="text-xs text-gray-500">
         {prefix}{formatSecondary(secondary)}{secondarySuffix}
       </div>
     </div>
@@ -57,8 +57,8 @@ export default function PortfolioOverviewCards() {
 
   if (isLoading || !overview) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-        {[...Array(4)].map((_, i) => (
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+        {[...Array(5)].map((_, i) => (
           <div
             key={i}
             className="bg-gray-800 rounded-lg p-4 border border-gray-700 animate-pulse h-32"
@@ -99,19 +99,19 @@ export default function PortfolioOverviewCards() {
       <div className="flex items-center justify-start">
         <button
           onClick={toggleCurrency}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-gray-700 hover:bg-gray-600 text-xs text-gray-300 transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600 text-sm text-gray-300 transition-colors"
         >
-          <ArrowUpDown className="w-3 h-3" />
+          <ArrowUpDown className="w-4 h-4" />
           {currency === 'tao' ? 'τ TAO' : '$ USD'}
         </button>
       </div>
 
       {/* Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
         {/* Card 1: Portfolio Value */}
         <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
           <div className="flex items-start justify-between">
-            <div className="text-xl font-bold font-display text-white">Current Value</div>
+            <div className="text-base font-bold text-white">Current Value</div>
             <div className="text-right">
               <DualValue value={overview.nav_mid} primaryCurrency={currency} short />
             </div>
@@ -142,7 +142,7 @@ export default function PortfolioOverviewCards() {
         {/* Card 2: Yield */}
         <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
           <div className="flex items-start justify-between">
-            <div className="text-xl font-bold font-display text-white">Yield</div>
+            <div className="text-base font-bold text-white">Yield</div>
             <div className="text-right">
               <DualValue value={overview.yield_income.total_yield} primaryCurrency={currency} short />
             </div>
@@ -165,21 +165,13 @@ export default function PortfolioOverviewCards() {
                   : formatUsd(overview.yield_income.unrealized_yield.usd)}
               </div>
             </div>
-            <div>
-              <div className="text-xs text-gray-500">Total</div>
-              <div className={`tabular-nums text-sm ${pnlColor(safeFloat(overview.yield_income.total_yield.tao))}`}>
-                {currency === 'tao'
-                  ? `${formatTaoShort(overview.yield_income.total_yield.tao)}τ`
-                  : formatUsd(overview.yield_income.total_yield.usd)}
-              </div>
-            </div>
           </div>
         </div>
 
         {/* Card 3: Alpha */}
         <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
           <div className="flex items-start justify-between">
-            <div className="text-xl font-bold font-display text-white">Alpha</div>
+            <div className="text-base font-bold text-white">Alpha</div>
             <div className="text-right">
               <DualValue
                 value={{ tao: String(totalAlphaTao), usd: String(totalAlphaUsd) }}
@@ -202,24 +194,18 @@ export default function PortfolioOverviewCards() {
                 {currency === 'tao' ? `${formatTaoShort(unrealizedAlphaTao)}τ` : formatUsd(unrealizedAlphaUsd)}
               </div>
             </div>
-            <div>
-              <div className="text-xs text-gray-500">Total</div>
-              <div className={`tabular-nums text-sm ${pnlColor(totalAlphaTao)}`}>
-                {currency === 'tao' ? `${formatTaoShort(totalAlphaTao)}τ` : formatUsd(totalAlphaUsd)}
-              </div>
-            </div>
           </div>
         </div>
 
         {/* Card 4: APY */}
         <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
           <div className="flex items-start justify-between">
-            <div className="text-xl font-bold font-display text-white">APY</div>
+            <div className="text-base font-bold text-white">APY</div>
             <div className="text-right">
-              <div className="text-xl font-bold text-white">
+              <div className="text-lg font-bold text-white">
                 {formatApy(apyNum)}
               </div>
-              <div className="text-sm text-gray-500 tabular-nums">
+              <div className="text-xs text-gray-500 tabular-nums">
                 {formatTaoShort(overview.yield_income.daily.tao)}τ/day
               </div>
             </div>
@@ -238,10 +224,40 @@ export default function PortfolioOverviewCards() {
                 {formatTaoShort(overview.yield_income.monthly.tao)}τ
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* Card 5: FX Exposure */}
+        <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-1.5">
+              <div className="text-base font-bold text-white">FX Exposure</div>
+              {!overview.conversion_exposure.has_complete_usd_history && (
+                <span className="text-yellow-500/70 text-xs" title="Partial USD history available">*</span>
+              )}
+            </div>
+            <div className="text-right">
+              <div className={`text-lg font-bold ${pnlColor(safeFloat(overview.conversion_exposure.total_pnl_usd))}`}>
+                {formatUsd(overview.conversion_exposure.total_pnl_usd)}
+              </div>
+              <div className="text-xs text-gray-500 tabular-nums">
+                {safeFloat(overview.conversion_exposure.total_pnl_pct) >= 0 ? '+' : ''}
+                {safeFloat(overview.conversion_exposure.total_pnl_pct).toFixed(1)}%
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-2.5 pt-2.5 border-t border-gray-700 flex justify-between">
             <div>
-              <div className="text-xs text-gray-500">365d Proj.</div>
-              <div className="tabular-nums text-sm text-green-400">
-                {formatTaoShort(safeFloat(overview.yield_income.daily.tao) * 365)}τ
+              <div className="text-xs text-gray-500">α/τ Effect</div>
+              <div className={`tabular-nums text-sm ${pnlColor(safeFloat(overview.conversion_exposure.alpha_tao_effect_usd))}`}>
+                {formatUsd(overview.conversion_exposure.alpha_tao_effect_usd)}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500">τ/$ Effect</div>
+              <div className={`tabular-nums text-sm ${pnlColor(safeFloat(overview.conversion_exposure.tao_usd_effect))}`}>
+                {formatUsd(overview.conversion_exposure.tao_usd_effect)}
               </div>
             </div>
           </div>

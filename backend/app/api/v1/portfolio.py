@@ -35,6 +35,7 @@ from app.schemas.portfolio import (
     RollingReturn,
     TaoPriceContext,
     DualCurrencyValue,
+    ConversionExposure,
     OverviewPnL,
     OverviewYield,
     CompoundingProjection,
@@ -760,6 +761,201 @@ async def _get_tao_price_context() -> TaoPriceContext:
         return TaoPriceContext()
 
 
+async def _compute_conversion_exposure(
+    db: AsyncSession,
+    wallet: str,
+    open_positions: List[Position],
+    current_tao_price_usd: float,
+) -> ConversionExposure:
+    """Compute conversion exposure (FX risk) including BOTH open and closed positions.
+
+    Decomposes USD P&L into two effects:
+    - Alpha/TAO effect: P&L from alpha price changes (dTAO only; Root = 0)
+    - TAO/USD effect: P&L from TAO price changes
+
+    Root (SN0) Special Handling:
+    - Root stake IS TAO (delegated to validators), no alpha conversion
+    - Therefore α/τ effect = 0 for Root (no conversion risk)
+    - All Root P&L goes to τ/$ effect (pure TAO/USD exposure)
+
+    Includes:
+    - OPEN positions: Unrealized FX exposure (current value vs cost basis)
+    - CLOSED positions: Realized FX P&L (already captured in realized_pnl_usd)
+    """
+    total_positions = len(open_positions)
+    pos_by_netuid = {pos.netuid: pos for pos in open_positions}
+    open_netuids = list(pos_by_netuid.keys())
+
+    # ============================================================
+    # OPEN POSITIONS: Calculate unrealized FX exposure
+    # Separate Root (netuid=0) from dTAO positions
+    # ============================================================
+
+    # Get open position netuids with USD data
+    open_usd_stmt = select(PositionCostBasis.netuid).where(
+        PositionCostBasis.wallet_address == wallet,
+        PositionCostBasis.netuid.in_(open_netuids) if open_netuids else False,
+        PositionCostBasis.total_staked_usd > 0,
+    )
+    open_usd_result = await db.execute(open_usd_stmt)
+    open_netuids_with_usd = [row[0] for row in open_usd_result.fetchall()]
+    positions_with_usd = len(open_netuids_with_usd)
+
+    # Separate Root from dTAO positions
+    root_netuid = 0
+    has_root_usd = root_netuid in open_netuids_with_usd
+    dtao_netuids_with_usd = [n for n in open_netuids_with_usd if n != root_netuid]
+
+    # ============================================================
+    # ROOT (SN0): Pure τ/$ exposure (no α/τ effect)
+    # ============================================================
+    root_tao_staked = Decimal("0")
+    root_usd_cost = Decimal("0")
+    root_current_tao = Decimal("0")
+
+    if has_root_usd:
+        root_cb_stmt = select(
+            PositionCostBasis.total_staked_tao - PositionCostBasis.total_unstaked_tao,
+            PositionCostBasis.total_staked_usd - PositionCostBasis.total_unstaked_usd,
+        ).where(
+            PositionCostBasis.wallet_address == wallet,
+            PositionCostBasis.netuid == root_netuid,
+        )
+        root_cb_result = await db.execute(root_cb_stmt)
+        root_row = root_cb_result.fetchone()
+        if root_row:
+            root_tao_staked = Decimal(str(root_row[0] or 0))
+            root_usd_cost = Decimal(str(root_row[1] or 0))
+
+        # Current Root TAO value
+        if root_netuid in pos_by_netuid:
+            root_current_tao = pos_by_netuid[root_netuid].tao_value_mid or Decimal("0")
+
+    # ============================================================
+    # dTAO POSITIONS: Have both α/τ and τ/$ effects
+    # ============================================================
+    dtao_tao_staked = Decimal("0")
+    dtao_usd_cost = Decimal("0")
+    dtao_current_tao = Decimal("0")
+
+    if dtao_netuids_with_usd:
+        dtao_cb_stmt = select(
+            func.sum(PositionCostBasis.total_staked_tao - PositionCostBasis.total_unstaked_tao),
+            func.sum(PositionCostBasis.total_staked_usd - PositionCostBasis.total_unstaked_usd),
+        ).where(
+            PositionCostBasis.wallet_address == wallet,
+            PositionCostBasis.netuid.in_(dtao_netuids_with_usd),
+        )
+        dtao_cb_result = await db.execute(dtao_cb_stmt)
+        dtao_row = dtao_cb_result.fetchone()
+        if dtao_row:
+            dtao_tao_staked = Decimal(str(dtao_row[0] or 0))
+            dtao_usd_cost = Decimal(str(dtao_row[1] or 0))
+
+        # Current dTAO positions TAO value
+        dtao_current_tao = sum(
+            pos_by_netuid[netuid].tao_value_mid or Decimal("0")
+            for netuid in dtao_netuids_with_usd
+            if netuid in pos_by_netuid
+        )
+
+    # Combined totals for positions with USD data
+    open_net_tao_staked = root_tao_staked + dtao_tao_staked
+    open_net_usd_cost = root_usd_cost + dtao_usd_cost
+    current_tao_value = root_current_tao + dtao_current_tao
+    current_usd_value = current_tao_value * Decimal(str(current_tao_price_usd))
+
+    # ============================================================
+    # CLOSED POSITIONS: Get realized FX P&L
+    # ============================================================
+    closed_stmt = select(
+        func.sum(PositionCostBasis.realized_pnl_usd),
+    ).where(
+        PositionCostBasis.wallet_address == wallet,
+        PositionCostBasis.total_staked_usd > 0,
+        ~PositionCostBasis.netuid.in_(open_netuids) if open_netuids else True,
+    )
+    closed_result = await db.execute(closed_stmt)
+    closed_row = closed_result.fetchone()
+    closed_realized_pnl_usd = Decimal(str(closed_row[0] or 0))
+
+    # ============================================================
+    # FX DECOMPOSITION
+    # ============================================================
+
+    # Cost basis = what's currently "at risk" (open positions only)
+    total_usd_cost = open_net_usd_cost
+    total_tao_staked = open_net_tao_staked
+
+    # Weighted average entry TAO price (across all positions with USD data)
+    entry_tao_price_usd = (
+        open_net_usd_cost / open_net_tao_staked
+        if open_net_tao_staked > 0 else Decimal("0")
+    )
+
+    # --- dTAO α/τ effect ---
+    # P&L from alpha price changes: (current_tao - staked_tao) × entry_usd_price
+    # This measures how much TAO you gained/lost from alpha repricing
+    if dtao_tao_staked > 0 and dtao_usd_cost > 0:
+        dtao_entry_price = dtao_usd_cost / dtao_tao_staked
+        alpha_tao_effect = (dtao_current_tao - dtao_tao_staked) * dtao_entry_price
+    else:
+        alpha_tao_effect = Decimal("0")
+
+    # --- τ/$ effect ---
+    # P&L from TAO price movement: current_tao × (current_price - entry_price)
+    # This measures how USD value changed due to TAO price movement
+
+    # dTAO τ/$ component
+    if dtao_tao_staked > 0 and dtao_usd_cost > 0:
+        dtao_entry_price = dtao_usd_cost / dtao_tao_staked
+        dtao_tao_usd_effect = dtao_current_tao * (
+            Decimal(str(current_tao_price_usd)) - dtao_entry_price
+        )
+    else:
+        dtao_tao_usd_effect = Decimal("0")
+
+    # Root τ/$ component (Root's ENTIRE P&L is τ/$ since stake = TAO)
+    if root_tao_staked > 0 and root_usd_cost > 0:
+        root_entry_price = root_usd_cost / root_tao_staked
+        # Root's full P&L = current_value - cost_basis
+        # All of it is τ/$ effect since there's no α/τ conversion
+        root_tao_usd_effect = root_current_tao * (
+            Decimal(str(current_tao_price_usd)) - root_entry_price
+        )
+    else:
+        root_tao_usd_effect = Decimal("0")
+
+    # Total τ/$ effect = dTAO + Root + closed positions' realized P&L
+    tao_usd_effect = dtao_tao_usd_effect + root_tao_usd_effect + closed_realized_pnl_usd
+
+    # Total P&L = Unrealized (open) + Realized (closed)
+    open_unrealized_pnl = current_usd_value - open_net_usd_cost
+    total_pnl_usd = open_unrealized_pnl + closed_realized_pnl_usd
+
+    # Percentage based on cost basis
+    total_pnl_pct = (
+        (total_pnl_usd / open_net_usd_cost * 100) if open_net_usd_cost > 0 else Decimal("0")
+    )
+
+    return ConversionExposure(
+        usd_cost_basis=total_usd_cost.quantize(Decimal("0.01")),
+        tao_cost_basis=total_tao_staked.quantize(Decimal("0.000000001")),
+        current_usd_value=current_usd_value.quantize(Decimal("0.01")),
+        current_tao_value=current_tao_value.quantize(Decimal("0.000000001")),
+        total_pnl_usd=total_pnl_usd.quantize(Decimal("0.01")),
+        total_pnl_pct=total_pnl_pct.quantize(Decimal("0.01")),
+        alpha_tao_effect_usd=alpha_tao_effect.quantize(Decimal("0.01")),
+        tao_usd_effect=tao_usd_effect.quantize(Decimal("0.01")),
+        weighted_avg_entry_tao_price_usd=entry_tao_price_usd.quantize(Decimal("0.01")),
+        has_complete_usd_history=(
+            positions_with_usd == total_positions and total_positions > 0
+        ),
+        positions_with_usd_data=positions_with_usd,
+        total_positions=total_positions,
+    )
+
+
 @router.get("/overview", response_model=PortfolioOverviewResponse)
 async def get_portfolio_overview(
     db: AsyncSession = Depends(get_db),
@@ -939,6 +1135,11 @@ async def get_portfolio_overview(
     pos_count = snapshot.active_positions or 0
     eligible = snapshot.eligible_subnets or 0
 
+    # 10. Compute conversion exposure (FX risk)
+    conversion_exposure = await _compute_conversion_exposure(
+        db, wallet, open_positions, tao_usd
+    )
+
     return PortfolioOverviewResponse(
         nav_mid=nav_mid,
         nav_exec=nav_exec,
@@ -953,6 +1154,7 @@ async def get_portfolio_overview(
         active_positions=pos_count,
         eligible_subnets=eligible,
         overall_regime=snapshot.overall_regime or "neutral",
+        conversion_exposure=conversion_exposure,
         as_of=snapshot.timestamp,
     )
 

@@ -149,6 +149,28 @@ class PositionCostBasis(Base):
         Numeric(20, 9), nullable=False, default=Decimal("0")
     )
 
+    # USD Cost Basis Tracking (for FX/Conversion Exposure)
+    usd_cost_basis: Mapped[Decimal] = mapped_column(
+        Numeric(20, 2), nullable=False, default=Decimal("0"),
+        server_default="0",
+    )  # Sum of USD values for remaining FIFO lots
+    weighted_avg_entry_price_usd: Mapped[Decimal] = mapped_column(
+        Numeric(20, 6), nullable=False, default=Decimal("0"),
+        server_default="0",
+    )  # Weighted avg USD per alpha at entry
+    total_staked_usd: Mapped[Decimal] = mapped_column(
+        Numeric(20, 2), nullable=False, default=Decimal("0"),
+        server_default="0",
+    )  # Total USD ever staked into this position
+    total_unstaked_usd: Mapped[Decimal] = mapped_column(
+        Numeric(20, 2), nullable=False, default=Decimal("0"),
+        server_default="0",
+    )  # Total USD received from unstaking
+    realized_pnl_usd: Mapped[Decimal] = mapped_column(
+        Numeric(20, 2), nullable=False, default=Decimal("0"),
+        server_default="0",
+    )  # Realized P&L in USD terms
+
     # Transaction counts
     stake_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     unstake_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)

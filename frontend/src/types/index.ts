@@ -399,6 +399,27 @@ export interface CompoundingProjection {
   projected_nav_365d_tao: string
 }
 
+export interface ConversionExposure {
+  // Cost basis (at stake time)
+  usd_cost_basis: string
+  tao_cost_basis: string
+  // Current value
+  current_usd_value: string
+  current_tao_value: string
+  // Total P&L
+  total_pnl_usd: string
+  total_pnl_pct: string
+  // Decomposition
+  alpha_tao_effect_usd: string  // P&L from α/τ movement
+  tao_usd_effect: string        // P&L from τ/$ movement
+  // Entry reference
+  weighted_avg_entry_tao_price_usd: string
+  // Data quality
+  has_complete_usd_history: boolean
+  positions_with_usd_data: number
+  total_positions: number
+}
+
 export interface PortfolioOverview {
   nav_mid: DualCurrencyValue
   nav_exec: DualCurrencyValue
@@ -413,6 +434,7 @@ export interface PortfolioOverview {
   active_positions: number
   eligible_subnets: number
   overall_regime: string
+  conversion_exposure: ConversionExposure
   as_of: string
 }
 
