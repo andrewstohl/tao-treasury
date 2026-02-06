@@ -7,7 +7,7 @@ interface SparklineCellProps {
 
 export default function SparklineCell({ data }: SparklineCellProps) {
   if (!data || data.length === 0) {
-    return <span className="text-gray-600">--</span>
+    return <span className="text-[#4a6a80]">--</span>
   }
 
   const trend = data[data.length - 1].price >= data[0].price

@@ -142,7 +142,7 @@ export default function Settings() {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold">Settings</h1>
-        <div className="text-gray-400">Loading configuration...</div>
+        <div className="text-[#6f87a0]">Loading configuration...</div>
       </div>
     )
   }
@@ -162,7 +162,7 @@ export default function Settings() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Settings</h1>
-          <p className="text-sm text-gray-400 mt-1">
+          <p className="text-sm text-[#6f87a0] mt-1">
             Viability scoring configuration
             {config.source === 'database' && (
               <span className="ml-2 text-xs px-2 py-0.5 rounded bg-blue-900/40 text-blue-300">
@@ -170,7 +170,7 @@ export default function Settings() {
               </span>
             )}
             {config.source === 'defaults' && (
-              <span className="ml-2 text-xs px-2 py-0.5 rounded bg-gray-700 text-gray-400">
+              <span className="ml-2 text-xs px-2 py-0.5 rounded bg-[#1a2d42] text-[#6f87a0]">
                 Using defaults
               </span>
             )}
@@ -190,7 +190,7 @@ export default function Settings() {
           <button
             onClick={() => resetMutation.mutate()}
             disabled={resetMutation.isPending || config.source === 'defaults'}
-            className="flex items-center gap-2 px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 px-3 py-2 bg-[#1a2d42] hover:bg-[#243a52] rounded text-sm text-[#8faabe] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <RotateCcw size={14} />
             Reset to Defaults
@@ -207,17 +207,17 @@ export default function Settings() {
       </div>
 
       {/* Enable toggle */}
-      <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
+      <div className="bg-[#121f2d] rounded-lg border border-[#1e3a5f] p-4">
         <label className="flex items-center gap-3 cursor-pointer">
           <input
             type="checkbox"
             checked={draft['enabled'] === 1}
             onChange={(e) => updateField('enabled', e.target.checked ? 1 : 0)}
-            className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-tao-500 focus:ring-tao-500"
+            className="w-4 h-4 rounded border-[#2a4a66] bg-[#1a2d42] text-tao-500 focus:ring-tao-500"
           />
           <div>
-            <span className="text-sm font-medium text-gray-200">Enable Viability Scoring</span>
-            <p className="text-xs text-gray-500">When disabled, viability scores will not be computed during strategy analysis</p>
+            <span className="text-sm font-medium text-[#a8c4d9]">Enable Viability Scoring</span>
+            <p className="text-xs text-[#5a7a94]">When disabled, viability scores will not be computed during strategy analysis</p>
           </div>
         </label>
       </div>
@@ -243,7 +243,7 @@ export default function Settings() {
       >
         <div className="mb-3">
           <div className="flex items-center gap-2 text-sm">
-            <span className="text-gray-400">Weight Total:</span>
+            <span className="text-[#6f87a0]">Weight Total:</span>
             <span className={`tabular-nums font-medium ${weightsValid ? 'text-green-400' : 'text-red-400'}`}>
               {weightSum.toFixed(2)}
             </span>
@@ -254,7 +254,7 @@ export default function Settings() {
             )}
           </div>
           {/* Visual weight bar */}
-          <div className="mt-2 flex h-3 rounded-full overflow-hidden bg-gray-700">
+          <div className="mt-2 flex h-3 rounded-full overflow-hidden bg-[#1a2d42]">
             {WEIGHT_FIELDS.map((f, i) => {
               const pct = (draft[f.key] / Math.max(weightSum, 0.01)) * 100
               const colors = ['bg-emerald-500', 'bg-blue-500', 'bg-purple-500', 'bg-amber-500', 'bg-cyan-500', 'bg-rose-500']
@@ -321,12 +321,12 @@ export default function Settings() {
       </Section>
 
       {/* Info note */}
-      <div className="flex items-start gap-3 p-4 bg-gray-800/50 rounded-lg border border-gray-700 text-sm text-gray-400">
+      <div className="flex items-start gap-3 p-4 bg-[#121f2d]/50 rounded-lg border border-[#1e3a5f] text-sm text-[#6f87a0]">
         <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
         <div>
           <p>Changes take effect on the next strategy analysis run. To re-score immediately after saving, trigger a strategy analysis from the sidebar refresh button or the Strategy page.</p>
           {config.updated_at && (
-            <p className="mt-1 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-[#5a7a94]">
               Last updated: {new Date(config.updated_at).toLocaleString()}
             </p>
           )}
@@ -372,7 +372,7 @@ function fmtWr(v: number | null | undefined): string {
 }
 
 function ReturnCell({ value }: { value: number | null | undefined }) {
-  if (value == null) return <span className="text-gray-600">--</span>
+  if (value == null) return <span className="text-[#243a52]">--</span>
   const color = value >= 0 ? 'text-green-400' : 'text-red-400'
   return <span className={`tabular-nums ${color}`}>{fmtPct(value)}</span>
 }
@@ -459,38 +459,38 @@ function BacktestSection() {
   return (
     <Section title="Backtest Validation" description="Replay viability scoring against historical data to validate tier quality.">
       {/* Historical Data Backfill */}
-      <div className="bg-gray-900/40 rounded-lg p-4 border border-gray-700/50 space-y-3">
+      <div className="bg-[#050d15]/40 rounded-lg p-4 border border-[#1e3a5f]/50 space-y-3">
         <div className="flex items-center justify-between">
           <div>
-            <h4 className="text-sm font-medium text-gray-200">Historical Data</h4>
-            <p className="text-xs text-gray-500 mt-0.5">
+            <h4 className="text-sm font-medium text-[#a8c4d9]">Historical Data</h4>
+            <p className="text-xs text-[#5a7a94] mt-0.5">
               Fetch daily pool snapshots from TaoStats for deeper backtesting (up to 12 months).
             </p>
           </div>
           <button
             onClick={triggerBackfill}
             disabled={isBackfilling}
-            className="flex items-center gap-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-sm text-gray-300 disabled:opacity-50 whitespace-nowrap"
+            className="flex items-center gap-2 px-3 py-1.5 bg-[#1a2d42] hover:bg-[#243a52] rounded text-sm text-[#8faabe] disabled:opacity-50 whitespace-nowrap"
           >
             {isBackfilling ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
             {isBackfilling ? 'Backfilling...' : 'Fetch History'}
           </button>
         </div>
         {backfillStatus && (
-          <div className="text-xs text-gray-400 space-y-1">
+          <div className="text-xs text-[#6f87a0] space-y-1">
             {backfillStatus.running ? (
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2">
                   <Loader2 size={12} className="animate-spin text-tao-400" />
                   <span>Processing subnet {backfillStatus.current_netuid} ({backfillStatus.completed_subnets}/{backfillStatus.total_subnets})</span>
                 </div>
-                <div className="w-full bg-gray-700 rounded-full h-1.5">
+                <div className="w-full bg-[#1a2d42] rounded-full h-1.5">
                   <div
                     className="bg-tao-500 h-1.5 rounded-full transition-all"
                     style={{ width: `${backfillStatus.total_subnets > 0 ? (backfillStatus.completed_subnets / backfillStatus.total_subnets) * 100 : 0}%` }}
                   />
                 </div>
-                <span className="text-gray-500">{backfillStatus.total_records_created.toLocaleString()} records created</span>
+                <span className="text-[#5a7a94]">{backfillStatus.total_records_created.toLocaleString()} records created</span>
               </div>
             ) : backfillStatus.finished_at ? (
               <div className="flex items-center gap-2">
@@ -508,7 +508,7 @@ function BacktestSection() {
       {/* Run controls */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <p className="text-sm text-gray-400">
+          <p className="text-sm text-[#6f87a0]">
             Scores subnets at each historical date, then measures forward price performance per tier.
           </p>
         </div>
@@ -516,7 +516,7 @@ function BacktestSection() {
           <select
             value={intervalDays}
             onChange={(e) => setIntervalDays(Number(e.target.value))}
-            className="bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm text-gray-300"
+            className="bg-[#1a2d42] border border-[#2a4a66] rounded px-2 py-1.5 text-sm text-[#8faabe]"
           >
             <option value={1}>Every day</option>
             <option value={3}>Every 3 days</option>
@@ -542,14 +542,14 @@ function BacktestSection() {
       {backtestData && (
         <div className="space-y-4 mt-2">
           {/* Data range + summary stats */}
-          <div className="flex items-center justify-between text-xs text-gray-500">
+          <div className="flex items-center justify-between text-xs text-[#5a7a94]">
             <span>
               Data: {backtestData.data_range.start} to {backtestData.data_range.end}
               {' '}&middot;{' '}{backtestData.scoring_dates.length} scoring dates
               {' '}&middot;{' '}{totalObs.toLocaleString()} observations
             </span>
             {hardFailRate != null && (
-              <span className="text-gray-400">
+              <span className="text-[#6f87a0]">
                 Pass rate: <span className="tabular-nums">{((1 - hardFailRate) * 100).toFixed(1)}%</span>
                 {' '}({passObs.toLocaleString()} scored)
               </span>
@@ -560,15 +560,15 @@ function BacktestSection() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-700">
-                  <th className="text-left py-2 text-gray-400 font-medium">Tier</th>
-                  <th className="text-right py-2 text-gray-400 font-medium">Count</th>
-                  <th className="text-right py-2 text-gray-400 font-medium">Median 1d</th>
-                  <th className="text-right py-2 text-gray-400 font-medium">Median 3d</th>
-                  <th className="text-right py-2 text-gray-400 font-medium">Median 7d</th>
-                  <th className="text-right py-2 text-gray-400 font-medium">Win 1d</th>
-                  <th className="text-right py-2 text-gray-400 font-medium">Win 3d</th>
-                  <th className="text-right py-2 text-gray-400 font-medium">Win 7d</th>
+                <tr className="border-b border-[#1e3a5f]">
+                  <th className="text-left py-2 text-[#6f87a0] font-medium">Tier</th>
+                  <th className="text-right py-2 text-[#6f87a0] font-medium">Count</th>
+                  <th className="text-right py-2 text-[#6f87a0] font-medium">Median 1d</th>
+                  <th className="text-right py-2 text-[#6f87a0] font-medium">Median 3d</th>
+                  <th className="text-right py-2 text-[#6f87a0] font-medium">Median 7d</th>
+                  <th className="text-right py-2 text-[#6f87a0] font-medium">Win 1d</th>
+                  <th className="text-right py-2 text-[#6f87a0] font-medium">Win 3d</th>
+                  <th className="text-right py-2 text-[#6f87a0] font-medium">Win 7d</th>
                 </tr>
               </thead>
               <tbody>
@@ -576,15 +576,15 @@ function BacktestSection() {
                   const s = backtestData.summary[tier]
                   if (!s) return null
                   return (
-                    <tr key={tier} className={`border-b border-gray-800 ${TIER_BG[tier]}`}>
+                    <tr key={tier} className={`border-b border-[#132436] ${TIER_BG[tier]}`}>
                       <td className={`py-2 font-medium ${TIER_COLORS[tier]}`}>{TIER_LABELS[tier]}</td>
-                      <td className="text-right py-2 tabular-nums text-gray-300">{s.count.toLocaleString()}</td>
+                      <td className="text-right py-2 tabular-nums text-[#8faabe]">{s.count.toLocaleString()}</td>
                       <td className="text-right py-2"><ReturnCell value={s.median_return_1d} /></td>
                       <td className="text-right py-2"><ReturnCell value={s.median_return_3d} /></td>
                       <td className="text-right py-2"><ReturnCell value={s.median_return_7d} /></td>
-                      <td className="text-right py-2 tabular-nums text-gray-300">{fmtWr(s.win_rate_1d)}</td>
-                      <td className="text-right py-2 tabular-nums text-gray-300">{fmtWr(s.win_rate_3d)}</td>
-                      <td className="text-right py-2 tabular-nums text-gray-300">{fmtWr(s.win_rate_7d)}</td>
+                      <td className="text-right py-2 tabular-nums text-[#8faabe]">{fmtWr(s.win_rate_1d)}</td>
+                      <td className="text-right py-2 tabular-nums text-[#8faabe]">{fmtWr(s.win_rate_3d)}</td>
+                      <td className="text-right py-2 tabular-nums text-[#8faabe]">{fmtWr(s.win_rate_7d)}</td>
                     </tr>
                   )
                 })}
@@ -594,7 +594,7 @@ function BacktestSection() {
 
           {/* Tier separation cards — median return and win rate */}
           <div>
-            <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">T1 vs T4 Separation</h4>
+            <h4 className="text-xs font-semibold text-[#6f87a0] uppercase tracking-wider mb-2">T1 vs T4 Separation</h4>
             <div className="grid grid-cols-3 gap-3">
               {[1, 3, 7].map(h => {
                 const medKey = `tier1_vs_tier4_median_${h}d`
@@ -604,12 +604,12 @@ function BacktestSection() {
                 const medPositive = medVal != null && medVal > 0
                 const wrPositive = wrVal != null && wrVal > 0
                 return (
-                  <div key={h} className="bg-gray-900/60 rounded-lg p-3 border border-gray-700">
-                    <div className="text-xs text-gray-500 mb-2 text-center">{h}-day horizon</div>
+                  <div key={h} className="bg-[#050d15]/60 rounded-lg p-3 border border-[#1e3a5f]">
+                    <div className="text-xs text-[#5a7a94] mb-2 text-center">{h}-day horizon</div>
                     <div className="grid grid-cols-2 gap-2">
                       <div className="text-center">
-                        <div className="text-[10px] text-gray-600 uppercase">Median</div>
-                        <div className={`text-sm tabular-nums font-semibold ${medVal == null ? 'text-gray-600' : medPositive ? 'text-green-400' : 'text-red-400'}`}>
+                        <div className="text-[10px] text-[#243a52] uppercase">Median</div>
+                        <div className={`text-sm tabular-nums font-semibold ${medVal == null ? 'text-[#243a52]' : medPositive ? 'text-green-400' : 'text-red-400'}`}>
                           {medVal == null ? '--' : fmtPct(medVal)}
                         </div>
                         <div className="mt-0.5">
@@ -621,8 +621,8 @@ function BacktestSection() {
                         </div>
                       </div>
                       <div className="text-center">
-                        <div className="text-[10px] text-gray-600 uppercase">Win Rate</div>
-                        <div className={`text-sm tabular-nums font-semibold ${wrVal == null ? 'text-gray-600' : wrPositive ? 'text-green-400' : 'text-red-400'}`}>
+                        <div className="text-[10px] text-[#243a52] uppercase">Win Rate</div>
+                        <div className={`text-sm tabular-nums font-semibold ${wrVal == null ? 'text-[#243a52]' : wrPositive ? 'text-green-400' : 'text-red-400'}`}>
                           {wrVal == null ? '--' : `${wrVal >= 0 ? '+' : ''}${(wrVal * 100).toFixed(1)}pp`}
                         </div>
                         <div className="mt-0.5">
@@ -643,27 +643,27 @@ function BacktestSection() {
           {/* Daily tier distribution */}
           {backtestData.daily_results.length > 0 && (
             <div>
-              <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Daily Tier Distribution</h4>
+              <h4 className="text-xs font-semibold text-[#6f87a0] uppercase tracking-wider mb-2">Daily Tier Distribution</h4>
               <div className="space-y-1 max-h-[300px] overflow-y-auto">
                 {backtestData.daily_results.map(day => {
                   const total = Object.values(day.tier_counts).reduce((a, b) => a + b, 0) || 1
                   return (
                     <div key={day.date} className="flex items-center gap-2 text-xs">
-                      <span className="text-gray-500 w-20 tabular-nums">{day.date}</span>
-                      <div className="flex-1 flex h-4 rounded overflow-hidden bg-gray-800">
+                      <span className="text-[#5a7a94] w-20 tabular-nums">{day.date}</span>
+                      <div className="flex-1 flex h-4 rounded overflow-hidden bg-[#121f2d]">
                         <div className="bg-emerald-600/60" style={{ width: `${(day.tier_counts.tier_1 || 0) / total * 100}%` }} title={`T1: ${day.tier_counts.tier_1 || 0}`} />
                         <div className="bg-green-600/60" style={{ width: `${(day.tier_counts.tier_2 || 0) / total * 100}%` }} title={`T2: ${day.tier_counts.tier_2 || 0}`} />
                         <div className="bg-yellow-600/50" style={{ width: `${(day.tier_counts.tier_3 || 0) / total * 100}%` }} title={`T3: ${day.tier_counts.tier_3 || 0}`} />
                         <div className="bg-red-600/40" style={{ width: `${(day.tier_counts.tier_4 || 0) / total * 100}%` }} title={`T4: ${day.tier_counts.tier_4 || 0}`} />
                       </div>
-                      <span className="text-gray-600 w-28 text-right">
+                      <span className="text-[#243a52] w-28 text-right">
                         {day.tier_counts.tier_1 || 0}/{day.tier_counts.tier_2 || 0}/{day.tier_counts.tier_3 || 0}/{day.tier_counts.tier_4 || 0}
                       </span>
                     </div>
                   )
                 })}
               </div>
-              <div className="flex gap-4 mt-1 text-xs text-gray-600">
+              <div className="flex gap-4 mt-1 text-xs text-[#243a52]">
                 <span><span className="inline-block w-2 h-2 rounded bg-emerald-600 mr-1" />T1</span>
                 <span><span className="inline-block w-2 h-2 rounded bg-green-600 mr-1" />T2</span>
                 <span><span className="inline-block w-2 h-2 rounded bg-yellow-600 mr-1" />T3</span>
@@ -673,7 +673,7 @@ function BacktestSection() {
           )}
 
           {/* Interpretation note */}
-          <div className="flex items-start gap-2 text-xs text-gray-500 mt-2">
+          <div className="flex items-start gap-2 text-xs text-[#5a7a94] mt-2">
             <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
             <span>
               Positive T1-vs-T4 separation = the model adds value. Median returns resist outlier distortion.
@@ -764,11 +764,11 @@ function PortfolioSimSection() {
   return (
     <Section title="Portfolio Simulation" description="Simulate a multi-tier weighted portfolio, rebalancing at each interval.">
       {/* Tier selection + weight controls */}
-      <div className="bg-gray-900/40 rounded-lg p-4 border border-gray-700/50 space-y-3">
+      <div className="bg-[#050d15]/40 rounded-lg p-4 border border-[#1e3a5f]/50 space-y-3">
         <div className="flex items-center justify-between">
           <div>
-            <h4 className="text-sm font-medium text-gray-200">Tier Allocation</h4>
-            <p className="text-xs text-gray-500 mt-0.5">
+            <h4 className="text-sm font-medium text-[#a8c4d9]">Tier Allocation</h4>
+            <p className="text-xs text-[#5a7a94] mt-0.5">
               Select tiers to include and set weight for each. Weights must total 100%.
             </p>
           </div>
@@ -787,8 +787,8 @@ function PortfolioSimSection() {
                 key={opt.key}
                 className={`rounded-lg border p-3 transition-all ${
                   selected
-                    ? `${opt.border} bg-gray-800/80`
-                    : 'border-gray-700 bg-gray-800/30 opacity-60'
+                    ? `${opt.border} bg-[#121f2d]/80`
+                    : 'border-[#1e3a5f] bg-[#121f2d]/30 opacity-60'
                 }`}
               >
                 <label className="flex items-center gap-2 cursor-pointer">
@@ -796,7 +796,7 @@ function PortfolioSimSection() {
                     type="checkbox"
                     checked={selected}
                     onChange={() => toggleTier(opt.key)}
-                    className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-tao-500 focus:ring-tao-500"
+                    className="w-4 h-4 rounded border-[#2a4a66] bg-[#1a2d42] text-tao-500 focus:ring-tao-500"
                   />
                   <span className={`text-sm font-medium ${opt.color}`}>{opt.label}</span>
                 </label>
@@ -809,7 +809,7 @@ function PortfolioSimSection() {
                       step={5}
                       value={tierPcts[opt.key] || 0}
                       onChange={(e) => setTierPcts(prev => ({ ...prev, [opt.key]: Number(e.target.value) }))}
-                      className="flex-1 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-tao-500"
+                      className="flex-1 h-1.5 bg-[#1a2d42] rounded-lg appearance-none cursor-pointer accent-tao-500"
                     />
                     <input
                       type="number"
@@ -818,9 +818,9 @@ function PortfolioSimSection() {
                       step={5}
                       value={tierPcts[opt.key] || 0}
                       onChange={(e) => setTierPcts(prev => ({ ...prev, [opt.key]: Number(e.target.value) }))}
-                      className="w-14 bg-gray-700 border border-gray-600 rounded px-1.5 py-0.5 text-sm text-center text-gray-300 tabular-nums"
+                      className="w-14 bg-[#1a2d42] border border-[#2a4a66] rounded px-1.5 py-0.5 text-sm text-center text-[#8faabe] tabular-nums"
                     />
-                    <span className="text-xs text-gray-500">%</span>
+                    <span className="text-xs text-[#5a7a94]">%</span>
                   </div>
                 )}
               </div>
@@ -830,7 +830,7 @@ function PortfolioSimSection() {
 
         {/* Visual weight bar */}
         {activeTiers.length > 0 && (
-          <div className="flex h-2.5 rounded-full overflow-hidden bg-gray-700">
+          <div className="flex h-2.5 rounded-full overflow-hidden bg-[#1a2d42]">
             {TIER_OPTIONS.filter(o => selectedTiers[o.key]).map(opt => (
               <div
                 key={opt.key}
@@ -845,14 +845,14 @@ function PortfolioSimSection() {
 
       {/* Run controls */}
       <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-400">
+        <p className="text-sm text-[#6f87a0]">
           {allocationLabel}
         </p>
         <div className="flex items-center gap-2">
           <select
             value={intervalDays}
             onChange={(e) => setIntervalDays(Number(e.target.value))}
-            className="bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm text-gray-300"
+            className="bg-[#1a2d42] border border-[#2a4a66] rounded px-2 py-1.5 text-sm text-[#8faabe]"
           >
             <option value={1}>Daily rebal</option>
             <option value={3}>3-day rebal</option>
@@ -901,13 +901,13 @@ function PortfolioSimSection() {
               label="Avg Holdings"
               value={`${simData.summary.avg_holdings_per_period}`}
               sub={`per ${intervalDays}d period`}
-              color="text-gray-300"
+              color="text-[#8faabe]"
             />
           </div>
 
           {/* Equity curve */}
           <div>
-            <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+            <h4 className="text-xs font-semibold text-[#6f87a0] uppercase tracking-wider mb-2">
               Equity Curve ({simData.start_date} to {simData.end_date})
             </h4>
             <EquityCurveChart data={simData.equity_curve} initial={simData.initial_capital} />
@@ -915,7 +915,7 @@ function PortfolioSimSection() {
 
           {/* Period details table */}
           <div>
-            <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+            <h4 className="text-xs font-semibold text-[#6f87a0] uppercase tracking-wider mb-2">
               Period Details (click to expand)
             </h4>
             <div className="max-h-[400px] overflow-y-auto space-y-0.5">
@@ -923,23 +923,23 @@ function PortfolioSimSection() {
                 <div key={period.date}>
                   <button
                     onClick={() => setExpandedPeriod(expandedPeriod === period.date ? null : period.date)}
-                    className="w-full flex items-center gap-2 text-xs py-1.5 px-2 rounded hover:bg-gray-700/50 text-left"
+                    className="w-full flex items-center gap-2 text-xs py-1.5 px-2 rounded hover:bg-[#1a2d42]/50 text-left"
                   >
-                    <span className="tabular-nums text-gray-500 w-20">{period.date}</span>
+                    <span className="tabular-nums text-[#5a7a94] w-20">{period.date}</span>
                     <span className={`tabular-nums w-16 text-right ${period.period_return >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                       {period.in_root ? '--' : fmtPct(period.period_return)}
                     </span>
-                    <span className="tabular-nums text-gray-400 w-20 text-right">{period.portfolio_value.toFixed(1)} TAO</span>
-                    <span className="text-gray-600 flex-1 text-right">
+                    <span className="tabular-nums text-[#6f87a0] w-20 text-right">{period.portfolio_value.toFixed(1)} TAO</span>
+                    <span className="text-[#243a52] flex-1 text-right">
                       {period.in_root ? 'Root (no picks)' : `${period.holdings.length} holdings`}
                     </span>
                   </button>
                   {expandedPeriod === period.date && period.holdings.length > 0 && (
-                    <div className="ml-6 mb-2 bg-gray-900/40 rounded p-2 text-xs space-y-1">
+                    <div className="ml-6 mb-2 bg-[#050d15]/40 rounded p-2 text-xs space-y-1">
                       {period.holdings.map(h => (
                         <div key={h.netuid} className="flex items-center gap-3">
-                          <span className="text-gray-400 w-12">SN{h.netuid}</span>
-                          <span className="text-gray-300 flex-1 truncate">{h.name}</span>
+                          <span className="text-[#6f87a0] w-12">SN{h.netuid}</span>
+                          <span className="text-[#8faabe] flex-1 truncate">{h.name}</span>
                           {h.tier && (
                             <span className={`text-[10px] px-1.5 py-0.5 rounded ${
                               h.tier === 'tier_1' ? 'bg-emerald-900/40 text-emerald-400' :
@@ -949,8 +949,8 @@ function PortfolioSimSection() {
                               {h.tier === 'tier_1' ? 'T1' : h.tier === 'tier_2' ? 'T2' : 'T3'}
                             </span>
                           )}
-                          <span className="text-gray-500 tabular-nums">{h.score ?? '--'}</span>
-                          <span className="text-gray-500 tabular-nums">{(h.weight * 100).toFixed(0)}%</span>
+                          <span className="text-[#5a7a94] tabular-nums">{h.score ?? '--'}</span>
+                          <span className="text-[#5a7a94] tabular-nums">{(h.weight * 100).toFixed(0)}%</span>
                           <span className={`tabular-nums w-16 text-right ${h.return_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                             {fmtPct(h.return_pct)}
                           </span>
@@ -963,7 +963,7 @@ function PortfolioSimSection() {
             </div>
           </div>
 
-          <div className="flex items-start gap-2 text-xs text-gray-500 mt-2">
+          <div className="flex items-start gap-2 text-xs text-[#5a7a94] mt-2">
             <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
             <span>
               Multi-tier simulation: each tier gets its designated weight share. Within each tier,
@@ -980,10 +980,10 @@ function PortfolioSimSection() {
 
 function StatCard({ label, value, sub, color }: { label: string; value: string; sub: string; color: string }) {
   return (
-    <div className="bg-gray-900/60 rounded-lg p-3 border border-gray-700">
-      <div className="text-xs text-gray-500">{label}</div>
+    <div className="bg-[#050d15]/60 rounded-lg p-3 border border-[#1e3a5f]">
+      <div className="text-xs text-[#5a7a94]">{label}</div>
       <div className={`text-xl tabular-nums font-bold mt-1 ${color}`}>{value}</div>
-      <div className="text-[10px] text-gray-600 mt-0.5">{sub}</div>
+      <div className="text-[10px] text-[#243a52] mt-0.5">{sub}</div>
     </div>
   )
 }
@@ -1085,10 +1085,10 @@ function EquityCurveChart({ data, initial }: { data: { date: string; value: numb
 
 function Section({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
   return (
-    <div className="bg-gray-800 rounded-lg border border-gray-700 p-5 space-y-4">
+    <div className="bg-[#121f2d] rounded-lg border border-[#1e3a5f] p-5 space-y-4">
       <div>
-        <h2 className="text-lg font-semibold text-gray-100">{title}</h2>
-        <p className="text-xs text-gray-500 mt-0.5">{description}</p>
+        <h2 className="text-lg font-semibold text-white">{title}</h2>
+        <p className="text-xs text-[#5a7a94] mt-0.5">{description}</p>
       </div>
       {children}
     </div>
@@ -1101,8 +1101,8 @@ function FieldControl({ field, value, onChange }: { field: NumericField; value: 
   return (
     <div className="space-y-1.5">
       <div className="flex justify-between items-baseline">
-        <label className="text-sm text-gray-300">{field.label}</label>
-        <span className="text-sm tabular-nums text-gray-200">{displayValue}</span>
+        <label className="text-sm text-[#8faabe]">{field.label}</label>
+        <span className="text-sm tabular-nums text-[#a8c4d9]">{displayValue}</span>
       </div>
       <input
         type="range"
@@ -1111,9 +1111,9 @@ function FieldControl({ field, value, onChange }: { field: NumericField; value: 
         step={field.step}
         value={value}
         onChange={(e) => onChange(parseFloat(e.target.value))}
-        className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-tao-500"
+        className="w-full h-1.5 bg-[#1a2d42] rounded-lg appearance-none cursor-pointer accent-tao-500"
       />
-      <p className="text-xs text-gray-600">{field.description}</p>
+      <p className="text-xs text-[#243a52]">{field.description}</p>
     </div>
   )
 }

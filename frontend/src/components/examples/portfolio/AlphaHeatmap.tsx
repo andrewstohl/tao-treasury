@@ -67,15 +67,15 @@ export default function AlphaHeatmap() {
       error={error as Error}
     >
       {hotkeys.length === 0 ? (
-        <p className="text-gray-500 text-sm">No alpha share data available.</p>
+        <p className="text-[#5a7a94] text-sm">No alpha share data available.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="text-xs">
             <thead>
               <tr>
-                <th className="px-2 py-1 text-left text-gray-500 sticky left-0 bg-gray-800">Hotkey</th>
+                <th className="px-2 py-1 text-left text-[#5a7a94] sticky left-0 bg-[#121f2d]">Hotkey</th>
                 {displaySubnets.map((sn: number) => (
-                  <th key={sn} className="px-1 py-1 text-center text-gray-500 min-w-[32px]">
+                  <th key={sn} className="px-1 py-1 text-center text-[#5a7a94] min-w-[32px]">
                     {sn}
                   </th>
                 ))}
@@ -84,7 +84,7 @@ export default function AlphaHeatmap() {
             <tbody>
               {hotkeys.map(({ hk, vals }) => (
                 <tr key={hk}>
-                  <td className="px-2 py-0.5 tabular-nums text-gray-400 sticky left-0 bg-gray-800">{hk}</td>
+                  <td className="px-2 py-0.5 tabular-nums text-[#6f87a0] sticky left-0 bg-[#121f2d]">{hk}</td>
                   {displaySubnets.map((sn: number) => {
                     const val = vals[sn] || 0
                     return (
@@ -102,7 +102,7 @@ export default function AlphaHeatmap() {
               ))}
             </tbody>
           </table>
-          <div className="flex items-center gap-2 mt-3 text-xs text-gray-500">
+          <div className="flex items-center gap-2 mt-3 text-xs text-[#5a7a94]">
             <span>Low</span>
             <div className="flex">
               {[0, 0.2, 0.4, 0.6, 0.8, 1].map((r) => (

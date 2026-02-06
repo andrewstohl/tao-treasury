@@ -72,30 +72,30 @@ export default function ParentHotkeyReturns() {
       error={error as Error}
     >
       {rows.length === 0 ? (
-        <p className="text-gray-500 text-sm">No validator data available.</p>
+        <p className="text-[#5a7a94] text-sm">No validator data available.</p>
       ) : (
         <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
           <table className="w-full text-xs">
-            <thead className="sticky top-0 bg-gray-800">
-              <tr className="border-b border-gray-700">
-                <th className="text-left py-1.5 px-2 text-gray-500">#</th>
-                <th className="text-left py-1.5 px-2 text-gray-500">Validator</th>
-                <th className="text-right py-1.5 px-2 text-gray-500">Stake (τ)</th>
-                <th className="text-right py-1.5 px-2 text-gray-500">Subnets</th>
-                <th className="text-right py-1.5 px-2 text-gray-500">Take %</th>
-                <th className="text-right py-1.5 px-2 text-gray-500">Est. Daily Return (τ)</th>
+            <thead className="sticky top-0 bg-[#121f2d]">
+              <tr className="border-b border-[#1e3a5f]">
+                <th className="text-left py-1.5 px-2 text-[#5a7a94]">#</th>
+                <th className="text-left py-1.5 px-2 text-[#5a7a94]">Validator</th>
+                <th className="text-right py-1.5 px-2 text-[#5a7a94]">Stake (τ)</th>
+                <th className="text-right py-1.5 px-2 text-[#5a7a94]">Subnets</th>
+                <th className="text-right py-1.5 px-2 text-[#5a7a94]">Take %</th>
+                <th className="text-right py-1.5 px-2 text-[#5a7a94]">Est. Daily Return (τ)</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((v, i) => (
-                <tr key={v.hotkey} className="border-b border-gray-800 hover:bg-gray-700/30">
-                  <td className="py-1 px-2 text-gray-600">{i + 1}</td>
-                  <td className="py-1 px-2 text-gray-300">{v.name}</td>
-                  <td className="py-1 px-2 text-right tabular-nums text-gray-300">
+                <tr key={v.hotkey} className="border-b border-[#132436] hover:bg-[#1a2d42]/30">
+                  <td className="py-1 px-2 text-[#243a52]">{i + 1}</td>
+                  <td className="py-1 px-2 text-[#8faabe]">{v.name}</td>
+                  <td className="py-1 px-2 text-right tabular-nums text-[#8faabe]">
                     {v.totalStake.toFixed(2)}
                   </td>
-                  <td className="py-1 px-2 text-right text-gray-400">{v.subnets}</td>
-                  <td className="py-1 px-2 text-right tabular-nums text-gray-400">
+                  <td className="py-1 px-2 text-right text-[#6f87a0]">{v.subnets}</td>
+                  <td className="py-1 px-2 text-right tabular-nums text-[#6f87a0]">
                     {(v.take * 100).toFixed(1)}%
                   </td>
                   <td className="py-1 px-2 text-right tabular-nums text-green-400">

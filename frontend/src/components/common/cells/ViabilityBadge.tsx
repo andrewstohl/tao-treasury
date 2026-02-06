@@ -7,7 +7,7 @@ interface ViabilityBadgeProps {
 
 export default function ViabilityBadge({ tier, score }: ViabilityBadgeProps) {
   if (!tier) {
-    return <span className="text-gray-600 text-sm">--</span>
+    return <span className="text-[#4a6a80] text-sm">--</span>
   }
 
   const label = formatViabilityTierLabel(tier)

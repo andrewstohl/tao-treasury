@@ -42,7 +42,7 @@ export default function TaxAccountingExport() {
       error={error as Error}
     >
       <div className="flex items-center justify-between mb-4">
-        <span className="text-sm text-gray-400">{records.length} records found</span>
+        <span className="text-sm text-[#6f87a0]">{records.length} records found</span>
         <button
           onClick={downloadCsv}
           disabled={records.length === 0}
@@ -53,28 +53,28 @@ export default function TaxAccountingExport() {
       </div>
 
       {records.length === 0 ? (
-        <p className="text-gray-500 text-sm">No accounting records found.</p>
+        <p className="text-[#5a7a94] text-sm">No accounting records found.</p>
       ) : (
         <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
           <table className="w-full text-xs">
-            <thead className="sticky top-0 bg-gray-800">
-              <tr className="border-b border-gray-700">
-                <th className="text-left py-1.5 px-2 text-gray-500">Date</th>
-                <th className="text-left py-1.5 px-2 text-gray-500">Type</th>
-                <th className="text-left py-1.5 px-2 text-gray-500">Info</th>
-                <th className="text-right py-1.5 px-2 text-gray-500">Debit</th>
-                <th className="text-right py-1.5 px-2 text-gray-500">Credit</th>
-                <th className="text-right py-1.5 px-2 text-gray-500">Fee</th>
+            <thead className="sticky top-0 bg-[#121f2d]">
+              <tr className="border-b border-[#1e3a5f]">
+                <th className="text-left py-1.5 px-2 text-[#5a7a94]">Date</th>
+                <th className="text-left py-1.5 px-2 text-[#5a7a94]">Type</th>
+                <th className="text-left py-1.5 px-2 text-[#5a7a94]">Info</th>
+                <th className="text-right py-1.5 px-2 text-[#5a7a94]">Debit</th>
+                <th className="text-right py-1.5 px-2 text-[#5a7a94]">Credit</th>
+                <th className="text-right py-1.5 px-2 text-[#5a7a94]">Fee</th>
               </tr>
             </thead>
             <tbody>
               {records.map((rec: any, i: number) => (
-                <tr key={i} className="border-b border-gray-800 hover:bg-gray-700/30">
-                  <td className="py-1 px-2 text-gray-400 tabular-nums whitespace-nowrap">
+                <tr key={i} className="border-b border-[#132436] hover:bg-[#1a2d42]/30">
+                  <td className="py-1 px-2 text-[#6f87a0] tabular-nums whitespace-nowrap">
                     {(rec.timestamp || rec.date || '').split('T')[0]}
                   </td>
-                  <td className="py-1 px-2 text-gray-300">{rec.transaction_type || '-'}</td>
-                  <td className="py-1 px-2 text-gray-500 max-w-[200px] truncate">
+                  <td className="py-1 px-2 text-[#8faabe]">{rec.transaction_type || '-'}</td>
+                  <td className="py-1 px-2 text-[#5a7a94] max-w-[200px] truncate">
                     {rec.additional_data || '-'}
                   </td>
                   <td className="py-1 px-2 text-right tabular-nums text-red-400">
@@ -83,7 +83,7 @@ export default function TaxAccountingExport() {
                   <td className="py-1 px-2 text-right tabular-nums text-green-400">
                     {rec.credit_amount ? parseFloat(rec.credit_amount).toFixed(4) : ''}
                   </td>
-                  <td className="py-1 px-2 text-right tabular-nums text-gray-500">
+                  <td className="py-1 px-2 text-right tabular-nums text-[#5a7a94]">
                     {rec.fee_amount ? parseFloat(rec.fee_amount).toFixed(6) : ''}
                   </td>
                 </tr>

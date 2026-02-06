@@ -123,20 +123,20 @@ export default function Strategy() {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
-          <div className="text-sm text-gray-400 mb-1">Portfolio Regime</div>
+        <div className="bg-[#121f2d] rounded-lg p-4 border border-[#1e3a5f]">
+          <div className="text-sm text-[#6f87a0] mb-1">Portfolio Regime</div>
           <div className="text-xl font-semibold capitalize">{analysis.portfolio_regime.replace('_', ' ')}</div>
         </div>
-        <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
-          <div className="text-sm text-gray-400 mb-1">Eligible Subnets</div>
+        <div className="bg-[#121f2d] rounded-lg p-4 border border-[#1e3a5f]">
+          <div className="text-sm text-[#6f87a0] mb-1">Eligible Subnets</div>
           <div className="text-xl font-semibold">{analysis.eligible_subnets} / {analysis.total_subnets}</div>
         </div>
-        <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
-          <div className="text-sm text-gray-400 mb-1">Turnover Budget</div>
+        <div className="bg-[#121f2d] rounded-lg p-4 border border-[#1e3a5f]">
+          <div className="text-sm text-[#6f87a0] mb-1">Turnover Budget</div>
           <div className="text-xl font-semibold">{analysis.turnover_budget_remaining_pct.toFixed(1)}%</div>
         </div>
-        <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
-          <div className="text-sm text-gray-400 mb-1">Pending Actions</div>
+        <div className="bg-[#121f2d] rounded-lg p-4 border border-[#1e3a5f]">
+          <div className="text-sm text-[#6f87a0] mb-1">Pending Actions</div>
           <div className="text-xl font-semibold">
             {analysis.pending_recommendations}
             {analysis.urgent_recommendations > 0 && (
@@ -147,7 +147,7 @@ export default function Strategy() {
       </div>
 
       {/* Regime Distribution */}
-      <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+      <div className="bg-[#121f2d] rounded-lg p-6 border border-[#1e3a5f]">
         <h3 className="text-lg font-semibold mb-4">Position Regime Distribution</h3>
         <div className="flex gap-4 flex-wrap">
           {Object.entries(analysis.regime_summary).map(([regime, count]) => (
@@ -157,7 +157,7 @@ export default function Strategy() {
                 regime === 'risk_on' ? 'bg-green-600/20 text-green-400' :
                 regime === 'risk_off' ? 'bg-red-600/20 text-red-400' :
                 regime === 'quarantine' ? 'bg-orange-600/20 text-orange-400' :
-                regime === 'dead' ? 'bg-gray-600/20 text-gray-400' :
+                regime === 'dead' ? 'bg-[#243a52]/20 text-[#6f87a0]' :
                 'bg-yellow-600/20 text-yellow-400'
               }`}
             >
@@ -168,9 +168,9 @@ export default function Strategy() {
       </div>
 
       {/* Regime Guide - What Each Regime Means */}
-      <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+      <div className="bg-[#121f2d] rounded-lg p-6 border border-[#1e3a5f]">
         <h3 className="text-lg font-semibold mb-4">Flow Regime Guide</h3>
-        <p className="text-gray-400 text-sm mb-4">
+        <p className="text-[#6f87a0] text-sm mb-4">
           Regimes are determined by <strong>TAO flow</strong> - the net stake/unstake activity into each subnet.
           Positive flow = more people staking, negative flow = more people unstaking.
         </p>
@@ -182,10 +182,10 @@ export default function Strategy() {
               <div className="w-3 h-3 rounded-full bg-green-500"></div>
               <span className="font-semibold text-green-400">Risk On</span>
             </div>
-            <div className="text-sm text-gray-300 mb-2">
+            <div className="text-sm text-[#8faabe] mb-2">
               <strong>Criteria:</strong> 7-day flow &gt; +5% AND 14-day flow &gt; 0%
             </div>
-            <div className="text-sm text-gray-400">
+            <div className="text-sm text-[#6f87a0]">
               <strong>Action:</strong> New buys allowed. Sleeve can expand to upper bound.
               Strong positive momentum - capital is flowing in.
             </div>
@@ -197,10 +197,10 @@ export default function Strategy() {
               <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
               <span className="font-semibold text-yellow-400">Neutral</span>
             </div>
-            <div className="text-sm text-gray-300 mb-2">
+            <div className="text-sm text-[#8faabe] mb-2">
               <strong>Criteria:</strong> Mixed or flat flow (doesn't meet other regime criteria)
             </div>
-            <div className="text-sm text-gray-400">
+            <div className="text-sm text-[#6f87a0]">
               <strong>Action:</strong> Higher bar for new buys. Prefer adding to existing winners.
               Wait for clearer direction before aggressive positioning.
             </div>
@@ -212,10 +212,10 @@ export default function Strategy() {
               <div className="w-3 h-3 rounded-full bg-red-500"></div>
               <span className="font-semibold text-red-400">Risk Off</span>
             </div>
-            <div className="text-sm text-gray-300 mb-2">
+            <div className="text-sm text-[#8faabe] mb-2">
               <strong>Criteria:</strong> 7-day flow &lt; -5% OR (3-day &lt; 0 AND 7-day &lt; 0)
             </div>
-            <div className="text-sm text-gray-400">
+            <div className="text-sm text-[#6f87a0]">
               <strong>Action:</strong> No new buys. Sleeve shrinks toward lower bound.
               Prefer Root network. Capital is leaving - defensive posture.
             </div>
@@ -227,33 +227,33 @@ export default function Strategy() {
               <div className="w-3 h-3 rounded-full bg-orange-500"></div>
               <span className="font-semibold text-orange-400">Quarantine</span>
             </div>
-            <div className="text-sm text-gray-300 mb-2">
+            <div className="text-sm text-[#8faabe] mb-2">
               <strong>Criteria:</strong> 7-day flow &lt; -5% AND 14-day flow &lt; -5%
             </div>
-            <div className="text-sm text-gray-400">
+            <div className="text-sm text-[#6f87a0]">
               <strong>Action:</strong> No adds allowed. Trim 25-50% of position.
               Monitor for 48-72 hours. Sustained outflow signals potential trouble.
             </div>
           </div>
 
           {/* Dead */}
-          <div className="bg-gray-600/10 border border-gray-600/30 rounded-lg p-4">
+          <div className="bg-[#243a52]/10 border border-[#2a4a66]/30 rounded-lg p-4">
             <div className="flex items-center gap-2 mb-2">
-              <div className="w-3 h-3 rounded-full bg-gray-500"></div>
-              <span className="font-semibold text-gray-400">Dead</span>
+              <div className="w-3 h-3 rounded-full bg-[#3a5a72]"></div>
+              <span className="font-semibold text-[#6f87a0]">Dead</span>
             </div>
-            <div className="text-sm text-gray-300 mb-2">
+            <div className="text-sm text-[#8faabe] mb-2">
               <strong>Criteria:</strong> 7-day flow &lt; -15% AND 14-day flow &lt; -15%
             </div>
-            <div className="text-sm text-gray-400">
+            <div className="text-sm text-[#6f87a0]">
               <strong>Action:</strong> Mandatory accelerated exit.
               Exit even if it crystallizes a larger loss - severe sustained outflow indicates fundamental problems.
             </div>
           </div>
         </div>
 
-        <div className="mt-4 p-3 bg-gray-700/50 rounded-lg">
-          <div className="text-xs text-gray-400">
+        <div className="mt-4 p-3 bg-[#1a2d42]/50 rounded-lg">
+          <div className="text-xs text-[#6f87a0]">
             <strong>Note:</strong> These thresholds are configurable. Current settings:
             Risk-Off threshold = -5%, Quarantine threshold = -15%, Persistence = 3 days.
           </div>
@@ -261,59 +261,59 @@ export default function Strategy() {
       </div>
 
       {/* Eligibility Gate - Why Subnets Get Excluded */}
-      <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+      <div className="bg-[#121f2d] rounded-lg p-6 border border-[#1e3a5f]">
         <h3 className="text-lg font-semibold mb-4">Eligibility Gate</h3>
-        <p className="text-gray-400 text-sm mb-4">
+        <p className="text-[#6f87a0] text-sm mb-4">
           Subnets must pass all eligibility criteria to be considered for investment.
           Here's why subnets get excluded from the investable universe:
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div className="bg-gray-700/30 rounded-lg p-3">
+          <div className="bg-[#1a2d42]/30 rounded-lg p-3">
             <div className="font-medium text-sm mb-1">Low Emission Share</div>
-            <div className="text-xs text-gray-400">
+            <div className="text-xs text-[#6f87a0]">
               Emission share &lt; 0.1% — Not enough yield generation potential
             </div>
           </div>
-          <div className="bg-gray-700/30 rounded-lg p-3">
+          <div className="bg-[#1a2d42]/30 rounded-lg p-3">
             <div className="font-medium text-sm mb-1">Low Liquidity</div>
-            <div className="text-xs text-gray-400">
+            <div className="text-xs text-[#6f87a0]">
               Pool reserve too small — Can't enter/exit positions without excessive slippage
             </div>
           </div>
-          <div className="bg-gray-700/30 rounded-lg p-3">
+          <div className="bg-[#1a2d42]/30 rounded-lg p-3">
             <div className="font-medium text-sm mb-1">Low Holder Count</div>
-            <div className="text-xs text-gray-400">
+            <div className="text-xs text-[#6f87a0]">
               Few unique stakers — Concentration risk, potential manipulation
             </div>
           </div>
-          <div className="bg-gray-700/30 rounded-lg p-3">
+          <div className="bg-[#1a2d42]/30 rounded-lg p-3">
             <div className="font-medium text-sm mb-1">Too New</div>
-            <div className="text-xs text-gray-400">
+            <div className="text-xs text-[#6f87a0]">
               Below minimum age threshold — Need track record before investing
             </div>
           </div>
-          <div className="bg-gray-700/30 rounded-lg p-3">
+          <div className="bg-[#1a2d42]/30 rounded-lg p-3">
             <div className="font-medium text-sm mb-1">High Owner Take</div>
-            <div className="text-xs text-gray-400">
+            <div className="text-xs text-[#6f87a0]">
               Owner take rate &gt; 20% — Too much value extraction from stakers
             </div>
           </div>
-          <div className="bg-gray-700/30 rounded-lg p-3">
+          <div className="bg-[#1a2d42]/30 rounded-lg p-3">
             <div className="font-medium text-sm mb-1">Negative Flow</div>
-            <div className="text-xs text-gray-400">
+            <div className="text-xs text-[#6f87a0]">
               Sustained outflow (7d AND 14d negative) — Capital is leaving
             </div>
           </div>
-          <div className="bg-gray-700/30 rounded-lg p-3">
+          <div className="bg-[#1a2d42]/30 rounded-lg p-3">
             <div className="font-medium text-sm mb-1">High Exit Slippage</div>
-            <div className="text-xs text-gray-400">
+            <div className="text-xs text-[#6f87a0]">
               Exit costs exceed caps — Would lose too much TAO on exit
             </div>
           </div>
-          <div className="bg-gray-700/30 rounded-lg p-3">
+          <div className="bg-[#1a2d42]/30 rounded-lg p-3">
             <div className="font-medium text-sm mb-1">Validator Quality</div>
-            <div className="text-xs text-gray-400">
+            <div className="text-xs text-[#6f87a0]">
               Low vtrust (&lt;0.5) or high take (&gt;20%) — Validator risk
             </div>
           </div>
@@ -325,7 +325,7 @@ export default function Strategy() {
             <div className="text-sm font-medium mb-2">Current Exclusions by Reason:</div>
             <div className="flex gap-2 flex-wrap">
               {Object.entries(analysis.ineligible_reasons).map(([reason, count]) => (
-                <div key={reason} className="bg-gray-700/50 px-2 py-1 rounded text-xs">
+                <div key={reason} className="bg-[#1a2d42]/50 px-2 py-1 rounded text-xs">
                   {reason}: {count}
                 </div>
               ))}
@@ -336,34 +336,34 @@ export default function Strategy() {
 
       {/* Position Analysis */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+        <div className="bg-[#121f2d] rounded-lg p-4 border border-[#1e3a5f]">
           <div className="flex items-center gap-2 mb-2">
             <TrendingUp className="w-5 h-5 text-yellow-400" />
             <span className="font-semibold">Overweight</span>
           </div>
           <div className="text-3xl font-bold">{analysis.overweight_count}</div>
-          <div className="text-sm text-gray-500">positions above limit</div>
+          <div className="text-sm text-[#5a7a94]">positions above limit</div>
         </div>
-        <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+        <div className="bg-[#121f2d] rounded-lg p-4 border border-[#1e3a5f]">
           <div className="flex items-center gap-2 mb-2">
             <TrendingUp className="w-5 h-5 text-blue-400 rotate-180" />
             <span className="font-semibold">Underweight</span>
           </div>
           <div className="text-3xl font-bold">{analysis.underweight_count}</div>
-          <div className="text-sm text-gray-500">positions below target</div>
+          <div className="text-sm text-[#5a7a94]">positions below target</div>
         </div>
-        <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+        <div className="bg-[#121f2d] rounded-lg p-4 border border-[#1e3a5f]">
           <div className="flex items-center gap-2 mb-2">
             <XCircle className="w-5 h-5 text-red-400" />
             <span className="font-semibold">To Exit</span>
           </div>
           <div className="text-3xl font-bold">{analysis.positions_to_exit}</div>
-          <div className="text-sm text-gray-500">positions flagged for exit</div>
+          <div className="text-sm text-[#5a7a94]">positions flagged for exit</div>
         </div>
       </div>
 
       {/* Constraint Status */}
-      <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+      <div className="bg-[#121f2d] rounded-lg p-6 border border-[#1e3a5f]">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold">Constraint Status</h3>
           <div className={`px-3 py-1 rounded-full text-sm ${
@@ -380,7 +380,7 @@ export default function Strategy() {
               {constraints.violations.map((v, i) => (
                 <div key={i} className="bg-red-900/20 border border-red-700 rounded-lg p-3">
                   <div className="font-medium">{v.constraint}</div>
-                  <div className="text-sm text-gray-400">{v.explanation}</div>
+                  <div className="text-sm text-[#6f87a0]">{v.explanation}</div>
                   <div className="text-sm text-red-400 mt-1">{v.action_required}</div>
                 </div>
               ))}
@@ -395,7 +395,7 @@ export default function Strategy() {
               {constraints.warnings.map((w, i) => (
                 <div key={i} className="bg-yellow-900/20 border border-yellow-700 rounded-lg p-3">
                   <div className="font-medium">{w.constraint}</div>
-                  <div className="text-sm text-gray-400">{w.explanation}</div>
+                  <div className="text-sm text-[#6f87a0]">{w.explanation}</div>
                 </div>
               ))}
             </div>
@@ -411,10 +411,10 @@ export default function Strategy() {
       </div>
 
       {/* Eligible Universe (collapsible) */}
-      <div className="bg-gray-800 rounded-lg border border-gray-700">
+      <div className="bg-[#121f2d] rounded-lg border border-[#1e3a5f]">
         <button
           onClick={() => setShowEligible(!showEligible)}
-          className="w-full p-4 flex items-center justify-between hover:bg-gray-700/50"
+          className="w-full p-4 flex items-center justify-between hover:bg-[#1a2d42]/50"
         >
           <h3 className="text-lg font-semibold">Eligible Universe</h3>
           {showEligible ? <ChevronUp /> : <ChevronDown />}
@@ -424,23 +424,23 @@ export default function Strategy() {
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="text-left text-sm text-gray-400 border-b border-gray-700">
+                  <tr className="text-left text-sm text-[#6f87a0] border-b border-[#1e3a5f]">
                     <th className="pb-2">Subnet</th>
                     <th className="pb-2">Score</th>
                   </tr>
                 </thead>
                 <tbody>
                   {eligible.map((e) => (
-                    <tr key={e.netuid} className="border-b border-gray-700/50">
+                    <tr key={e.netuid} className="border-b border-[#1e3a5f]/50">
                       <td className="py-2">
-                        <span className="text-gray-500">SN{e.netuid}</span>{' '}
+                        <span className="text-[#5a7a94]">SN{e.netuid}</span>{' '}
                         <span className="font-medium">{e.name}</span>
                       </td>
                       <td className="py-2">
                         <span className={`tabular-nums ${
                           (e.score || 0) >= 70 ? 'text-green-400' :
                           (e.score || 0) >= 50 ? 'text-yellow-400' :
-                          'text-gray-400'
+                          'text-[#6f87a0]'
                         }`}>
                           {e.score || '-'}
                         </span>
@@ -455,10 +455,10 @@ export default function Strategy() {
       </div>
 
       {/* Position Limits (collapsible) */}
-      <div className="bg-gray-800 rounded-lg border border-gray-700">
+      <div className="bg-[#121f2d] rounded-lg border border-[#1e3a5f]">
         <button
           onClick={() => setShowLimits(!showLimits)}
-          className="w-full p-4 flex items-center justify-between hover:bg-gray-700/50"
+          className="w-full p-4 flex items-center justify-between hover:bg-[#1a2d42]/50"
         >
           <h3 className="text-lg font-semibold">Position Limits</h3>
           {showLimits ? <ChevronUp /> : <ChevronDown />}
@@ -468,7 +468,7 @@ export default function Strategy() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-left text-gray-400 border-b border-gray-700">
+                  <tr className="text-left text-[#6f87a0] border-b border-[#1e3a5f]">
                     <th className="pb-2">Subnet</th>
                     <th className="pb-2 text-right">Current</th>
                     <th className="pb-2 text-right">Max</th>
@@ -478,9 +478,9 @@ export default function Strategy() {
                 </thead>
                 <tbody>
                   {limits.map((l) => (
-                    <tr key={l.netuid} className="border-b border-gray-700/50">
+                    <tr key={l.netuid} className="border-b border-[#1e3a5f]/50">
                       <td className="py-2">
-                        <span className="text-gray-500">SN{l.netuid}</span>{' '}
+                        <span className="text-[#5a7a94]">SN{l.netuid}</span>{' '}
                         <span>{l.subnet_name}</span>
                       </td>
                       <td className="py-2 text-right tabular-nums">
@@ -495,7 +495,7 @@ export default function Strategy() {
                         </span>
                       </td>
                       <td className="py-2">
-                        <span className="px-2 py-1 rounded text-xs bg-gray-700">
+                        <span className="px-2 py-1 rounded text-xs bg-[#1a2d42]">
                           {l.binding_constraint}
                         </span>
                       </td>

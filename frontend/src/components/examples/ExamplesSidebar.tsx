@@ -53,9 +53,9 @@ export default function ExamplesSidebar() {
   }
 
   return (
-    <aside className="w-56 min-w-56 bg-gray-900/50 border-r border-gray-700 overflow-y-auto">
-      <div className="p-3 border-b border-gray-700">
-        <h3 className="text-sm font-semibold text-gray-300">API Examples</h3>
+    <aside className="w-56 min-w-56 bg-[#050d15]/50 border-r border-[#1e3a5f] overflow-y-auto">
+      <div className="p-3 border-b border-[#1e3a5f]">
+        <h3 className="text-sm font-semibold text-[#8faabe]">API Examples</h3>
       </div>
       <nav className="py-2">
         {categories.map((cat) => {
@@ -65,7 +65,7 @@ export default function ExamplesSidebar() {
             <div key={cat.id}>
               <button
                 onClick={() => toggleCategory(cat.id)}
-                className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-gray-400 hover:text-gray-200 uppercase tracking-wider"
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-[#6f87a0] hover:text-[#a8c4d9] uppercase tracking-wider"
               >
                 {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                 <Icon size={12} />
@@ -83,7 +83,7 @@ export default function ExamplesSidebar() {
                         className={`block px-3 py-1.5 pl-8 text-xs transition-colors ${
                           isActive
                             ? 'bg-tao-600/20 text-tao-400 border-r-2 border-tao-400'
-                            : 'text-gray-500 hover:bg-gray-700/50 hover:text-gray-300'
+                            : 'text-[#5a7a94] hover:bg-[#1a2d42]/50 hover:text-[#8faabe]'
                         }`}
                       >
                         {item.label}

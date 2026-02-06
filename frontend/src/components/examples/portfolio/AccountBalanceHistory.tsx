@@ -46,7 +46,7 @@ export default function AccountBalanceHistory() {
             key={d}
             onClick={() => setDays(d)}
             className={`px-3 py-1 rounded text-xs ${
-              days === d ? 'bg-tao-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+              days === d ? 'bg-tao-600 text-white' : 'bg-[#1a2d42] text-[#6f87a0] hover:bg-[#243a52]'
             }`}
           >
             {d}d
@@ -54,7 +54,7 @@ export default function AccountBalanceHistory() {
         ))}
       </div>
       {chartData.length === 0 ? (
-        <p className="text-gray-500 text-sm">No balance history available.</p>
+        <p className="text-[#5a7a94] text-sm">No balance history available.</p>
       ) : (
         <ResponsiveContainer width="100%" height={400}>
           <AreaChart data={chartData}>

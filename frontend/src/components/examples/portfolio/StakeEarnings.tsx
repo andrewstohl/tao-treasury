@@ -60,7 +60,7 @@ export default function StakeEarnings() {
             key={d}
             onClick={() => setDays(d)}
             className={`px-3 py-1 rounded text-xs ${
-              days === d ? 'bg-tao-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+              days === d ? 'bg-tao-600 text-white' : 'bg-[#1a2d42] text-[#6f87a0] hover:bg-[#243a52]'
             }`}
           >
             {d}d
@@ -69,14 +69,14 @@ export default function StakeEarnings() {
       </div>
 
       <div className="mb-4 text-sm">
-        <span className="text-gray-400">Net Change ({days}d): </span>
+        <span className="text-[#6f87a0]">Net Change ({days}d): </span>
         <span className={`tabular-nums font-semibold ${totalChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
           {totalChange >= 0 ? '+' : ''}{totalChange.toFixed(4)} τ
         </span>
       </div>
 
       {earningsData.length === 0 ? (
-        <p className="text-gray-500 text-sm">No earnings data available.</p>
+        <p className="text-[#5a7a94] text-sm">No earnings data available.</p>
       ) : (
         <>
           <ResponsiveContainer width="100%" height={300}>
@@ -99,10 +99,10 @@ export default function StakeEarnings() {
           <div className="mt-4 overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="border-b border-gray-700">
-                  <th className="text-left py-1 px-2 text-gray-500">Date</th>
-                  <th className="text-right py-1 px-2 text-gray-500">Staked Balance (τ)</th>
-                  <th className="text-right py-1 px-2 text-gray-500">Daily Change</th>
+                <tr className="border-b border-[#1e3a5f]">
+                  <th className="text-left py-1 px-2 text-[#5a7a94]">Date</th>
+                  <th className="text-right py-1 px-2 text-[#5a7a94]">Staked Balance (τ)</th>
+                  <th className="text-right py-1 px-2 text-[#5a7a94]">Daily Change</th>
                 </tr>
               </thead>
               <tbody>
@@ -110,9 +110,9 @@ export default function StakeEarnings() {
                   const balIdx = balances.findIndex((b: any) => b.date === d.date)
                   const bal = balIdx >= 0 ? balances[balIdx].staked : 0
                   return (
-                    <tr key={d.date} className="border-b border-gray-800">
-                      <td className="py-1 px-2 text-gray-400 tabular-nums">{d.date}</td>
-                      <td className="py-1 px-2 text-right tabular-nums text-gray-300">{bal.toFixed(4)}</td>
+                    <tr key={d.date} className="border-b border-[#132436]">
+                      <td className="py-1 px-2 text-[#6f87a0] tabular-nums">{d.date}</td>
+                      <td className="py-1 px-2 text-right tabular-nums text-[#8faabe]">{bal.toFixed(4)}</td>
                       <td className={`py-1 px-2 text-right tabular-nums ${d.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                         {d.change >= 0 ? '+' : ''}{d.change.toFixed(4)}
                       </td>

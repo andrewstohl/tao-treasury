@@ -29,14 +29,14 @@ export default function RiskMetricsPanel() {
 
   if (isLoading) {
     return (
-      <div className="bg-gray-800 rounded-lg border border-gray-700 p-6 animate-pulse h-64" />
+      <div className="bg-[#121f2d] rounded-lg border border-[#1e3a5f] p-6 animate-pulse h-64" />
     )
   }
 
   if (!metrics || metrics.period_days === 0) {
     return (
-      <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
-        <div className="text-sm text-gray-500 text-center py-8">
+      <div className="bg-[#121f2d] rounded-lg border border-[#1e3a5f] p-6">
+        <div className="text-sm text-[#5a7a94] text-center py-8">
           Insufficient data for risk metrics. More daily NAV history is needed.
         </div>
       </div>
@@ -58,8 +58,8 @@ export default function RiskMetricsPanel() {
               onClick={() => setDays(opt.days)}
               className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
                 days === opt.days
-                  ? 'bg-gray-600 text-white'
-                  : 'text-gray-500 hover:text-gray-300'
+                  ? 'bg-[#243a52] text-white'
+                  : 'text-[#5a7a94] hover:text-[#8faabe]'
               }`}
             >
               {opt.label}
@@ -106,24 +106,24 @@ export default function RiskMetricsPanel() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Volatility & Return Stats */}
-        <div className="lg:col-span-2 bg-gray-800 rounded-lg border border-gray-700 p-6">
-          <div className="text-sm text-gray-400 mb-4">Return & Risk Profile</div>
+        <div className="lg:col-span-2 bg-[#121f2d] rounded-lg border border-[#1e3a5f] p-6">
+          <div className="text-sm text-[#6f87a0] mb-4">Return & Risk Profile</div>
           <ReturnRiskProfile metrics={metrics} />
         </div>
 
         {/* Daily Return Distribution Mini Chart */}
-        <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
-          <div className="text-sm text-gray-400 mb-4">Return Distribution</div>
+        <div className="bg-[#121f2d] rounded-lg border border-[#1e3a5f] p-6">
+          <div className="text-sm text-[#6f87a0] mb-4">Return Distribution</div>
           <ReturnDistribution dailyReturns={metrics.daily_returns} />
         </div>
       </div>
 
       {/* Benchmark Comparison */}
       {metrics.benchmarks.length > 0 && (
-        <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-700 flex items-center justify-between">
-            <div className="text-sm text-gray-400">Benchmark Comparison</div>
-            <div className="text-xs text-gray-500">
+        <div className="bg-[#121f2d] rounded-lg border border-[#1e3a5f] overflow-hidden">
+          <div className="px-6 py-4 border-b border-[#1e3a5f] flex items-center justify-between">
+            <div className="text-sm text-[#6f87a0]">Benchmark Comparison</div>
+            <div className="text-xs text-[#5a7a94]">
               Risk-free: {safeFloat(metrics.risk_free_rate_pct).toFixed(2)}% ({metrics.risk_free_source})
             </div>
           </div>
@@ -169,8 +169,8 @@ function RatioCard({
     : value.toFixed(2)
 
   return (
-    <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 group relative">
-      <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-2">
+    <div className="bg-[#121f2d] rounded-lg border border-[#1e3a5f] p-4 group relative">
+      <div className="flex items-center gap-1.5 text-xs text-[#5a7a94] mb-2">
         {icon}
         {label}
         <Info className="w-3 h-3 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -179,7 +179,7 @@ function RatioCard({
         {displayValue}
       </div>
       {/* Tooltip on hover */}
-      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-xs text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none w-56 z-10 text-center">
+      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-[#050d15] border border-[#2a4a66] rounded-lg text-xs text-[#8faabe] opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none w-56 z-10 text-center">
         {tooltip}
       </div>
     </div>
@@ -225,7 +225,7 @@ function ReturnRiskProfile({ metrics }: { metrics: RiskMetricsType }) {
       <StatRow
         label="Drawdown (TAO)"
         value={`${formatTao(metrics.max_drawdown_tao)} τ`}
-        color="text-gray-300"
+        color="text-[#8faabe]"
       />
       <StatRow
         label="Best Day"
@@ -252,7 +252,7 @@ function StatRow({
 }) {
   return (
     <div className="flex justify-between items-center">
-      <span className="text-sm text-gray-400">{label}</span>
+      <span className="text-sm text-[#6f87a0]">{label}</span>
       <span className={`tabular-nums text-sm font-medium ${color}`}>{value}</span>
     </div>
   )
@@ -264,7 +264,7 @@ function ReturnDistribution({
   dailyReturns: { date: string; return_pct: string; nav_tao: string }[]
 }) {
   if (dailyReturns.length === 0) {
-    return <div className="text-xs text-gray-600 text-center py-8">No data</div>
+    return <div className="text-xs text-[#243a52] text-center py-8">No data</div>
   }
 
   // Build histogram bins
@@ -296,7 +296,7 @@ function ReturnDistribution({
           const barColor = isNegative
             ? 'bg-red-500/60'
             : isZero
-              ? 'bg-gray-500/60'
+              ? 'bg-[#3a5a72]/60'
               : 'bg-green-500/60'
 
           return (
@@ -315,21 +315,21 @@ function ReturnDistribution({
       </div>
 
       {/* X-axis labels */}
-      <div className="flex justify-between text-xs text-gray-600 tabular-nums">
+      <div className="flex justify-between text-xs text-[#243a52] tabular-nums">
         <span>{min.toFixed(1)}%</span>
         <span>0%</span>
         <span>{max.toFixed(1)}%</span>
       </div>
 
       {/* Summary stats */}
-      <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-gray-700">
+      <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-[#1e3a5f]">
         <div className="flex justify-between">
-          <span className="text-gray-500">Days</span>
-          <span className="text-gray-300 tabular-nums">{returns.length}</span>
+          <span className="text-[#5a7a94]">Days</span>
+          <span className="text-[#8faabe] tabular-nums">{returns.length}</span>
         </div>
         <div className="flex justify-between">
-          <span className="text-gray-500">Median</span>
-          <span className="text-gray-300 tabular-nums">
+          <span className="text-[#5a7a94]">Median</span>
+          <span className="text-[#8faabe] tabular-nums">
             {[...returns].sort((a, b) => a - b)[Math.floor(returns.length / 2)]?.toFixed(2)}%
           </span>
         </div>
@@ -352,8 +352,8 @@ function BenchmarkTable({
   return (
     <div className="overflow-x-auto">
       <table className="w-full">
-        <thead className="bg-gray-900/50">
-          <tr className="text-xs text-gray-500 uppercase tracking-wider">
+        <thead className="bg-[#050d15]/50">
+          <tr className="text-xs text-[#5a7a94] uppercase tracking-wider">
             <th className="px-4 py-2 text-left">Strategy</th>
             <th className="px-4 py-2 text-right">Ann. Return</th>
             <th className="px-4 py-2 text-right">Volatility</th>
@@ -372,13 +372,13 @@ function BenchmarkTable({
                 {formatPercent(portfolioReturn)}
               </span>
             </td>
-            <td className="px-4 py-2.5 text-right tabular-nums text-sm text-gray-300">
+            <td className="px-4 py-2.5 text-right tabular-nums text-sm text-[#8faabe]">
               {portfolioVol.toFixed(2)}%
             </td>
-            <td className="px-4 py-2.5 text-right tabular-nums text-sm text-gray-300">
+            <td className="px-4 py-2.5 text-right tabular-nums text-sm text-[#8faabe]">
               {portfolioSharpe.toFixed(2)}
             </td>
-            <td className="px-4 py-2.5 text-right tabular-nums text-sm text-gray-500">
+            <td className="px-4 py-2.5 text-right tabular-nums text-sm text-[#5a7a94]">
               --
             </td>
           </tr>
@@ -391,10 +391,10 @@ function BenchmarkTable({
             const sharpe = b.sharpe_ratio != null ? safeFloat(b.sharpe_ratio) : null
 
             return (
-              <tr key={b.id} className="hover:bg-gray-700/20 group">
+              <tr key={b.id} className="hover:bg-[#1a2d42]/20 group">
                 <td className="px-4 py-2.5">
-                  <div className="text-sm text-gray-300">{b.name}</div>
-                  <div className="text-xs text-gray-600 hidden group-hover:block max-w-xs">
+                  <div className="text-sm text-[#8faabe]">{b.name}</div>
+                  <div className="text-xs text-[#243a52] hidden group-hover:block max-w-xs">
                     {b.description}
                   </div>
                 </td>
@@ -403,10 +403,10 @@ function BenchmarkTable({
                     {formatPercent(ret)}
                   </span>
                 </td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-sm text-gray-400">
+                <td className="px-4 py-2.5 text-right tabular-nums text-sm text-[#6f87a0]">
                   {vol != null ? `${vol.toFixed(2)}%` : '--'}
                 </td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-sm text-gray-400">
+                <td className="px-4 py-2.5 text-right tabular-nums text-sm text-[#6f87a0]">
                   {sharpe != null ? sharpe.toFixed(2) : '--'}
                 </td>
                 <td className="px-4 py-2.5 text-right">

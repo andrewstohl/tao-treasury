@@ -57,25 +57,25 @@ export default function DailyRecycleHalvening() {
     >
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4 text-sm">
         <div>
-          <span className="text-gray-500">Total Issuance</span>
+          <span className="text-[#5a7a94]">Total Issuance</span>
           <p className="tabular-nums text-white">{totalIssuance > 0 ? totalIssuance.toLocaleString() : 'N/A'} τ</p>
         </div>
         <div>
-          <span className="text-gray-500">Daily Emission</span>
+          <span className="text-[#5a7a94]">Daily Emission</span>
           <p className="tabular-nums text-white">{dailyEmission > 0 ? dailyEmission.toFixed(2) : 'N/A'} τ</p>
         </div>
         <div>
-          <span className="text-gray-500">Avg Daily Recycle</span>
+          <span className="text-[#5a7a94]">Avg Daily Recycle</span>
           <p className="tabular-nums text-yellow-400">{avgDailyRecycle.toFixed(2)} τ</p>
         </div>
         <div>
-          <span className="text-gray-500">Est. Halving Date</span>
+          <span className="text-[#5a7a94]">Est. Halving Date</span>
           <p className="tabular-nums text-tao-400">{halvingDate}</p>
         </div>
       </div>
 
       {chartData.length === 0 ? (
-        <p className="text-gray-500 text-sm">No recycle data available. This endpoint may require subnet history data.</p>
+        <p className="text-[#5a7a94] text-sm">No recycle data available. This endpoint may require subnet history data.</p>
       ) : (
         <ResponsiveContainer width="100%" height={400}>
           <BarChart data={chartData}>

@@ -23,14 +23,14 @@ export default function SortableHeader<K extends string>({
 
   return (
     <th
-      className={`px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-700/50 select-none ${
+      className={`px-4 py-3 text-xs font-medium text-[#6f87a0] uppercase tracking-wider cursor-pointer hover:bg-[#1a2d42]/50 select-none ${
         align === 'right' ? 'text-right' : 'text-left'
       }`}
       onClick={() => onSort(sortKey)}
     >
       <div className={`flex items-center gap-1 ${align === 'right' ? 'justify-end' : ''}`}>
         <span>{label}</span>
-        <span className="text-gray-500">
+        <span className="text-[#5a7a94]">
           {isActive ? (
             currentDirection === 'asc' ? (
               <ChevronUp className="w-3 h-3" />

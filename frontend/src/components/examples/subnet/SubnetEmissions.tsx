@@ -60,17 +60,17 @@ export default function SubnetEmissions() {
       error={error as Error}
     >
       <div className="flex items-center gap-3 mb-4">
-        <label className="text-xs text-gray-400">Subnets (comma-separated):</label>
+        <label className="text-xs text-[#6f87a0]">Subnets (comma-separated):</label>
         <input
           value={netuids}
           onChange={(e) => setNetuids(e.target.value)}
-          className="w-48 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-white"
+          className="w-48 px-2 py-1 bg-[#1a2d42] border border-[#2a4a66] rounded text-xs text-white"
           placeholder="3,8,19"
         />
       </div>
 
       {chartData.length === 0 ? (
-        <p className="text-gray-500 text-sm">No emission data available.</p>
+        <p className="text-[#5a7a94] text-sm">No emission data available.</p>
       ) : (
         <ResponsiveContainer width="100%" height={400}>
           <LineChart data={chartData}>

@@ -76,7 +76,7 @@ export function getViabilityTierBgColor(tier: string | null | undefined): string
     case 'tier_2': return 'bg-green-600/20 text-green-400'
     case 'tier_3': return 'bg-yellow-600/20 text-yellow-400'
     case 'tier_4': return 'bg-red-600/20 text-red-400'
-    default: return 'bg-gray-700/30 text-gray-600'
+    default: return 'bg-[#1a2d42]/30 text-[#4a6a80]'
   }
 }
 

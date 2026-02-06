@@ -6,7 +6,7 @@ interface RegimeBadgeProps {
 
 export default function RegimeBadge({ regime }: RegimeBadgeProps) {
   if (!regime) {
-    return <span className="text-gray-600 text-sm">--</span>
+    return <span className="text-[#4a6a80] text-sm">--</span>
   }
 
   return (

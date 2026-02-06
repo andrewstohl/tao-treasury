@@ -23,14 +23,14 @@ export default function PriceSensitivity() {
 
   if (isLoading) {
     return (
-      <div className="bg-gray-800 rounded-lg border border-gray-700 p-6 animate-pulse h-64" />
+      <div className="bg-[#121f2d] rounded-lg border border-[#1e3a5f] p-6 animate-pulse h-64" />
     )
   }
 
   if (!scenario) {
     return (
-      <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
-        <div className="text-sm text-gray-500 text-center py-8">
+      <div className="bg-[#121f2d] rounded-lg border border-[#1e3a5f] p-6">
+        <div className="text-sm text-[#5a7a94] text-center py-8">
           Scenario analysis data unavailable.
         </div>
       </div>
@@ -47,18 +47,18 @@ export default function PriceSensitivity() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Sensitivity Table */}
-        <div className="lg:col-span-2 bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-700 flex items-center justify-between">
-            <div className="text-sm text-gray-400">Price Sensitivity Table</div>
-            <div className="text-sm text-gray-500">
+        <div className="lg:col-span-2 bg-[#121f2d] rounded-lg border border-[#1e3a5f] overflow-hidden">
+          <div className="px-6 py-4 border-b border-[#1e3a5f] flex items-center justify-between">
+            <div className="text-sm text-[#6f87a0]">Price Sensitivity Table</div>
+            <div className="text-sm text-[#5a7a94]">
               TAO: {formatUsd(scenario.current_tao_price_usd)}
             </div>
           </div>
 
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gray-900/50">
-                <tr className="text-xs text-gray-500 uppercase tracking-wider">
+              <thead className="bg-[#050d15]/50">
+                <tr className="text-xs text-[#5a7a94] uppercase tracking-wider">
                   <th className="px-4 py-2 text-left">Shock</th>
                   <th className="px-4 py-2 text-right">TAO Price</th>
                   <th className="px-4 py-2 text-right">NAV (TAO)</th>
@@ -77,8 +77,8 @@ export default function PriceSensitivity() {
         </div>
 
         {/* Risk Exposure Card */}
-        <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
-          <div className="text-sm text-gray-400 mb-4 flex items-center gap-2">
+        <div className="bg-[#121f2d] rounded-lg border border-[#1e3a5f] p-6">
+          <div className="text-sm text-[#6f87a0] mb-4 flex items-center gap-2">
             <Shield className="w-4 h-4" />
             Risk Exposure
           </div>
@@ -88,10 +88,10 @@ export default function PriceSensitivity() {
 
       {/* Stress Scenarios */}
       {scenario.scenarios.length > 0 && (
-        <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-700 flex items-center justify-between">
-            <div className="text-sm text-gray-400">Stress Scenarios</div>
-            <div className="text-xs text-gray-500">
+        <div className="bg-[#121f2d] rounded-lg border border-[#1e3a5f] overflow-hidden">
+          <div className="px-6 py-4 border-b border-[#1e3a5f] flex items-center justify-between">
+            <div className="text-sm text-[#6f87a0]">Stress Scenarios</div>
+            <div className="text-xs text-[#5a7a94]">
               {scenario.scenarios.length} scenarios
             </div>
           </div>
@@ -129,12 +129,12 @@ function SensitivityRow({
 
   // Background highlight for base row
   const rowClass = isBase
-    ? 'bg-gray-700/30 font-semibold'
-    : 'hover:bg-gray-700/20'
+    ? 'bg-[#1a2d42]/30 font-semibold'
+    : 'hover:bg-[#1a2d42]/20'
 
   // Color for shock column
   const shockColor = isBase
-    ? 'text-gray-300'
+    ? 'text-[#8faabe]'
     : isPositive
       ? 'text-green-400'
       : 'text-red-400'
@@ -144,18 +144,18 @@ function SensitivityRow({
       <td className={`px-4 py-2.5 tabular-nums text-sm ${shockColor}`}>
         {isBase ? 'Current' : `${shock > 0 ? '+' : ''}${shock}%`}
       </td>
-      <td className="px-4 py-2.5 text-right tabular-nums text-sm text-gray-300">
+      <td className="px-4 py-2.5 text-right tabular-nums text-sm text-[#8faabe]">
         {formatUsd(point.tao_price_usd)}
       </td>
-      <td className="px-4 py-2.5 text-right tabular-nums text-sm text-gray-400">
+      <td className="px-4 py-2.5 text-right tabular-nums text-sm text-[#6f87a0]">
         {formatTao(point.nav_tao)} τ
       </td>
-      <td className="px-4 py-2.5 text-right tabular-nums text-sm text-gray-300">
+      <td className="px-4 py-2.5 text-right tabular-nums text-sm text-[#8faabe]">
         {formatUsd(point.nav_usd)}
       </td>
       <td className="px-4 py-2.5 text-right">
         {isBase ? (
-          <span className="text-gray-600 text-sm">--</span>
+          <span className="text-[#243a52] text-sm">--</span>
         ) : (
           <span
             className={`tabular-nums text-sm ${
@@ -169,7 +169,7 @@ function SensitivityRow({
       </td>
       <td className="px-4 py-2.5 text-right">
         {isBase ? (
-          <span className="text-gray-600 text-sm">--</span>
+          <span className="text-[#243a52] text-sm">--</span>
         ) : (
           <span
             className={`tabular-nums text-sm ${
@@ -206,13 +206,13 @@ function ScenarioCard({
     <div>
       <button
         onClick={onToggle}
-        className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-700/20 transition-colors"
+        className="w-full px-6 py-4 flex items-center justify-between hover:bg-[#1a2d42]/20 transition-colors"
       >
         <div className="flex items-center gap-3">
           <Icon className={`w-5 h-5 flex-shrink-0 ${iconColor}`} />
           <div className="text-left">
             <div className="font-medium text-sm">{scenario.name}</div>
-            <div className="text-xs text-gray-500 flex gap-3 mt-0.5">
+            <div className="text-xs text-[#5a7a94] flex gap-3 mt-0.5">
               <span>TAO: {scenario.tao_price_change_pct > 0 ? '+' : ''}{scenario.tao_price_change_pct}%</span>
               {scenario.alpha_impact_pct !== 0 && (
                 <span>Alpha: {scenario.alpha_impact_pct > 0 ? '+' : ''}{scenario.alpha_impact_pct}%</span>
@@ -232,40 +232,40 @@ function ScenarioCard({
             </span>
           </div>
           {isExpanded ? (
-            <ChevronUp className="w-4 h-4 text-gray-500" />
+            <ChevronUp className="w-4 h-4 text-[#5a7a94]" />
           ) : (
-            <ChevronDown className="w-4 h-4 text-gray-500" />
+            <ChevronDown className="w-4 h-4 text-[#5a7a94]" />
           )}
         </div>
       </button>
 
       {isExpanded && (
         <div className="px-6 pb-4 pt-0">
-          <div className="bg-gray-900/50 rounded-lg p-4 space-y-3">
-            <p className="text-sm text-gray-400">{scenario.description}</p>
+          <div className="bg-[#050d15]/50 rounded-lg p-4 space-y-3">
+            <p className="text-sm text-[#6f87a0]">{scenario.description}</p>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div>
-                <div className="text-xs text-gray-500">New TAO Price</div>
-                <div className="tabular-nums text-gray-300">
+                <div className="text-xs text-[#5a7a94]">New TAO Price</div>
+                <div className="tabular-nums text-[#8faabe]">
                   {formatUsd(scenario.new_tao_price_usd)}
                 </div>
               </div>
               <div>
-                <div className="text-xs text-gray-500">NAV (TAO)</div>
-                <div className="tabular-nums text-gray-300">
+                <div className="text-xs text-[#5a7a94]">NAV (TAO)</div>
+                <div className="tabular-nums text-[#8faabe]">
                   {formatTao(scenario.nav_tao)} τ
                 </div>
               </div>
               <div>
-                <div className="text-xs text-gray-500">TAO Impact</div>
+                <div className="text-xs text-[#5a7a94]">TAO Impact</div>
                 <div className={`tabular-nums ${taoImpact >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                   {taoImpact >= 0 ? '+' : ''}{formatTao(scenario.tao_impact)} τ
                 </div>
               </div>
               <div>
-                <div className="text-xs text-gray-500">NAV (USD)</div>
-                <div className="tabular-nums text-gray-300">
+                <div className="text-xs text-[#5a7a94]">NAV (USD)</div>
+                <div className="tabular-nums text-[#8faabe]">
                   {formatUsd(scenario.nav_usd)}
                 </div>
               </div>
@@ -287,7 +287,7 @@ function RiskExposureCard({ scenario }: { scenario: ScenarioAnalysis }) {
     <div className="space-y-4">
       {/* Allocation donut-style bars */}
       <div className="space-y-2">
-        <div className="text-xs text-gray-500 uppercase tracking-wider">Allocation</div>
+        <div className="text-xs text-[#5a7a94] uppercase tracking-wider">Allocation</div>
         <AllocationBar
           label="Root"
           tao={allocation.root_tao}
@@ -308,11 +308,11 @@ function RiskExposureCard({ scenario }: { scenario: ScenarioAnalysis }) {
         />
       </div>
 
-      <div className="border-t border-gray-700 pt-3 space-y-3">
+      <div className="border-t border-[#1e3a5f] pt-3 space-y-3">
         {/* TAO Beta */}
         <div className="flex justify-between items-center">
-          <span className="text-sm text-gray-400">TAO Beta</span>
-          <span className="tabular-nums text-sm text-gray-300">
+          <span className="text-sm text-[#6f87a0]">TAO Beta</span>
+          <span className="tabular-nums text-sm text-[#8faabe]">
             {safeFloat(risk.tao_beta).toFixed(1)}x
           </span>
         </div>
@@ -320,7 +320,7 @@ function RiskExposureCard({ scenario }: { scenario: ScenarioAnalysis }) {
         {/* Exit Slippage */}
         <div>
           <div className="flex justify-between items-center mb-1">
-            <span className="text-sm text-gray-400">Exit Slippage</span>
+            <span className="text-sm text-[#6f87a0]">Exit Slippage</span>
             <span
               className={`tabular-nums text-sm ${
                 slippagePct < 2
@@ -333,7 +333,7 @@ function RiskExposureCard({ scenario }: { scenario: ScenarioAnalysis }) {
               {slippagePct.toFixed(2)}%
             </span>
           </div>
-          <div className="text-xs text-gray-500">
+          <div className="text-xs text-[#5a7a94]">
             {formatTao(risk.total_exit_slippage_tao)} τ total slippage
           </div>
         </div>
@@ -341,7 +341,7 @@ function RiskExposureCard({ scenario }: { scenario: ScenarioAnalysis }) {
         {/* dTAO Weight indicator */}
         <div>
           <div className="flex justify-between items-center mb-1">
-            <span className="text-sm text-gray-400">Alpha Risk</span>
+            <span className="text-sm text-[#6f87a0]">Alpha Risk</span>
             <span
               className={`tabular-nums text-sm ${
                 dtaoWeight < 30
@@ -354,7 +354,7 @@ function RiskExposureCard({ scenario }: { scenario: ScenarioAnalysis }) {
               {dtaoWeight.toFixed(1)}%
             </span>
           </div>
-          <div className="relative w-full bg-gray-700 rounded-full h-1.5">
+          <div className="relative w-full bg-[#1a2d42] rounded-full h-1.5">
             <div
               className="bg-tao-500 h-1.5 rounded-full transition-all"
               style={{ width: `${Math.min(dtaoWeight, 100)}%` }}
@@ -364,7 +364,7 @@ function RiskExposureCard({ scenario }: { scenario: ScenarioAnalysis }) {
       </div>
 
       {/* Note */}
-      <div className="text-xs text-gray-500 leading-relaxed pt-1">
+      <div className="text-xs text-[#5a7a94] leading-relaxed pt-1">
         {risk.note}
       </div>
     </div>
@@ -385,12 +385,12 @@ function AllocationBar({
   return (
     <div>
       <div className="flex justify-between text-xs mb-0.5">
-        <span className="text-gray-400">{label}</span>
-        <span className="text-gray-400 tabular-nums">
+        <span className="text-[#6f87a0]">{label}</span>
+        <span className="text-[#6f87a0] tabular-nums">
           {formatTao(tao)} τ ({pct.toFixed(1)}%)
         </span>
       </div>
-      <div className="relative w-full bg-gray-700 rounded-full h-1.5">
+      <div className="relative w-full bg-[#1a2d42] rounded-full h-1.5">
         <div
           className={`${color} h-1.5 rounded-full`}
           style={{ width: `${Math.min(Math.max(pct, 0), 100)}%` }}

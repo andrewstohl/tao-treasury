@@ -273,7 +273,7 @@ export default function Subnets() {
             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-tao-400"></div>
           )}
           {data.cache_age_seconds != null && (
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-[#5a7a94]">
               Data: {data.cache_age_seconds}s ago
             </span>
           )}
@@ -284,11 +284,11 @@ export default function Subnets() {
               type="checkbox"
               checked={eligibleOnly}
               onChange={(e) => setEligibleOnly(e.target.checked)}
-              className="rounded bg-gray-700 border-gray-600"
+              className="rounded bg-[#1a2d42] border-[#2a4a66]"
             />
-            <span className="text-sm text-gray-400">Eligible only</span>
+            <span className="text-sm text-[#6f87a0]">Eligible only</span>
           </label>
-          <div className="text-sm text-gray-500">
+          <div className="text-sm text-[#5a7a94]">
             {data.eligible_count} eligible / {data.total} total
           </div>
         </div>
@@ -306,23 +306,23 @@ export default function Subnets() {
       <div className="flex items-center gap-3 flex-wrap">
         {/* Text search */}
         <div className="relative flex-1 min-w-[200px] max-w-xs">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#5a7a94]" />
           <input
             type="text"
             placeholder="Search name or netuid..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-tao-500"
+            className="w-full pl-10 pr-4 py-2.5 bg-[#121f2d] border border-[#1e3a5f] rounded-lg text-sm text-[#a8c4d9] placeholder-gray-500 focus:outline-none focus:border-tao-500"
           />
         </div>
 
         {/* Regime filter */}
         <div className="flex items-center gap-1.5">
-          <SlidersHorizontal className="w-4 h-4 text-gray-500" />
+          <SlidersHorizontal className="w-4 h-4 text-[#5a7a94]" />
           <select
             value={regimeFilter}
             onChange={(e) => setRegimeFilter(e.target.value as RegimeFilter)}
-            className="bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300 px-4 py-2.5 focus:outline-none focus:border-tao-500"
+            className="bg-[#121f2d] border border-[#1e3a5f] rounded-lg text-sm text-[#8faabe] px-4 py-2.5 focus:outline-none focus:border-tao-500"
           >
             <option value="all">All Regimes</option>
             <option value="risk_on">Risk On</option>
@@ -337,7 +337,7 @@ export default function Subnets() {
         <select
           value={viabilityFilter}
           onChange={(e) => setViabilityFilter(e.target.value as ViabilityFilter)}
-          className="bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300 px-4 py-2.5 focus:outline-none focus:border-tao-500"
+          className="bg-[#121f2d] border border-[#1e3a5f] rounded-lg text-sm text-[#8faabe] px-4 py-2.5 focus:outline-none focus:border-tao-500"
         >
           <option value="all">All Viability</option>
           <option value="tier_1">Prime (75+)</option>
@@ -352,30 +352,30 @@ export default function Subnets() {
             onClick={() => setShowColumnMenu((prev) => !prev)}
             className={`flex items-center gap-1.5 px-4 py-2.5 rounded-lg border text-sm ${
               showColumnMenu
-                ? 'bg-gray-700 border-tao-500 text-tao-400'
-                : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'
+                ? 'bg-[#1a2d42] border-tao-500 text-tao-400'
+                : 'bg-[#121f2d] border-[#1e3a5f] text-[#6f87a0] hover:border-[#2a4a66]'
             }`}
           >
             <Columns3 className="w-4 h-4" />
             Columns
           </button>
           {showColumnMenu && (
-            <div className="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-20 py-1 w-48">
+            <div className="absolute right-0 top-full mt-1 bg-[#121f2d] border border-[#1e3a5f] rounded-lg shadow-xl z-20 py-1 w-48">
               {ALL_COLUMNS.map((col) => (
                 <label
                   key={col.key}
-                  className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-700 cursor-pointer text-sm text-gray-300"
+                  className="flex items-center gap-2 px-3 py-1.5 hover:bg-[#1a2d42] cursor-pointer text-sm text-[#8faabe]"
                 >
                   <input
                     type="checkbox"
                     checked={visibleColumns.has(col.key)}
                     onChange={() => toggleColumn(col.key)}
-                    className="rounded bg-gray-600 border-gray-500"
+                    className="rounded bg-[#243a52] border-[#3a5a72]"
                   />
                   {col.label}
                 </label>
               ))}
-              <div className="border-t border-gray-700 mt-1 pt-1 px-3 pb-1">
+              <div className="border-t border-[#1e3a5f] mt-1 pt-1 px-3 pb-1">
                 <button
                   onClick={() => {
                     const all = new Set(ALL_COLUMN_KEYS)
@@ -399,32 +399,32 @@ export default function Subnets() {
               setRegimeFilter('all')
               setViabilityFilter('all')
             }}
-            className="text-xs text-gray-400 hover:text-gray-200 underline"
+            className="text-xs text-[#6f87a0] hover:text-[#a8c4d9] underline"
           >
             Clear filters
           </button>
         )}
 
         {/* Result count */}
-        <span className="text-xs text-gray-500 ml-auto">
+        <span className="text-xs text-[#5a7a94] ml-auto">
           {filteredAndSorted.length} of {data.subnets.length} shown
         </span>
       </div>
 
       {/* Table */}
       {filteredAndSorted.length === 0 ? (
-        <div className="bg-gray-800 rounded-lg p-8 text-center border border-gray-700">
-          <p className="text-gray-400">
+        <div className="bg-[#121f2d] rounded-lg p-8 text-center border border-[#1e3a5f]">
+          <p className="text-[#6f87a0]">
             {hasActiveFilters
               ? 'No subnets match your filters. Try adjusting or clearing filters.'
               : 'No subnets found. Try refreshing data from TaoStats.'}
           </p>
         </div>
       ) : (
-        <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-x-auto">
+        <div className="bg-[#121f2d] rounded-lg border border-[#1e3a5f] overflow-x-auto">
           <table className="w-full min-w-[900px]">
-            <thead className="bg-gray-900/50">
-              <tr className="text-sm text-gray-400">
+            <thead className="bg-[#050d15]/50">
+              <tr className="text-sm text-[#6f87a0]">
                 {/* Expand toggle - always visible */}
                 <th className="w-8 px-2 py-3" />
                 {/* Subnet - always visible */}
@@ -436,7 +436,7 @@ export default function Subnets() {
                   onSort={handleSort}
                 />
                 {isColVisible('sparkline') && (
-                  <th className="px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-xs font-medium text-[#6f87a0] uppercase tracking-wider">
                     7d Chart
                   </th>
                 )}
@@ -539,7 +539,7 @@ export default function Subnets() {
                   />
                 )}
                 {isColVisible('status') && (
-                  <th className="px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider text-left">
+                  <th className="px-4 py-3 text-xs font-medium text-[#6f87a0] uppercase tracking-wider text-left">
                     Status
                   </th>
                 )}
@@ -587,11 +587,11 @@ function SubnetRow({
   return (
     <>
       <tr
-        className="hover:bg-gray-700/30 cursor-pointer"
+        className="hover:bg-[#1a2d42]/30 cursor-pointer"
         onClick={onToggle}
       >
         {/* Expand chevron */}
-        <td className="px-2 py-3 text-gray-500">
+        <td className="px-2 py-3 text-[#5a7a94]">
           {isExpanded ? (
             <ChevronDown className="w-4 h-4" />
           ) : (
@@ -606,13 +606,13 @@ function SubnetRow({
               <img
                 src={subnet.identity.logo_url}
                 alt=""
-                className="w-6 h-6 rounded-full flex-shrink-0 bg-gray-700"
+                className="w-6 h-6 rounded-full flex-shrink-0 bg-[#1a2d42]"
                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
               />
             )}
             <div className="min-w-0">
               <div className="font-medium text-sm">{subnet.name}</div>
-              <div className="text-xs text-gray-500">SN{subnet.netuid}</div>
+              <div className="text-xs text-[#5a7a94]">SN{subnet.netuid}</div>
             </div>
           </div>
         </td>
@@ -645,7 +645,7 @@ function SubnetRow({
         {isColVisible('mktcap') && (
           <td className="px-4 py-3 text-right">
             {subnet.rank != null && (
-              <div className="text-xs text-gray-500 tabular-nums">#{subnet.rank}</div>
+              <div className="text-xs text-[#5a7a94] tabular-nums">#{subnet.rank}</div>
             )}
             <div className="tabular-nums text-sm">
               {parseFloat(subnet.market_cap_tao) > 0
@@ -693,7 +693,7 @@ function SubnetRow({
           const burnPct = (burn * 100).toFixed(0)
           return (
             <td className="px-4 py-3 text-right tabular-nums text-sm">
-              <span className={burn >= 1 ? 'text-red-400' : burn >= 0.5 ? 'text-yellow-400' : 'text-gray-300'}>
+              <span className={burn >= 1 ? 'text-red-400' : burn >= 0.5 ? 'text-yellow-400' : 'text-[#8faabe]'}>
                 {burnPct}%
               </span>
             </td>

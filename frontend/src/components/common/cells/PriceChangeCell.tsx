@@ -9,7 +9,7 @@ function formatChange(val: number | null | undefined): string {
 }
 
 function changeColor(val: number | null | undefined): string {
-  if (val == null || isNaN(val)) return 'text-gray-600'
+  if (val == null || isNaN(val)) return 'text-[#4a6a80]'
   return val >= 0 ? 'text-green-400' : 'text-red-400'
 }
 

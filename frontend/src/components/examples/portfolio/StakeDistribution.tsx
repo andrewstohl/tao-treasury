@@ -46,7 +46,7 @@ export default function StakeDistribution() {
       error={error as Error}
     >
       {chartData.length === 0 ? (
-        <p className="text-gray-500 text-sm">No stake data available.</p>
+        <p className="text-[#5a7a94] text-sm">No stake data available.</p>
       ) : (
         <div className="flex flex-col lg:flex-row items-center gap-6">
           <ResponsiveContainer width="100%" height={400}>
@@ -71,7 +71,7 @@ export default function StakeDistribution() {
               <Legend />
             </PieChart>
           </ResponsiveContainer>
-          <div className="text-sm text-gray-400 space-y-1">
+          <div className="text-sm text-[#6f87a0] space-y-1">
             <p>Total Staked: <span className="text-white tabular-nums">{total.toFixed(4)} τ</span></p>
             <p>Subnets: <span className="text-white tabular-nums">{chartData.length}</span></p>
           </div>

@@ -33,14 +33,14 @@ export default function PerformanceRisk() {
 
   if (attrLoading) {
     return (
-      <div className="bg-gray-800 rounded-lg p-6 border border-gray-700 animate-pulse h-64" />
+      <div className="bg-[#121f2d] rounded-lg p-6 border border-[#1e3a5f] animate-pulse h-64" />
     )
   }
 
   if (!attr) {
     return (
-      <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-        <div className="text-sm text-gray-500 text-center py-8">
+      <div className="bg-[#121f2d] rounded-lg p-6 border border-[#1e3a5f]">
+        <div className="text-sm text-[#5a7a94] text-center py-8">
           Performance data unavailable.
         </div>
       </div>
@@ -96,7 +96,7 @@ export default function PerformanceRisk() {
   const maxBar = Math.max(Math.abs(yieldTao), Math.abs(alphaTao), 0.001)
 
   return (
-    <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+    <div className="bg-[#121f2d] rounded-lg p-6 border border-[#1e3a5f]">
       {/* Header with period selector */}
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold">Performance & Risk</h3>
@@ -107,8 +107,8 @@ export default function PerformanceRisk() {
               onClick={() => setDays(opt.days)}
               className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
                 days === opt.days
-                  ? 'bg-gray-600 text-white'
-                  : 'text-gray-500 hover:text-gray-300'
+                  ? 'bg-[#243a52] text-white'
+                  : 'text-[#5a7a94] hover:text-[#8faabe]'
               }`}
             >
               {opt.label}
@@ -119,7 +119,7 @@ export default function PerformanceRisk() {
 
       {/* Period Return headline */}
       <div className="flex items-center justify-between mb-3">
-        <span className="text-sm text-gray-400">Period Return</span>
+        <span className="text-sm text-[#6f87a0]">Period Return</span>
         <span
           className={`text-lg font-bold tabular-nums ${
             netTao >= 0 ? 'text-green-400' : 'text-red-400'
@@ -137,9 +137,9 @@ export default function PerformanceRisk() {
       </div>
 
       {/* FX (TAO/USD) */}
-      <div className="border-t border-gray-700 pt-3 mb-3">
+      <div className="border-t border-[#1e3a5f] pt-3 mb-3">
         <div className="flex items-center justify-between">
-          <span className="text-sm text-gray-400">FX (TAO/USD)</span>
+          <span className="text-sm text-[#6f87a0]">FX (TAO/USD)</span>
           {fxChangePct !== null ? (
             <div className="text-right">
               <span
@@ -151,27 +151,27 @@ export default function PerformanceRisk() {
                 {fxChangePct.toFixed(1)}%
               </span>
               {taoPriceStart !== null && taoCurrentPrice !== null && (
-                <div className="text-xs text-gray-500 tabular-nums">
+                <div className="text-xs text-[#5a7a94] tabular-nums">
                   {formatUsd(taoPriceStart)} → {formatUsd(taoCurrentPrice)}
                 </div>
               )}
             </div>
           ) : (
-            <span className="text-sm text-gray-600 tabular-nums">--</span>
+            <span className="text-sm text-[#243a52] tabular-nums">--</span>
           )}
         </div>
       </div>
 
       {/* Risk section */}
-      <div className="border-t border-gray-700 pt-3">
-        <div className="text-xs text-gray-500 uppercase tracking-wider mb-2">
+      <div className="border-t border-[#1e3a5f] pt-3">
+        <div className="text-xs text-[#5a7a94] uppercase tracking-wider mb-2">
           Risk
         </div>
         <div className="space-y-2">
           {/* Drawdown from ATH */}
           {drawdownPct !== null && (
             <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-400">ATH Drawdown</span>
+              <span className="text-sm text-[#6f87a0]">ATH Drawdown</span>
               <div className="text-right flex items-baseline gap-1.5">
                 <span
                   className={`tabular-nums text-sm ${
@@ -187,7 +187,7 @@ export default function PerformanceRisk() {
                     : `-${Math.abs(drawdownPct).toFixed(1)}%`}
                 </span>
                 {drawdownTao !== null && drawdownPct !== 0 && (
-                  <span className="text-xs text-gray-500 tabular-nums">
+                  <span className="text-xs text-[#5a7a94] tabular-nums">
                     {formatTaoShort(drawdownTao)} τ
                   </span>
                 )}
@@ -197,25 +197,25 @@ export default function PerformanceRisk() {
 
           {/* Daily VaR */}
           <div className="flex justify-between items-center">
-            <span className="text-sm text-gray-400">Daily VaR (95%)</span>
+            <span className="text-sm text-[#6f87a0]">Daily VaR (95%)</span>
             {var95Tao !== null ? (
               <span className="tabular-nums text-sm text-red-400">
                 {formatTaoShort(var95Tao)} τ
               </span>
             ) : (
-              <span className="text-xs text-gray-600">Insufficient history</span>
+              <span className="text-xs text-[#243a52]">Insufficient history</span>
             )}
           </div>
 
           {/* Worst Day */}
           <div className="flex justify-between items-center">
-            <span className="text-sm text-gray-400">Worst Day</span>
+            <span className="text-sm text-[#6f87a0]">Worst Day</span>
             {worstDayPct !== null ? (
               <span className="tabular-nums text-sm text-red-400">
                 {formatPercent(worstDayPct)}
               </span>
             ) : (
-              <span className="text-xs text-gray-600">--</span>
+              <span className="text-xs text-[#243a52]">--</span>
             )}
           </div>
         </div>
@@ -238,7 +238,7 @@ function AttributionRow({
 
   return (
     <div className="flex items-center gap-3">
-      <div className="w-12 text-sm text-gray-400 text-right flex-shrink-0">
+      <div className="w-12 text-sm text-[#6f87a0] text-right flex-shrink-0">
         {label}
       </div>
       <div className="flex-1 relative h-6">

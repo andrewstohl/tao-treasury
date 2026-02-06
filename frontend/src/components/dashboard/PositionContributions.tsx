@@ -22,14 +22,14 @@ export default function PositionContributions() {
 
   if (isLoading) {
     return (
-      <div className="bg-gray-800 rounded-lg border border-gray-700 p-6 animate-pulse h-48" />
+      <div className="bg-[#121f2d] rounded-lg border border-[#1e3a5f] p-6 animate-pulse h-48" />
     )
   }
 
   if (!attr || attr.position_contributions.length === 0) {
     return (
-      <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
-        <div className="text-sm text-gray-500 text-center py-8">
+      <div className="bg-[#121f2d] rounded-lg border border-[#1e3a5f] p-6">
+        <div className="text-sm text-[#5a7a94] text-center py-8">
           Position contribution data unavailable.
         </div>
       </div>
@@ -50,8 +50,8 @@ export default function PositionContributions() {
               onClick={() => setDays(opt.days)}
               className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
                 days === opt.days
-                  ? 'bg-gray-600 text-white'
-                  : 'text-gray-500 hover:text-gray-300'
+                  ? 'bg-[#243a52] text-white'
+                  : 'text-[#5a7a94] hover:text-[#8faabe]'
               }`}
             >
               {opt.label}
@@ -60,11 +60,11 @@ export default function PositionContributions() {
         </div>
       </div>
 
-      <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+      <div className="bg-[#121f2d] rounded-lg border border-[#1e3a5f] overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-gray-900/50">
-              <tr className="text-xs text-gray-500 uppercase tracking-wider">
+            <thead className="bg-[#050d15]/50">
+              <tr className="text-xs text-[#5a7a94] uppercase tracking-wider">
                 <th className="px-4 py-2 text-left">Subnet</th>
                 <th className="px-4 py-2 text-right">Weight</th>
                 <th className="px-4 py-2 text-right">Return</th>
@@ -91,12 +91,12 @@ function ContributionRow({ pc }: { pc: PositionContribution }) {
   const contribVal = safeFloat(pc.contribution_pct)
 
   return (
-    <tr className="hover:bg-gray-700/30">
+    <tr className="hover:bg-[#1a2d42]/30">
       <td className="px-4 py-2.5">
         <div className="font-medium text-sm">{pc.subnet_name}</div>
-        <div className="text-xs text-gray-500">SN{pc.netuid}</div>
+        <div className="text-xs text-[#5a7a94]">SN{pc.netuid}</div>
       </td>
-      <td className="px-4 py-2.5 text-right tabular-nums text-sm text-gray-400">
+      <td className="px-4 py-2.5 text-right tabular-nums text-sm text-[#6f87a0]">
         {safeFloat(pc.weight_pct).toFixed(1)}%
       </td>
       <td className="px-4 py-2.5 text-right">
@@ -118,7 +118,7 @@ function ContributionRow({ pc }: { pc: PositionContribution }) {
           <span className={`tabular-nums text-sm font-semibold ${contribVal >= 0 ? 'text-green-400' : 'text-red-400'}`}>
             {contribVal >= 0 ? '+' : ''}{contribVal.toFixed(2)}%
           </span>
-          <div className="w-16 bg-gray-700 rounded-full h-1.5">
+          <div className="w-16 bg-[#1a2d42] rounded-full h-1.5">
             <div
               className={`h-1.5 rounded-full ${contribVal >= 0 ? 'bg-green-500' : 'bg-red-500'}`}
               style={{ width: `${Math.min(Math.abs(contribVal) * 10, 100)}%` }}

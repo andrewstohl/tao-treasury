@@ -39,7 +39,7 @@ function DualValue({
       <div className={`text-lg font-bold ${colorClass}`}>
         {prefix}{formatPrimary(primary)}{primarySuffix}
       </div>
-      <div className="text-xs text-gray-500">
+      <div className="text-xs text-[#8a8f98]">
         {prefix}{formatSecondary(secondary)}{secondarySuffix}
       </div>
     </div>
@@ -61,7 +61,7 @@ export default function PortfolioOverviewCards() {
         {[...Array(5)].map((_, i) => (
           <div
             key={i}
-            className="bg-gray-800 rounded-lg p-4 border border-gray-700 animate-pulse h-32"
+            className="bg-[#16181d] rounded-lg p-4 border border-[#2a2f38] animate-pulse h-32"
           />
         ))}
       </div>
@@ -99,7 +99,7 @@ export default function PortfolioOverviewCards() {
       <div className="flex items-center justify-start">
         <button
           onClick={toggleCurrency}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600 text-sm text-gray-300 transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#1e2128] hover:bg-[#262b33] text-sm text-[#9ca3af] transition-colors"
         >
           <ArrowUpDown className="w-4 h-4" />
           {currency === 'tao' ? 'τ TAO' : '$ USD'}
@@ -109,7 +109,7 @@ export default function PortfolioOverviewCards() {
       {/* Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
         {/* Card 1: Portfolio Value */}
-        <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+        <div className="bg-[#16181d] rounded-lg p-4 border border-[#2a2f38]">
           <div className="flex items-start justify-between">
             <div className="text-base font-bold text-white">Current Value</div>
             <div className="text-right">
@@ -117,21 +117,21 @@ export default function PortfolioOverviewCards() {
             </div>
           </div>
 
-          <div className="mt-2.5 pt-2.5 border-t border-gray-700 flex justify-between">
+          <div className="mt-2.5 pt-2.5 border-t border-[#2a2f38] flex justify-between">
             <div>
-              <div className="text-xs text-gray-500">Realized</div>
+              <div className="text-xs text-[#8a8f98]">Realized</div>
               <div className={`tabular-nums text-sm ${pnlColor(realizedTao)}`}>
                 {currency === 'tao' ? `${formatTaoShort(realizedTao)}τ` : formatUsd(realizedUsd)}
               </div>
             </div>
             <div>
-              <div className="text-xs text-gray-500">Unrealized</div>
+              <div className="text-xs text-[#8a8f98]">Unrealized</div>
               <div className={`tabular-nums text-sm ${pnlColor(unrealizedTao)}`}>
                 {currency === 'tao' ? `${formatTaoShort(unrealizedTao)}τ` : formatUsd(unrealizedUsd)}
               </div>
             </div>
             <div>
-              <div className="text-xs text-gray-500">Total</div>
+              <div className="text-xs text-[#8a8f98]">Total</div>
               <div className={`tabular-nums text-sm ${pnlColor(realizedTao + unrealizedTao)}`}>
                 {currency === 'tao' ? `${formatTaoShort(realizedTao + unrealizedTao)}τ` : formatUsd(realizedUsd + unrealizedUsd)}
               </div>
@@ -140,7 +140,7 @@ export default function PortfolioOverviewCards() {
         </div>
 
         {/* Card 2: Yield */}
-        <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+        <div className="bg-[#16181d] rounded-lg p-4 border border-[#2a2f38]">
           <div className="flex items-start justify-between">
             <div className="text-base font-bold text-white">Yield</div>
             <div className="text-right">
@@ -148,9 +148,9 @@ export default function PortfolioOverviewCards() {
             </div>
           </div>
 
-          <div className="mt-2.5 pt-2.5 border-t border-gray-700 flex justify-between">
+          <div className="mt-2.5 pt-2.5 border-t border-[#2a2f38] flex justify-between">
             <div>
-              <div className="text-xs text-gray-500">Realized</div>
+              <div className="text-xs text-[#8a8f98]">Realized</div>
               <div className={`tabular-nums text-sm ${pnlColor(safeFloat(overview.yield_income.realized_yield.tao))}`}>
                 {currency === 'tao'
                   ? `${formatTaoShort(overview.yield_income.realized_yield.tao)}τ`
@@ -158,7 +158,7 @@ export default function PortfolioOverviewCards() {
               </div>
             </div>
             <div>
-              <div className="text-xs text-gray-500">Unrealized</div>
+              <div className="text-xs text-[#8a8f98]">Unrealized</div>
               <div className={`tabular-nums text-sm ${pnlColor(safeFloat(overview.yield_income.unrealized_yield.tao))}`}>
                 {currency === 'tao'
                   ? `${formatTaoShort(overview.yield_income.unrealized_yield.tao)}τ`
@@ -169,7 +169,7 @@ export default function PortfolioOverviewCards() {
         </div>
 
         {/* Card 3: Alpha */}
-        <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+        <div className="bg-[#16181d] rounded-lg p-4 border border-[#2a2f38]">
           <div className="flex items-start justify-between">
             <div className="text-base font-bold text-white">Alpha</div>
             <div className="text-right">
@@ -181,15 +181,15 @@ export default function PortfolioOverviewCards() {
             </div>
           </div>
 
-          <div className="mt-2.5 pt-2.5 border-t border-gray-700 flex justify-between">
+          <div className="mt-2.5 pt-2.5 border-t border-[#2a2f38] flex justify-between">
             <div>
-              <div className="text-xs text-gray-500">Realized</div>
+              <div className="text-xs text-[#8a8f98]">Realized</div>
               <div className={`tabular-nums text-sm ${pnlColor(realizedAlphaTao)}`}>
                 {currency === 'tao' ? `${formatTaoShort(realizedAlphaTao)}τ` : formatUsd(realizedAlphaUsd)}
               </div>
             </div>
             <div>
-              <div className="text-xs text-gray-500">Unrealized</div>
+              <div className="text-xs text-[#8a8f98]">Unrealized</div>
               <div className={`tabular-nums text-sm ${pnlColor(unrealizedAlphaTao)}`}>
                 {currency === 'tao' ? `${formatTaoShort(unrealizedAlphaTao)}τ` : formatUsd(unrealizedAlphaUsd)}
               </div>
@@ -198,28 +198,28 @@ export default function PortfolioOverviewCards() {
         </div>
 
         {/* Card 4: APY */}
-        <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+        <div className="bg-[#16181d] rounded-lg p-4 border border-[#2a2f38]">
           <div className="flex items-start justify-between">
             <div className="text-base font-bold text-white">APY</div>
             <div className="text-right">
               <div className="text-lg font-bold text-white">
                 {formatApy(apyNum)}
               </div>
-              <div className="text-xs text-gray-500 tabular-nums">
+              <div className="text-xs text-[#8a8f98] tabular-nums">
                 {formatTaoShort(overview.yield_income.daily.tao)}τ/day
               </div>
             </div>
           </div>
 
-          <div className="mt-2.5 pt-2.5 border-t border-gray-700 flex justify-between">
+          <div className="mt-2.5 pt-2.5 border-t border-[#2a2f38] flex justify-between">
             <div>
-              <div className="text-xs text-gray-500">7d Proj.</div>
+              <div className="text-xs text-[#8a8f98]">7d Proj.</div>
               <div className="tabular-nums text-sm text-green-400">
                 {formatTaoShort(overview.yield_income.weekly.tao)}τ
               </div>
             </div>
             <div>
-              <div className="text-xs text-gray-500">30d Proj.</div>
+              <div className="text-xs text-[#8a8f98]">30d Proj.</div>
               <div className="tabular-nums text-sm text-green-400">
                 {formatTaoShort(overview.yield_income.monthly.tao)}τ
               </div>
@@ -228,7 +228,7 @@ export default function PortfolioOverviewCards() {
         </div>
 
         {/* Card 5: FX Exposure */}
-        <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+        <div className="bg-[#16181d] rounded-lg p-4 border border-[#2a2f38]">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-1.5">
               <div className="text-base font-bold text-white">FX Exposure</div>
@@ -246,22 +246,22 @@ export default function PortfolioOverviewCards() {
               <div className="text-lg font-bold text-white">
                 {formatUsd(overview.conversion_exposure.total_pnl_usd)}
               </div>
-              <div className="text-xs text-gray-500 tabular-nums">
+              <div className="text-xs text-[#8a8f98] tabular-nums">
                 {safeFloat(overview.conversion_exposure.total_pnl_pct) >= 0 ? '+' : ''}
                 {safeFloat(overview.conversion_exposure.total_pnl_pct).toFixed(1)}%
               </div>
             </div>
           </div>
 
-          <div className="mt-2.5 pt-2.5 border-t border-gray-700 flex justify-between">
+          <div className="mt-2.5 pt-2.5 border-t border-[#2a2f38] flex justify-between">
             <div>
-              <div className="text-xs text-gray-500">α/τ Effect</div>
+              <div className="text-xs text-[#8a8f98]">α/τ Effect</div>
               <div className={`tabular-nums text-sm ${pnlColor(safeFloat(overview.conversion_exposure.alpha_tao_effect_usd))}`}>
                 {formatUsd(overview.conversion_exposure.alpha_tao_effect_usd)}
               </div>
             </div>
             <div>
-              <div className="text-xs text-gray-500">τ/$ Effect</div>
+              <div className="text-xs text-[#8a8f98]">τ/$ Effect</div>
               <div className={`tabular-nums text-sm ${pnlColor(safeFloat(overview.conversion_exposure.tao_usd_effect))}`}>
                 {formatUsd(overview.conversion_exposure.tao_usd_effect)}
               </div>

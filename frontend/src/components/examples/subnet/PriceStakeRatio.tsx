@@ -56,7 +56,7 @@ export default function PriceStakeRatio() {
       error={error as Error}
     >
       {chartData.length === 0 ? (
-        <p className="text-gray-500 text-sm">No stats/price data available.</p>
+        <p className="text-[#5a7a94] text-sm">No stats/price data available.</p>
       ) : (
         <ResponsiveContainer width="100%" height={400}>
           <LineChart data={chartData}>

@@ -41,21 +41,21 @@ export default function DailyAlphaBurns() {
       error={error as Error}
     >
       <div className="flex items-center gap-3 mb-4">
-        <label className="text-xs text-gray-400">Subnet:</label>
+        <label className="text-xs text-[#6f87a0]">Subnet:</label>
         <input
           type="number"
           value={netuid}
           onChange={(e) => setNetuid(parseInt(e.target.value) || 1)}
-          className="w-20 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-white"
+          className="w-20 px-2 py-1 bg-[#1a2d42] border border-[#2a4a66] rounded text-xs text-white"
           min={1}
         />
-        <span className="text-xs text-gray-500 ml-2">
+        <span className="text-xs text-[#5a7a94] ml-2">
           Total Burned: <span className="text-white tabular-nums">{totalBurned.toFixed(4)} α</span>
         </span>
       </div>
 
       {chartData.length === 0 ? (
-        <p className="text-gray-500 text-sm">No burn data available for SN{netuid}.</p>
+        <p className="text-[#5a7a94] text-sm">No burn data available for SN{netuid}.</p>
       ) : (
         <ResponsiveContainer width="100%" height={400}>
           <BarChart data={chartData}>

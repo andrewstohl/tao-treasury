@@ -50,11 +50,11 @@ export default function Alerts() {
               type="checkbox"
               checked={activeOnly}
               onChange={(e) => setActiveOnly(e.target.checked)}
-              className="rounded bg-gray-700 border-gray-600"
+              className="rounded bg-[#1a2d42] border-[#2a4a66]"
             />
-            <span className="text-sm text-gray-400">Active only</span>
+            <span className="text-sm text-[#6f87a0]">Active only</span>
           </label>
-          <div className="text-sm text-gray-500">
+          <div className="text-sm text-[#5a7a94]">
             {data.active_count} active / {data.total} total
           </div>
         </div>
@@ -77,16 +77,16 @@ export default function Alerts() {
       </div>
 
       {alerts.length === 0 ? (
-        <div className="bg-gray-800 rounded-lg p-8 text-center border border-gray-700">
+        <div className="bg-[#121f2d] rounded-lg p-8 text-center border border-[#1e3a5f]">
           <CheckCircle className="mx-auto text-green-400 mb-4" size={48} />
-          <p className="text-gray-400">No active alerts. All clear!</p>
+          <p className="text-[#6f87a0]">No active alerts. All clear!</p>
         </div>
       ) : (
         <div className="space-y-4">
           {alerts.map((alert) => (
             <div
               key={alert.id}
-              className={`bg-gray-800 rounded-lg p-4 border ${
+              className={`bg-[#121f2d] rounded-lg p-4 border ${
                 alert.severity === 'critical' ? 'border-red-600' :
                 alert.severity === 'warning' ? 'border-yellow-600' :
                 'border-blue-600'
@@ -112,10 +112,10 @@ export default function Alerts() {
                       }`}>
                         {alert.severity}
                       </span>
-                      <span className="text-xs text-gray-500">{alert.category}</span>
+                      <span className="text-xs text-[#5a7a94]">{alert.category}</span>
                     </div>
-                    <p className="text-gray-400 mt-1">{alert.message}</p>
-                    <div className="text-xs text-gray-500 mt-2">
+                    <p className="text-[#6f87a0] mt-1">{alert.message}</p>
+                    <div className="text-xs text-[#5a7a94] mt-2">
                       {new Date(alert.created_at).toLocaleString()}
                       {alert.netuid && ` | SN${alert.netuid}`}
                     </div>
@@ -127,7 +127,7 @@ export default function Alerts() {
                     <button
                       onClick={() => ackMutation.mutate({ alertId: alert.id, action: 'acknowledged' })}
                       disabled={ackMutation.isPending}
-                      className="p-2 rounded bg-gray-700 hover:bg-gray-600 text-gray-300"
+                      className="p-2 rounded bg-[#1a2d42] hover:bg-[#243a52] text-[#8faabe]"
                       title="Acknowledge"
                     >
                       <CheckCircle size={16} />
@@ -135,7 +135,7 @@ export default function Alerts() {
                     <button
                       onClick={() => ackMutation.mutate({ alertId: alert.id, action: 'resolved' })}
                       disabled={ackMutation.isPending}
-                      className="p-2 rounded bg-gray-700 hover:bg-gray-600 text-gray-300"
+                      className="p-2 rounded bg-[#1a2d42] hover:bg-[#243a52] text-[#8faabe]"
                       title="Resolve"
                     >
                       <XCircle size={16} />
@@ -144,7 +144,7 @@ export default function Alerts() {
                 )}
 
                 {alert.is_acknowledged && (
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-[#5a7a94]">
                     Acknowledged {alert.acknowledged_at && new Date(alert.acknowledged_at).toLocaleDateString()}
                   </span>
                 )}

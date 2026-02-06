@@ -66,15 +66,15 @@ export default function HotkeyProfits() {
     >
       <div className="grid grid-cols-3 gap-4 mb-4 text-sm">
         <div>
-          <span className="text-gray-500">Total Income</span>
+          <span className="text-[#5a7a94]">Total Income</span>
           <p className="tabular-nums text-green-400">{totalIncome.toFixed(4)} τ</p>
         </div>
         <div>
-          <span className="text-gray-500">Total Expense</span>
+          <span className="text-[#5a7a94]">Total Expense</span>
           <p className="tabular-nums text-red-400">{totalExpense.toFixed(4)} τ</p>
         </div>
         <div>
-          <span className="text-gray-500">Net Profit</span>
+          <span className="text-[#5a7a94]">Net Profit</span>
           <p className={`tabular-nums ${netProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
             {netProfit >= 0 ? '+' : ''}{netProfit.toFixed(4)} τ
           </p>
@@ -82,7 +82,7 @@ export default function HotkeyProfits() {
       </div>
 
       {chartData.length === 0 ? (
-        <p className="text-gray-500 text-sm">No accounting data available.</p>
+        <p className="text-[#5a7a94] text-sm">No accounting data available.</p>
       ) : (
         <ResponsiveContainer width="100%" height={350}>
           <LineChart data={chartData}>

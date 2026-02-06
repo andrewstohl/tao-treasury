@@ -48,16 +48,16 @@ export default function SubnetExpandedRow({
   })() : null
   const hasViability = viabilityTier != null
   return (
-    <div className="p-4 bg-gray-900/50 text-sm space-y-4">
+    <div className="p-4 bg-[#050d15]/50 text-sm space-y-4">
       {/* About Section */}
       {identity && (identity.tagline || identity.summary || (identity.tags && identity.tags.length > 0)) && (
         <div className="space-y-2">
-          <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">About</h4>
+          <h4 className="text-xs font-semibold text-[#6f87a0] uppercase tracking-wider">About</h4>
           {identity.tagline && (
-            <p className="text-gray-200 font-medium text-sm">{identity.tagline}</p>
+            <p className="text-[#a8c4d9] font-medium text-sm">{identity.tagline}</p>
           )}
           {identity.summary && (
-            <p className="text-gray-300 leading-relaxed text-sm">{identity.summary}</p>
+            <p className="text-[#8faabe] leading-relaxed text-sm">{identity.summary}</p>
           )}
           {identity.tags && identity.tags.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
@@ -74,28 +74,28 @@ export default function SubnetExpandedRow({
           <div className="flex items-center gap-3 pt-1">
             {identity.github_repo && (
               <a href={identity.github_repo} target="_blank" rel="noopener noreferrer"
-                 className="text-gray-400 hover:text-white transition-colors" title="GitHub">
+                 className="text-[#6f87a0] hover:text-white transition-colors" title="GitHub">
                 <Github className="w-4 h-4" />
               </a>
             )}
             {identity.subnet_url && (
               <a href={identity.subnet_url.startsWith('http') ? identity.subnet_url : `https://${identity.subnet_url}`}
                  target="_blank" rel="noopener noreferrer"
-                 className="text-gray-400 hover:text-white transition-colors" title="Website">
+                 className="text-[#6f87a0] hover:text-white transition-colors" title="Website">
                 <Globe className="w-4 h-4" />
               </a>
             )}
             {identity.discord && (
               <a href={identity.discord.startsWith('http') ? identity.discord : `https://discord.gg/${identity.discord}`}
                  target="_blank" rel="noopener noreferrer"
-                 className="text-gray-400 hover:text-white transition-colors" title="Discord">
+                 className="text-[#6f87a0] hover:text-white transition-colors" title="Discord">
                 <MessageCircle className="w-4 h-4" />
               </a>
             )}
             {identity.twitter && (
               <a href={identity.twitter.startsWith('http') ? identity.twitter : `https://twitter.com/${identity.twitter}`}
                  target="_blank" rel="noopener noreferrer"
-                 className="text-gray-400 hover:text-white transition-colors" title="Twitter/X">
+                 className="text-[#6f87a0] hover:text-white transition-colors" title="Twitter/X">
                 <ExternalLink className="w-4 h-4" />
               </a>
             )}
@@ -107,7 +107,7 @@ export default function SubnetExpandedRow({
       <div className={`grid grid-cols-1 ${showTaoflow ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-6`}>
         {/* Column 1: Pool Composition */}
         <div className="space-y-2">
-          <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Pool Composition</h4>
+          <h4 className="text-xs font-semibold text-[#6f87a0] uppercase tracking-wider">Pool Composition</h4>
           <div className="space-y-1">
             <Row label="Alpha in Pool" value={volatile?.alpha_in_pool != null ? formatCompact(volatile.alpha_in_pool) + ' α' : '--'} />
             <Row label="Alpha Staked" value={volatile?.alpha_staked != null ? formatCompact(volatile.alpha_staked) + ' α' : '--'} />
@@ -124,13 +124,13 @@ export default function SubnetExpandedRow({
         {/* Column 2: Taoflow & Trading (optional) */}
         {showTaoflow && (
           <div className="space-y-2">
-            <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Taoflow & Trading</h4>
+            <h4 className="text-xs font-semibold text-[#6f87a0] uppercase tracking-wider">Taoflow & Trading</h4>
             <div className="space-y-1">
               <FlowRow label="1d Flow" value={taoflow1d} />
               <FlowRow label="3d Flow" value={taoflow3d} />
               <FlowRow label="7d Flow" value={taoflow7d} />
               <FlowRow label="14d Flow" value={taoflow14d} />
-              <div className="border-t border-gray-700 my-1" />
+              <div className="border-t border-[#1e3a5f] my-1" />
               <Row label="Buys (24h)" value={volatile?.buys_24h != null ? String(volatile.buys_24h) : '--'} />
               <Row label="Sells (24h)" value={volatile?.sells_24h != null ? String(volatile.sells_24h) : '--'} />
               <Row label="Buyers (24h)" value={volatile?.buyers_24h != null ? String(volatile.buyers_24h) : '--'} />
@@ -143,7 +143,7 @@ export default function SubnetExpandedRow({
 
         {/* Column 3 (or 2): Subnet Info */}
         <div className="space-y-2">
-          <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Subnet Info</h4>
+          <h4 className="text-xs font-semibold text-[#6f87a0] uppercase tracking-wider">Subnet Info</h4>
           <div className="space-y-1">
             <Row label="Owner" value={ownerAddress ? `${ownerAddress.slice(0, 8)}...${ownerAddress.slice(-6)}` : '--'} />
             <Row label="Owner Take" value={ownerTake != null ? `${(parseFloat(ownerTake) * 100).toFixed(2)}%` : '--'} />
@@ -170,7 +170,7 @@ export default function SubnetExpandedRow({
       {/* Viability Breakdown */}
       {hasViability && (
         <div className="space-y-2">
-          <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Viability Assessment</h4>
+          <h4 className="text-xs font-semibold text-[#6f87a0] uppercase tracking-wider">Viability Assessment</h4>
           <div className="flex items-center gap-3">
             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${getViabilityTierBgColor(viabilityTier)}`}>
               {formatViabilityTierLabel(viabilityTier)}
@@ -202,10 +202,10 @@ export default function SubnetExpandedRow({
 function FactorRow({ label, raw, pctile, weighted }: { label: string; raw: string; pctile?: number; weighted?: number }) {
   return (
     <div className="text-xs">
-      <span className="text-gray-500">{label}:</span>{' '}
-      <span className="tabular-nums text-gray-300">{raw}</span>
+      <span className="text-[#5a7a94]">{label}:</span>{' '}
+      <span className="tabular-nums text-[#8faabe]">{raw}</span>
       {pctile != null && (
-        <span className="text-gray-500 ml-1">(P{pctile.toFixed(0)} → {weighted?.toFixed(1)})</span>
+        <span className="text-[#5a7a94] ml-1">(P{pctile.toFixed(0)} → {weighted?.toFixed(1)})</span>
       )}
     </div>
   )
@@ -214,8 +214,8 @@ function FactorRow({ label, raw, pctile, weighted }: { label: string; raw: strin
 function Row({ label, value, valueColor }: { label: string; value: string; valueColor?: string }) {
   return (
     <div className="flex justify-between">
-      <span className="text-gray-500">{label}</span>
-      <span className={`tabular-nums ${valueColor || 'text-gray-300'}`}>{value}</span>
+      <span className="text-[#5a7a94]">{label}</span>
+      <span className={`tabular-nums ${valueColor || 'text-[#8faabe]'}`}>{value}</span>
     </div>
   )
 }

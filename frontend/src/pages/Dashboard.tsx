@@ -17,6 +17,7 @@ import SubnetExpandedRow, { FlowRow } from '../components/common/SubnetExpandedR
 import PortfolioOverviewCards from '../components/dashboard/PortfolioOverviewCards'
 
 type PositionTab = 'open' | 'closed' | 'all'
+type SortOption = 'value' | 'tao' | 'yield' | 'alpha' | 'pnl' | 'apy'
 
 // Three-tier fallback logo component:
 // 1. Try subnet's own logo
@@ -38,7 +39,7 @@ function SubnetLogo({
   const [imgFailed, setImgFailed] = useState(false)
   const [rootFailed, setRootFailed] = useState(false)
 
-  const baseClass = `w-6 h-6 rounded-full flex-shrink-0 bg-gray-700 ${className}`
+  const baseClass = `w-6 h-6 rounded-full flex-shrink-0 bg-[#1e2128] ${className}`
   const opacityClass = dimmed ? 'opacity-60' : ''
 
   // Tier 1: Try subnet's own logo
@@ -67,7 +68,7 @@ function SubnetLogo({
 
   // Tier 3: Show netuid in a circle
   return (
-    <div className={`${baseClass} flex items-center justify-center text-xs font-bold ${dimmed ? 'text-gray-500' : 'text-gray-400'}`}>
+    <div className={`${baseClass} flex items-center justify-center text-xs font-bold ${dimmed ? 'text-[#8a8f98]' : 'text-[#9ca3af]'}`}>
       {netuid}
     </div>
   )
@@ -77,6 +78,7 @@ export default function Dashboard() {
   const [expandedNetuid, setExpandedNetuid] = useState<number | null>(null)
   const [positionTab, setPositionTab] = useState<PositionTab>('open')
   const [searchQuery, setSearchQuery] = useState('')
+  const [sortOption, setSortOption] = useState<SortOption>('value')
 
   const { data, isLoading, error } = useQuery<DashboardType>({
     queryKey: ['dashboard'],
@@ -100,13 +102,48 @@ export default function Dashboard() {
     return map
   }, [enrichedData?.subnets])
 
-  // Sort open positions by TAO value descending
+  // Sort open positions based on selected sort option
   const openPositions = useMemo(() => {
     const positions = data?.top_positions || []
-    return [...positions].sort(
-      (a, b) => safeFloat(b.tao_value_mid) - safeFloat(a.tao_value_mid)
-    )
-  }, [data?.top_positions])
+    return [...positions].sort((a, b) => {
+      // Helper to calculate yield and alpha for a position
+      const getYieldAndAlpha = (p: PositionSummary) => {
+        const enriched = enrichedLookup.get(p.netuid)
+        const entryPrice = safeFloat(p.entry_price_tao)
+        const costBasis = safeFloat(p.cost_basis_tao)
+        const alphaBalance = safeFloat(p.alpha_balance)
+        const currentPrice = enriched ? safeFloat(enriched.alpha_price_tao) : 0
+        const originalAlpha = entryPrice > 0 ? costBasis / entryPrice : 0
+        const yieldAlpha = alphaBalance - originalAlpha
+        const yieldTao = yieldAlpha * currentPrice
+        const alphaPnlTao = originalAlpha * (currentPrice - entryPrice)
+        return { yieldTao, alphaPnlTao }
+      }
+
+      switch (sortOption) {
+        case 'value':
+        case 'tao':
+          // Both sort by TAO value (USD value is proportional)
+          return safeFloat(b.tao_value_mid) - safeFloat(a.tao_value_mid)
+        case 'yield': {
+          const aYield = getYieldAndAlpha(a).yieldTao
+          const bYield = getYieldAndAlpha(b).yieldTao
+          return bYield - aYield
+        }
+        case 'alpha': {
+          const aAlpha = getYieldAndAlpha(a).alphaPnlTao
+          const bAlpha = getYieldAndAlpha(b).alphaPnlTao
+          return bAlpha - aAlpha
+        }
+        case 'pnl':
+          return safeFloat(b.unrealized_pnl_tao) - safeFloat(a.unrealized_pnl_tao)
+        case 'apy':
+          return safeFloat(b.current_apy) - safeFloat(a.current_apy)
+        default:
+          return safeFloat(b.tao_value_mid) - safeFloat(a.tao_value_mid)
+      }
+    })
+  }, [data?.top_positions, sortOption, enrichedLookup])
 
   // Filtered positions
   const filteredOpen = useMemo(() => {
@@ -131,7 +168,7 @@ export default function Dashboard() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-tao-400"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#2a3ded]"></div>
       </div>
     )
   }
@@ -167,12 +204,12 @@ export default function Dashboard() {
       {/* Wallet Address Bar */}
       <div className="space-y-3">
         <div className="flex items-center gap-3">
-          <div className="flex-1 flex items-center gap-2 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5">
-            <Search className="w-4 h-4 text-gray-500 flex-shrink-0" />
+          <div className="flex-1 flex items-center gap-2 bg-[#16181d] border border-[#2a2f38] rounded-lg px-4 py-2.5">
+            <Search className="w-4 h-4 text-[#8a8f98] flex-shrink-0" />
             <input
               type="text"
               placeholder="Add address"
-              className="flex-1 bg-transparent text-sm text-gray-300 placeholder-gray-500 outline-none"
+              className="flex-1 bg-transparent text-sm text-[#8faabe] placeholder-gray-500 outline-none"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   // Future: trigger add wallet address
@@ -180,7 +217,7 @@ export default function Dashboard() {
               }}
             />
           </div>
-          <button className="px-5 py-2.5 bg-tao-600 hover:bg-tao-500 rounded-lg text-sm font-medium text-white transition-colors">
+          <button className="px-5 py-2.5 bg-[#2a3ded] hover:bg-[#3a4dff] rounded-lg text-sm font-medium text-white transition-colors">
             Add
           </button>
         </div>
@@ -189,10 +226,10 @@ export default function Dashboard() {
             {walletAddresses.map((addr) => (
               <div
                 key={addr}
-                className="flex items-center gap-2 px-3 py-1.5 bg-gray-700/60 rounded-full text-sm"
+                className="flex items-center gap-2 px-3 py-1.5 bg-[#1e2128]/60 rounded-full text-sm"
               >
-                <span className="font-mono text-gray-300">{truncateAddress(addr)}</span>
-                <button className="text-gray-500 hover:text-gray-300 transition-colors">
+                <span className="font-mono text-[#8faabe]">{truncateAddress(addr)}</span>
+                <button className="text-[#8a8f98] hover:text-[#8faabe] transition-colors">
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -203,13 +240,13 @@ export default function Dashboard() {
 
       {/* Action Items */}
       {action_items && action_items.length > 0 && (
-        <div className="bg-gray-800 rounded-lg border border-gray-700">
-          <div className="px-4 py-3 border-b border-gray-700 flex items-center justify-between">
+        <div className="bg-[#16181d] rounded-lg border border-[#2a2f38]">
+          <div className="px-4 py-3 border-b border-[#2a2f38] flex items-center justify-between">
             <h3 className="text-base font-semibold flex items-center gap-2">
               <Activity className="w-4 h-4" />
               Action Items
             </h3>
-            <span className="text-xs text-gray-500">{action_items.length} items</span>
+            <span className="text-xs text-[#8a8f98]">{action_items.length} items</span>
           </div>
           <div className="divide-y divide-gray-700">
             {action_items.slice(0, 5).map((item, idx) => (
@@ -223,12 +260,12 @@ export default function Dashboard() {
                 </div>
                 <div className="flex-1">
                   <div className="text-sm font-medium">{item.title}</div>
-                  <div className="text-xs text-gray-400">{item.description}</div>
+                  <div className="text-xs text-[#9ca3af]">{item.description}</div>
                 </div>
                 {item.potential_gain_tao && (
                   <div className="text-right">
                     <div className="text-sm text-green-400">+{safeFloat(item.potential_gain_tao).toFixed(2)} τ</div>
-                    <div className="text-xs text-gray-500">potential</div>
+                    <div className="text-xs text-[#8a8f98]">potential</div>
                   </div>
                 )}
               </div>
@@ -249,45 +286,57 @@ export default function Dashboard() {
       {/* Positions Section */}
       <div className="space-y-4">
         {/* Tabs */}
-        <div className="flex items-center border-b border-gray-700">
+        <div className="flex items-center border-b border-[#2a2f38]">
           {tabs.map((tab) => (
             <button
               key={tab.key}
               onClick={() => setPositionTab(tab.key)}
               className={`px-1 pb-2.5 mr-6 text-sm font-medium transition-colors border-b-2 ${
                 positionTab === tab.key
-                  ? 'text-white border-tao-400'
-                  : 'text-gray-500 hover:text-gray-300 border-transparent'
+                  ? 'text-white border-[#2a3ded]'
+                  : 'text-[#8a8f98] hover:text-[#8faabe] border-transparent'
               }`}
             >
               {tab.label}
-              <span className="ml-1.5 text-xs text-gray-600">({tab.count})</span>
+              <span className="ml-1.5 text-xs text-[#6b7280]">({tab.count})</span>
             </button>
           ))}
         </div>
 
         {/* Filters */}
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 w-64">
-            <Search className="w-4 h-4 text-gray-500 flex-shrink-0" />
+          <div className="flex items-center gap-2 bg-[#16181d] border border-[#2a2f38] rounded-lg px-4 py-2.5 w-64">
+            <Search className="w-4 h-4 text-[#8a8f98] flex-shrink-0" />
             <input
               type="text"
               placeholder="Search subnets..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="flex-1 bg-transparent text-sm text-gray-300 placeholder-gray-500 outline-none"
+              className="flex-1 bg-transparent text-sm text-[#8faabe] placeholder-gray-500 outline-none"
             />
             {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="text-gray-500 hover:text-gray-300">
+              <button onClick={() => setSearchQuery('')} className="text-[#8a8f98] hover:text-[#8faabe]">
                 <X className="w-4 h-4" />
               </button>
             )}
           </div>
-          <select className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm text-gray-300">
+          <select className="bg-[#16181d] border border-[#2a2f38] rounded-lg px-4 py-2.5 text-sm text-[#8faabe]">
             <option value="all">Wallet: All</option>
             {walletAddresses.map(addr => (
               <option key={addr} value={addr}>{truncateAddress(addr)}</option>
             ))}
+          </select>
+          <select
+            value={sortOption}
+            onChange={(e) => setSortOption(e.target.value as SortOption)}
+            className="bg-[#16181d] border border-[#2a2f38] rounded-lg px-4 py-2.5 text-sm text-[#8faabe]"
+          >
+            <option value="value">Sort: Value</option>
+            <option value="tao">Sort: TAO</option>
+            <option value="yield">Sort: Yield</option>
+            <option value="alpha">Sort: Alpha</option>
+            <option value="pnl">Sort: P&L</option>
+            <option value="apy">Sort: APY</option>
           </select>
         </div>
 
@@ -295,7 +344,7 @@ export default function Dashboard() {
         {(positionTab === 'open' || positionTab === 'all') && filteredOpen.length > 0 && (
           <div className="space-y-3">
             {positionTab === 'all' && (
-              <div className="text-xs text-gray-500 uppercase tracking-wider font-medium">
+              <div className="text-xs text-[#8a8f98] uppercase tracking-wider font-medium">
                 Open Positions ({filteredOpen.length})
               </div>
             )}
@@ -322,15 +371,15 @@ export default function Dashboard() {
 
         {/* Free TAO balance */}
         {(positionTab === 'open' || positionTab === 'all') && safeFloat(data?.free_tao_balance) > 0 && (
-          <div className="bg-gray-800/50 rounded-lg border border-gray-700 px-5 py-3 flex items-center justify-between">
+          <div className="bg-[#16181d]/50 rounded-lg border border-[#2a2f38] px-5 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-full bg-green-900/40 flex items-center justify-center text-green-500 text-sm font-bold">τ</div>
               <div>
-                <div className="font-medium text-sm text-gray-400">Free TAO</div>
-                <div className="text-xs text-gray-600">Unstaked buffer</div>
+                <div className="font-medium text-sm text-[#9ca3af]">Free TAO</div>
+                <div className="text-xs text-[#6b7280]">Unstaked buffer</div>
               </div>
             </div>
-            <div className="tabular-nums text-sm text-gray-400">{formatTao(data?.free_tao_balance ?? '0')} τ</div>
+            <div className="tabular-nums text-sm text-[#9ca3af]">{formatTao(data?.free_tao_balance ?? '0')} τ</div>
           </div>
         )}
 
@@ -338,7 +387,7 @@ export default function Dashboard() {
         {(positionTab === 'closed' || positionTab === 'all') && filteredClosed.length > 0 && (
           <div className="space-y-3">
             {positionTab === 'all' && (
-              <div className="text-xs text-gray-500 uppercase tracking-wider font-medium pt-2">
+              <div className="text-xs text-[#8a8f98] uppercase tracking-wider font-medium pt-2">
                 Closed Positions ({filteredClosed.length})
               </div>
             )}
@@ -361,7 +410,7 @@ export default function Dashboard() {
         {((positionTab === 'open' && filteredOpen.length === 0) ||
           (positionTab === 'closed' && filteredClosed.length === 0) ||
           (positionTab === 'all' && filteredOpen.length === 0 && filteredClosed.length === 0)) && (
-          <div className="text-center py-8 text-gray-500">
+          <div className="text-center py-8 text-[#8a8f98]">
             {searchQuery ? 'No positions match your search.' : 'No positions found.'}
           </div>
         )}
@@ -408,14 +457,14 @@ function PositionCard({
   const pnlColor = (val: number) => val >= 0 ? 'text-green-400' : 'text-red-400'
 
   return (
-    <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+    <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] overflow-hidden">
       {/* Single row layout */}
       <div
-        className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-gray-700/30 transition-colors"
+        className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-[#1e2128]/30 transition-colors"
         onClick={onToggle}
       >
         {/* Expand chevron */}
-        <div className="text-gray-500 flex-shrink-0">
+        <div className="text-[#8a8f98] flex-shrink-0">
           {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
         </div>
 
@@ -428,8 +477,8 @@ function PositionCard({
 
         {/* Name + SN */}
         <div className="w-28 flex-shrink-0">
-          <div className="font-medium text-sm truncate">{position.subnet_name || `SN${position.netuid}`}</div>
-          <div className="text-xs text-gray-500">SN{position.netuid}</div>
+          <div className="font-medium text-sm text-white truncate">{position.subnet_name || `SN${position.netuid}`}</div>
+          <div className="text-xs text-[#8a8f98]">SN{position.netuid}</div>
         </div>
 
         {/* 7D Performance Sparkline - moved to front and wider */}
@@ -441,19 +490,19 @@ function PositionCard({
         <div className="flex-1 grid grid-cols-8 gap-2">
           {/* Current Value */}
           <div className="text-center">
-            <div className="text-xs text-gray-500">Value</div>
-            <div className="text-sm tabular-nums">${currentValueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            <div className="text-xs text-[#8a8f98]">Value</div>
+            <div className="text-sm tabular-nums text-white">${currentValueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
           </div>
 
           {/* TAO Value */}
           <div className="text-center">
-            <div className="text-xs text-gray-500">TAO</div>
-            <div className="text-sm tabular-nums">{taoValue.toFixed(2)} τ</div>
+            <div className="text-xs text-[#8a8f98]">TAO</div>
+            <div className="text-sm tabular-nums text-white">{taoValue.toFixed(2)} τ</div>
           </div>
 
           {/* Yield */}
           <div className="text-center">
-            <div className="text-xs text-gray-500">Yield</div>
+            <div className="text-xs text-[#8a8f98]">Yield</div>
             <div className={`text-sm tabular-nums ${pnlColor(yieldTao)}`}>
               {yieldTao >= 0 ? '+' : ''}{yieldTao.toFixed(2)} τ
             </div>
@@ -461,7 +510,7 @@ function PositionCard({
 
           {/* Alpha */}
           <div className="text-center">
-            <div className="text-xs text-gray-500">Alpha</div>
+            <div className="text-xs text-[#8a8f98]">Alpha</div>
             <div className={`text-sm tabular-nums ${pnlColor(alphaPnlTao)}`}>
               {alphaPnlTao >= 0 ? '+' : ''}{alphaPnlTao.toFixed(2)} τ
             </div>
@@ -469,7 +518,7 @@ function PositionCard({
 
           {/* Profit/Loss */}
           <div className="text-center">
-            <div className="text-xs text-gray-500">P&L</div>
+            <div className="text-xs text-[#8a8f98]">P&L</div>
             <div className={`text-sm tabular-nums ${pnlColor(unrealizedPnl)}`}>
               {unrealizedPnl >= 0 ? '+' : ''}{unrealizedPnl.toFixed(2)} τ
             </div>
@@ -477,19 +526,19 @@ function PositionCard({
 
           {/* APY */}
           <div className="text-center">
-            <div className="text-xs text-gray-500">APY</div>
-            <div className="text-sm tabular-nums">{apy > 0 ? `${apy.toFixed(2)}%` : '--'}</div>
+            <div className="text-xs text-[#8a8f98]">APY</div>
+            <div className="text-sm tabular-nums text-white">{apy > 0 ? `${apy.toFixed(2)}%` : '--'}</div>
           </div>
 
           {/* Viability */}
           <div className="text-center">
-            <div className="text-xs text-gray-500">Viability</div>
+            <div className="text-xs text-[#8a8f98]">Viability</div>
             <ViabilityBadge tier={enriched?.viability_tier} score={enriched?.viability_score} />
           </div>
 
           {/* Regime */}
           <div className="text-center">
-            <div className="text-xs text-gray-500">Regime</div>
+            <div className="text-xs text-[#8a8f98]">Regime</div>
             <RegimeBadge regime={position.flow_regime} />
           </div>
         </div>
@@ -497,7 +546,7 @@ function PositionCard({
 
       {/* Expanded detail */}
       {isExpanded && (
-        <div className="border-t border-gray-700">
+        <div className="border-t border-[#2a2f38]">
           <DashboardPositionDetail position={position} enriched={enriched} />
         </div>
       )}
@@ -519,7 +568,7 @@ function ClosedPositionCard({
   const pnlColor = pnl >= 0 ? 'text-green-400' : 'text-red-400'
 
   return (
-    <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden opacity-70">
+    <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] overflow-hidden opacity-70">
       {/* Single row layout */}
       <div className="flex items-center gap-3 px-4 py-2.5">
         {/* Spacer for alignment with open positions */}
@@ -536,11 +585,11 @@ function ClosedPositionCard({
         {/* Name + SN + Closed badge */}
         <div className="w-28 flex-shrink-0">
           <div className="flex items-center gap-2">
-            <span className="font-medium text-sm text-gray-400 truncate">{position.subnet_name || `SN${position.netuid}`}</span>
+            <span className="font-medium text-sm text-white truncate">{position.subnet_name || `SN${position.netuid}`}</span>
           </div>
-          <div className="text-xs text-gray-600 flex items-center gap-1.5">
+          <div className="text-xs text-[#6b7280] flex items-center gap-1.5">
             SN{position.netuid}
-            <span className="px-1.5 py-0.5 rounded bg-gray-700 text-gray-500">Closed</span>
+            <span className="px-1.5 py-0.5 rounded bg-[#1e2128] text-[#8a8f98]">Closed</span>
           </div>
         </div>
 
@@ -551,19 +600,19 @@ function ClosedPositionCard({
         <div className="flex-1 grid grid-cols-8 gap-2">
           {/* Total Staked */}
           <div className="text-center">
-            <div className="text-xs text-gray-500">Staked</div>
-            <div className="text-sm tabular-nums text-gray-400">{staked.toFixed(2)} τ</div>
+            <div className="text-xs text-[#8a8f98]">Staked</div>
+            <div className="text-sm tabular-nums text-white">{staked.toFixed(2)} τ</div>
           </div>
 
           {/* Total Returned */}
           <div className="text-center">
-            <div className="text-xs text-gray-500">Returned</div>
-            <div className="text-sm tabular-nums text-gray-400">{safeFloat(position.total_unstaked_tao).toFixed(2)} τ</div>
+            <div className="text-xs text-[#8a8f98]">Returned</div>
+            <div className="text-sm tabular-nums text-white">{safeFloat(position.total_unstaked_tao).toFixed(2)} τ</div>
           </div>
 
           {/* Realized P&L */}
           <div className="text-center">
-            <div className="text-xs text-gray-500">P&L</div>
+            <div className="text-xs text-[#8a8f98]">P&L</div>
             <div className={`text-sm tabular-nums ${pnlColor}`}>
               {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)} τ
             </div>
@@ -571,16 +620,16 @@ function ClosedPositionCard({
 
           {/* Opened Date */}
           <div className="text-center">
-            <div className="text-xs text-gray-500">Opened</div>
-            <div className="text-sm tabular-nums text-gray-400">
+            <div className="text-xs text-[#8a8f98]">Opened</div>
+            <div className="text-sm tabular-nums text-white">
               {position.first_entry ? new Date(position.first_entry).toLocaleDateString() : '--'}
             </div>
           </div>
 
           {/* Closed Date */}
           <div className="text-center">
-            <div className="text-xs text-gray-500">Closed</div>
-            <div className="text-sm tabular-nums text-gray-400">
+            <div className="text-xs text-[#8a8f98]">Closed</div>
+            <div className="text-sm tabular-nums text-white">
               {position.last_trade ? new Date(position.last_trade).toLocaleDateString() : '--'}
             </div>
           </div>
@@ -624,12 +673,12 @@ function DashboardPositionDetail({
   const pnlColor = (val: number) => val >= 0 ? 'text-green-400' : 'text-red-400'
 
   return (
-    <div className="bg-gray-900/50">
+    <div className="bg-[#0d0f12]/50">
       {/* Row 1: Performance (left) + Taoflow & Trading (right) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 text-sm border-b border-gray-800">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 text-sm border-b border-[#23272e]">
         {/* Performance */}
         <div className="space-y-2">
-          <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Performance</h4>
+          <h4 className="text-xs font-semibold text-[#9ca3af] uppercase tracking-wider">Performance</h4>
           <div className="space-y-1">
             <DashDetailRow label="Entry Date" value={position.entry_date ? new Date(position.entry_date).toLocaleDateString() : '--'} />
             <DashDetailRow label="Cost Basis" value={`${formatTao(position.cost_basis_tao)} τ`} />
@@ -638,7 +687,7 @@ function DashboardPositionDetail({
               label="Current Price"
               value={currentPrice > 0 ? `${currentPrice.toFixed(6)} τ` : '--'}
             />
-            <div className="border-t border-gray-700 my-1" />
+            <div className="border-t border-[#2a2f38] my-1" />
             <DashDetailRow label="Alpha Purchased" value={`${originalAlpha.toFixed(2)} α`} />
             <DashDetailRow
               label="Alpha from Yield"
@@ -646,7 +695,7 @@ function DashboardPositionDetail({
               valueColor="text-green-400"
             />
             <DashDetailRow label="Total Alpha" value={`${alphaBalance.toFixed(2)} α`} />
-            <div className="border-t border-gray-700 my-1" />
+            <div className="border-t border-[#2a2f38] my-1" />
             <DashDetailRow
               label="Price Impact"
               value={`${priceChangeTao >= 0 ? '+' : ''}${priceChangeTao.toFixed(4)} τ`}
@@ -669,7 +718,7 @@ function DashboardPositionDetail({
                 valueColor={pnlColor(safeFloat(position.realized_pnl_tao))}
               />
             )}
-            <div className="border-t border-gray-700 my-1" />
+            <div className="border-t border-[#2a2f38] my-1" />
             <DashDetailRow
               label="Current APY"
               value={safeFloat(position.current_apy) > 0 ? `${safeFloat(position.current_apy).toFixed(1)}%` : '--'}
@@ -691,13 +740,13 @@ function DashboardPositionDetail({
 
         {/* Taoflow & Trading */}
         <div className="space-y-2">
-          <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Taoflow & Trading</h4>
+          <h4 className="text-xs font-semibold text-[#9ca3af] uppercase tracking-wider">Taoflow & Trading</h4>
           <div className="space-y-1">
             <FlowRow label="1d Flow" value={enriched?.taoflow_1d} />
             <FlowRow label="3d Flow" value={enriched?.taoflow_3d} />
             <FlowRow label="7d Flow" value={enriched?.taoflow_7d} />
             <FlowRow label="14d Flow" value={enriched?.taoflow_14d} />
-            <div className="border-t border-gray-700 my-1" />
+            <div className="border-t border-[#2a2f38] my-1" />
             <DashDetailRow label="Buys (24h)" value={v?.buys_24h != null ? String(v.buys_24h) : '--'} />
             <DashDetailRow label="Sells (24h)" value={v?.sells_24h != null ? String(v.sells_24h) : '--'} />
             <DashDetailRow label="Buyers (24h)" value={v?.buyers_24h != null ? String(v.buyers_24h) : '--'} />
@@ -743,8 +792,8 @@ function DashDetailRow({
 }) {
   return (
     <div className="flex justify-between">
-      <span className="text-gray-500">{label}</span>
-      <span className={`tabular-nums ${valueColor || 'text-gray-300'}`}>{value}</span>
+      <span className="text-[#8a8f98]">{label}</span>
+      <span className={`tabular-nums ${valueColor || 'text-[#8faabe]'}`}>{value}</span>
     </div>
   )
 }

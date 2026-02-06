@@ -48,22 +48,22 @@ export default function Recommendations() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Trade Recommendations</h1>
-        <div className="text-sm text-gray-500">
+        <div className="text-sm text-[#5a7a94]">
           {data.pending_count} pending | Est. cost: {formatTao(data.total_estimated_cost_tao)} TAO
         </div>
       </div>
 
       {recommendations.length === 0 ? (
-        <div className="bg-gray-800 rounded-lg p-8 text-center border border-gray-700">
-          <p className="text-gray-400">No pending trade recommendations.</p>
+        <div className="bg-[#121f2d] rounded-lg p-8 text-center border border-[#1e3a5f]">
+          <p className="text-[#6f87a0]">No pending trade recommendations.</p>
         </div>
       ) : (
         <div className="space-y-4">
           {recommendations.map((rec) => (
             <div
               key={rec.id}
-              className={`bg-gray-800 rounded-lg p-6 border ${
-                rec.is_urgent ? 'border-red-600' : 'border-gray-700'
+              className={`bg-[#121f2d] rounded-lg p-6 border ${
+                rec.is_urgent ? 'border-red-600' : 'border-[#1e3a5f]'
               }`}
             >
               <div className="flex items-start justify-between">
@@ -81,14 +81,14 @@ export default function Recommendations() {
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-lg capitalize">{rec.direction}</span>
-                      <span className="text-gray-400">{rec.subnet_name || `SN${rec.netuid}`}</span>
+                      <span className="text-[#6f87a0]">{rec.subnet_name || `SN${rec.netuid}`}</span>
                       {rec.is_urgent && (
                         <span className="px-2 py-0.5 rounded text-xs bg-red-600/20 text-red-400">
                           URGENT
                         </span>
                       )}
                       {rec.tranche_number && (
-                        <span className="px-2 py-0.5 rounded text-xs bg-gray-700 text-gray-400">
+                        <span className="px-2 py-0.5 rounded text-xs bg-[#1a2d42] text-[#6f87a0]">
                           Tranche {rec.tranche_number}/{rec.total_tranches}
                         </span>
                       )}
@@ -96,36 +96,36 @@ export default function Recommendations() {
 
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 text-sm">
                       <div>
-                        <div className="text-gray-500">Size (TAO)</div>
+                        <div className="text-[#5a7a94]">Size (TAO)</div>
                         <div className="tabular-nums">{formatTao(rec.size_tao)}</div>
                       </div>
                       <div>
-                        <div className="text-gray-500">Size (Alpha)</div>
+                        <div className="text-[#5a7a94]">Size (Alpha)</div>
                         <div className="tabular-nums">{formatTao(rec.size_alpha)}</div>
                       </div>
                       <div>
-                        <div className="text-gray-500">Est. Slippage</div>
+                        <div className="text-[#5a7a94]">Est. Slippage</div>
                         <div className={`tabular-nums ${parseFloat(rec.estimated_slippage_pct) > 5 ? 'text-red-400' : ''}`}>
                           {parseFloat(rec.estimated_slippage_pct).toFixed(2)}%
                         </div>
                       </div>
                       <div>
-                        <div className="text-gray-500">Est. Cost</div>
+                        <div className="text-[#5a7a94]">Est. Cost</div>
                         <div className="tabular-nums">{formatTao(rec.total_estimated_cost_tao)} τ</div>
                       </div>
                     </div>
 
                     <div className="mt-4">
-                      <div className="text-xs text-gray-500 mb-1">
-                        Trigger: <span className="text-gray-400">{rec.trigger_type}</span>
+                      <div className="text-xs text-[#5a7a94] mb-1">
+                        Trigger: <span className="text-[#6f87a0]">{rec.trigger_type}</span>
                       </div>
-                      <p className="text-sm text-gray-400">{rec.reason}</p>
+                      <p className="text-sm text-[#6f87a0]">{rec.reason}</p>
                     </div>
                   </div>
                 </div>
 
                 <div className="flex flex-col items-end gap-2">
-                  <div className="text-xs text-gray-500">
+                  <div className="text-xs text-[#5a7a94]">
                     Priority: {rec.priority}
                   </div>
                   <button

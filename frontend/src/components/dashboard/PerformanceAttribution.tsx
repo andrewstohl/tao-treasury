@@ -28,14 +28,14 @@ export default function PerformanceAttribution() {
 
   if (isLoading) {
     return (
-      <div className="bg-gray-800 rounded-lg border border-gray-700 p-6 animate-pulse h-64" />
+      <div className="bg-[#121f2d] rounded-lg border border-[#1e3a5f] p-6 animate-pulse h-64" />
     )
   }
 
   if (!attr) {
     return (
-      <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
-        <div className="text-sm text-gray-500 text-center py-8">
+      <div className="bg-[#121f2d] rounded-lg border border-[#1e3a5f] p-6">
+        <div className="text-sm text-[#5a7a94] text-center py-8">
           Performance attribution data unavailable.
         </div>
       </div>
@@ -60,8 +60,8 @@ export default function PerformanceAttribution() {
               onClick={() => setDays(opt.days)}
               className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
                 days === opt.days
-                  ? 'bg-gray-600 text-white'
-                  : 'text-gray-500 hover:text-gray-300'
+                  ? 'bg-[#243a52] text-white'
+                  : 'text-[#5a7a94] hover:text-[#8faabe]'
               }`}
             >
               {opt.label}
@@ -72,9 +72,9 @@ export default function PerformanceAttribution() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Waterfall breakdown */}
-        <div className="md:col-span-2 bg-gray-800 rounded-lg border border-gray-700 p-6">
+        <div className="md:col-span-2 bg-[#121f2d] rounded-lg border border-[#1e3a5f] p-6">
           <div className="flex items-center justify-between mb-4">
-            <div className="text-sm text-gray-400">Return Decomposition</div>
+            <div className="text-sm text-[#6f87a0]">Return Decomposition</div>
             <div className={`text-lg font-bold tabular-nums ${totalReturn >= 0 ? 'text-green-400' : 'text-red-400'}`}>
               {totalReturn >= 0 ? '+' : ''}{formatTao(attr.total_return_tao)} τ
               <span className="text-sm ml-1">({formatPercent(totalPct)})</span>
@@ -85,7 +85,7 @@ export default function PerformanceAttribution() {
           <WaterfallChart steps={attr.waterfall} />
 
           {/* Component summary row */}
-          <div className="mt-4 grid grid-cols-3 gap-4 text-center border-t border-gray-700 pt-4">
+          <div className="mt-4 grid grid-cols-3 gap-4 text-center border-t border-[#1e3a5f] pt-4">
             <AttributionPill
               label="Yield Income"
               tao={attr.yield_income_tao}
@@ -116,8 +116,8 @@ export default function PerformanceAttribution() {
         </div>
 
         {/* Income statement */}
-        <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
-          <div className="text-sm text-gray-400 mb-4">Income Statement</div>
+        <div className="bg-[#121f2d] rounded-lg border border-[#1e3a5f] p-6">
+          <div className="text-sm text-[#6f87a0] mb-4">Income Statement</div>
           <IncomeStatementCard
             yieldTao={attr.income_statement.yield_income_tao}
             realizedTao={attr.income_statement.realized_gains_tao}
@@ -154,12 +154,12 @@ function WaterfallChart({ steps }: { steps: WaterfallStep[] }) {
           // Total bars: full-width neutral color
           return (
             <div key={idx} className="flex items-center gap-3">
-              <div className="w-24 text-xs text-gray-400 text-right flex-shrink-0">
+              <div className="w-24 text-xs text-[#6f87a0] text-right flex-shrink-0">
                 {step.label}
               </div>
               <div className="flex-1 relative h-7">
                 <div
-                  className="absolute inset-y-0 left-0 bg-gray-600 rounded"
+                  className="absolute inset-y-0 left-0 bg-[#243a52] rounded"
                   style={{ width: `${barWidth}%` }}
                 />
                 <span className="absolute inset-y-0 flex items-center px-2 text-xs tabular-nums text-white z-10">
@@ -173,7 +173,7 @@ function WaterfallChart({ steps }: { steps: WaterfallStep[] }) {
         // Component bars: colored by sign
         return (
           <div key={idx} className="flex items-center gap-3">
-            <div className="w-24 text-xs text-gray-400 text-right flex-shrink-0">
+            <div className="w-24 text-xs text-[#6f87a0] text-right flex-shrink-0">
               {step.label}
             </div>
             <div className="flex-1 relative h-7">
@@ -224,7 +224,7 @@ function AttributionPill({
 
   return (
     <div>
-      <div className="flex items-center justify-center gap-1 text-xs text-gray-500 mb-1">
+      <div className="flex items-center justify-center gap-1 text-xs text-[#5a7a94] mb-1">
         {icon}
         {label}
       </div>
@@ -256,18 +256,18 @@ function IncomeStatementCard({
 
   return (
     <div className="space-y-3">
-      <div className="text-xs text-gray-500 uppercase tracking-wider">
+      <div className="text-xs text-[#5a7a94] uppercase tracking-wider">
         {periodLabel} Period
       </div>
 
       <IncomeRow label="Yield Income" value={yieldTao} positive />
       <IncomeRow label="Realized Gains" value={realizedTao} />
-      <div className="border-t border-gray-700 my-2" />
+      <div className="border-t border-[#1e3a5f] my-2" />
       <IncomeRow label="Gross Income" value={formatTao(safeFloat(yieldTao) + safeFloat(realizedTao))} />
       <IncomeRow label="Fees & Costs" value={`-${feesTao}`} negative />
-      <div className="border-t border-gray-700 my-2" />
+      <div className="border-t border-[#1e3a5f] my-2" />
       <div className="flex justify-between items-center font-semibold">
-        <span className="text-gray-300">Net Income</span>
+        <span className="text-[#8faabe]">Net Income</span>
         <span className={`tabular-nums ${netVal >= 0 ? 'text-green-400' : 'text-red-400'}`}>
           {netVal >= 0 ? '+' : ''}{formatTao(netIncomeTao)} τ
         </span>
@@ -293,12 +293,12 @@ function IncomeRow({
     : positive
       ? 'text-green-400'
       : num >= 0
-        ? 'text-gray-300'
+        ? 'text-[#8faabe]'
         : 'text-red-400'
 
   return (
     <div className="flex justify-between text-sm">
-      <span className="text-gray-500">{label}</span>
+      <span className="text-[#5a7a94]">{label}</span>
       <span className={`tabular-nums ${color}`}>
         {positive && num >= 0 ? '+' : ''}
         {formatTao(value)} τ
