@@ -373,6 +373,10 @@ class CostBasisService:
         # (not persisted — computed fresh each run from FIFO lots)
         cost_basis._book_cost_tao = book_cost  # type: ignore[attr-defined]
 
+        # Track alpha purchased (remaining alpha from FIFO lots, excludes emission alpha)
+        # This is critical for proper yield vs alpha price gain decomposition
+        cost_basis._alpha_purchased = total_remaining_alpha  # type: ignore[attr-defined]
+
         logger.debug(
             "Computed cost basis",
             netuid=netuid,
@@ -416,6 +420,14 @@ class CostBasisService:
             # what was paid for the alpha tokens still held.
             book_cost = getattr(cost_basis, '_book_cost_tao', cost_basis.net_invested_tao)
             position.cost_basis_tao = book_cost
+
+            # Track alpha purchased (remaining alpha from FIFO lots, excludes emission alpha)
+            # This enables proper yield vs alpha price gain decomposition:
+            #   emission_alpha = alpha_balance - alpha_purchased
+            #   yield_tao = emission_alpha × current_alpha_price
+            #   alpha_gain_tao = alpha_purchased × (current_price - entry_price)
+            alpha_purchased = getattr(cost_basis, '_alpha_purchased', Decimal("0"))
+            position.alpha_purchased = alpha_purchased
 
             # Compute unrealized P&L against book cost
             if position.tao_value_mid > 0 and book_cost > 0:

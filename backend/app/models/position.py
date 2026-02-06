@@ -42,6 +42,10 @@ class Position(Base):
     entry_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     cost_basis_tao: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0"))
 
+    # Alpha decomposition for proper yield vs price gain separation
+    # alpha_purchased = remaining alpha from FIFO lots (excludes emission alpha)
+    alpha_purchased: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0"))
+
     # Realized PnL tracking
     realized_pnl_tao: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0"))
 

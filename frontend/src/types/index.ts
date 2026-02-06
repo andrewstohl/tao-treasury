@@ -417,6 +417,8 @@ export interface ConversionExposure {
   // Data quality
   has_complete_usd_history: boolean
   positions_with_usd_data: number
+  positions_with_cost_basis: number  // Positions included in FX decomposition
+  positions_excluded_from_fx: number[]  // Netuids excluded due to missing cost basis
   total_positions: number
 }
 

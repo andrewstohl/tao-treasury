@@ -235,6 +235,12 @@ export default function PortfolioOverviewCards() {
               {!overview.conversion_exposure.has_complete_usd_history && (
                 <span className="text-yellow-500/70 text-xs" title="Partial USD history available">*</span>
               )}
+              {overview.conversion_exposure.positions_excluded_from_fx?.length > 0 && (
+                <span
+                  className="text-orange-400/70 text-xs"
+                  title={`Positions excluded (no cost basis): SN${overview.conversion_exposure.positions_excluded_from_fx.join(', SN')}`}
+                >†</span>
+              )}
             </div>
             <div className="text-right">
               <div className="text-lg font-bold text-white">

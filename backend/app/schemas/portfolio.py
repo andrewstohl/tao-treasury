@@ -250,6 +250,8 @@ class ConversionExposure(BaseModel):
     # Data quality indicators
     has_complete_usd_history: bool = False
     positions_with_usd_data: int = 0
+    positions_with_cost_basis: int = 0  # Positions with valid cost basis for FX calc
+    positions_excluded_from_fx: List[int] = Field(default_factory=list)  # Netuids excluded
     total_positions: int = 0
 
 

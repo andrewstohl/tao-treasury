@@ -839,24 +839,39 @@ async def _compute_conversion_exposure(
     dtao_usd_cost = Decimal("0")
     dtao_current_tao = Decimal("0")
 
+    # Track netuids with valid cost data for consistent inclusion
+    dtao_netuids_with_valid_cost = []
+    dtao_netuids_excluded = []  # Netuids excluded due to missing cost basis
+
     if dtao_netuids_with_usd:
         # Get TAO FIFO book cost from Position.cost_basis_tao
+        # IMPORTANT: Only include positions with valid cost basis data
+        # This prevents positions like netuid 2 (value=10.10τ, cost=0τ) from
+        # inflating the calculated TAO gain inconsistently
         for netuid in dtao_netuids_with_usd:
             if netuid in pos_by_netuid:
                 pos = pos_by_netuid[netuid]
-                dtao_tao_cost += pos.cost_basis_tao or Decimal("0")
+                cost = pos.cost_basis_tao or Decimal("0")
+                # Skip positions without valid cost basis
+                if cost <= 0:
+                    dtao_netuids_excluded.append(netuid)
+                    continue
+                dtao_netuids_with_valid_cost.append(netuid)
+                dtao_tao_cost += cost
                 dtao_current_tao += pos.tao_value_mid or Decimal("0")
 
         # Get USD FIFO book cost from PositionCostBasis.usd_cost_basis
-        dtao_cb_stmt = select(
-            func.sum(PositionCostBasis.usd_cost_basis),
-        ).where(
-            PositionCostBasis.wallet_address == wallet,
-            PositionCostBasis.netuid.in_(dtao_netuids_with_usd),
-        )
-        dtao_cb_result = await db.execute(dtao_cb_stmt)
-        dtao_usd_row = dtao_cb_result.scalar()
-        dtao_usd_cost = Decimal(str(dtao_usd_row or 0))
+        # Only for netuids with valid TAO cost data
+        if dtao_netuids_with_valid_cost:
+            dtao_cb_stmt = select(
+                func.sum(PositionCostBasis.usd_cost_basis),
+            ).where(
+                PositionCostBasis.wallet_address == wallet,
+                PositionCostBasis.netuid.in_(dtao_netuids_with_valid_cost),
+            )
+            dtao_cb_result = await db.execute(dtao_cb_stmt)
+            dtao_usd_row = dtao_cb_result.scalar()
+            dtao_usd_cost = Decimal(str(dtao_usd_row or 0))
 
     # Combined totals for positions with USD data
     open_tao_cost = root_tao_cost + dtao_tao_cost
@@ -865,18 +880,37 @@ async def _compute_conversion_exposure(
     current_usd_value = current_tao_value * Decimal(str(current_tao_price_usd))
 
     # ============================================================
-    # CLOSED POSITIONS: Get realized FX P&L
+    # CLOSED POSITIONS: Decompose realized P&L into α/τ and τ/$ effects
     # ============================================================
-    closed_stmt = select(
-        func.sum(PositionCostBasis.realized_pnl_usd),
-    ).where(
+    # For closed positions, the realized_pnl_usd includes BOTH α/τ and τ/$ effects.
+    # We need to decompose them properly:
+    #   α/τ effect = realized_pnl_tao × entry_tao_usd (TAO gain/loss at entry prices)
+    #   τ/$ effect = unstaked_tao × (exit_tao_usd - entry_tao_usd) (TAO price change)
+    closed_stmt = select(PositionCostBasis).where(
         PositionCostBasis.wallet_address == wallet,
         PositionCostBasis.total_staked_usd > 0,
         ~PositionCostBasis.netuid.in_(open_netuids) if open_netuids else True,
     )
     closed_result = await db.execute(closed_stmt)
-    closed_row = closed_result.fetchone()
-    closed_realized_pnl_usd = Decimal(str(closed_row[0] or 0))
+    closed_positions = list(closed_result.scalars().all())
+
+    closed_alpha_tao_effect = Decimal("0")
+    closed_tao_usd_effect = Decimal("0")
+    closed_realized_pnl_usd = Decimal("0")
+
+    for cb in closed_positions:
+        if cb.total_staked_tao > 0 and cb.total_staked_usd > 0:
+            entry_price = cb.total_staked_usd / cb.total_staked_tao
+
+            # α/τ effect: TAO P&L valued at entry USD price
+            closed_alpha_tao_effect += cb.realized_pnl_tao * entry_price
+
+            # τ/$ effect: TAO received × (exit price - entry price)
+            if cb.total_unstaked_tao > 0 and cb.total_unstaked_usd > 0:
+                exit_price = cb.total_unstaked_usd / cb.total_unstaked_tao
+                closed_tao_usd_effect += cb.total_unstaked_tao * (exit_price - entry_price)
+
+            closed_realized_pnl_usd += cb.realized_pnl_usd or Decimal("0")
 
     # ============================================================
     # FX DECOMPOSITION
@@ -893,13 +927,25 @@ async def _compute_conversion_exposure(
     )
 
     # --- dTAO α/τ effect ---
-    # P&L from alpha price changes: (current_tao - cost_tao) × entry_usd_price
-    # This measures how much TAO you gained/lost from alpha repricing
+    # P&L from dTAO positions gaining/losing TAO value (yield + alpha price changes).
+    # Formula: (current_tao - cost_tao) × entry_tao_usd_price
+    #
+    # This captures the TOTAL TAO gain from dTAO positions, converted to USD at entry rates.
+    # It includes both:
+    #   - Yield (emission alpha valued at current prices)
+    #   - Alpha price appreciation/depreciation
+    #
+    # The yield vs alpha price decomposition is shown separately in the yield_income section.
+    # Here we need the TOTAL to make the accounting identity work:
+    #   α/τ effect + τ/$ effect = Total P&L
     if dtao_tao_cost > 0 and dtao_usd_cost > 0:
         dtao_entry_price = dtao_usd_cost / dtao_tao_cost
-        alpha_tao_effect = (dtao_current_tao - dtao_tao_cost) * dtao_entry_price
+        open_alpha_tao_effect = (dtao_current_tao - dtao_tao_cost) * dtao_entry_price
     else:
-        alpha_tao_effect = Decimal("0")
+        open_alpha_tao_effect = Decimal("0")
+
+    # Total α/τ effect = open dTAO positions + closed positions
+    alpha_tao_effect = open_alpha_tao_effect + closed_alpha_tao_effect
 
     # --- τ/$ effect ---
     # P&L from TAO price movement: current_tao × (current_price - entry_price)
@@ -925,8 +971,8 @@ async def _compute_conversion_exposure(
     else:
         root_tao_usd_effect = Decimal("0")
 
-    # Total τ/$ effect = dTAO + Root + closed positions' realized P&L
-    tao_usd_effect = dtao_tao_usd_effect + root_tao_usd_effect + closed_realized_pnl_usd
+    # Total τ/$ effect = dTAO + Root + closed positions' τ/$ component
+    tao_usd_effect = dtao_tao_usd_effect + root_tao_usd_effect + closed_tao_usd_effect
 
     # Total P&L = Unrealized (open) + Realized (closed)
     open_unrealized_pnl = current_usd_value - open_usd_cost
@@ -951,6 +997,8 @@ async def _compute_conversion_exposure(
             positions_with_usd == total_positions and total_positions > 0
         ),
         positions_with_usd_data=positions_with_usd,
+        positions_with_cost_basis=len(dtao_netuids_with_valid_cost),
+        positions_excluded_from_fx=dtao_netuids_excluded,
         total_positions=total_positions,
     )
 
@@ -1038,34 +1086,42 @@ async def get_portfolio_overview(
 
     # 6a. Compute UNREALIZED yield from emission alpha on open positions.
     #
-    #     For each open position we know:
-    #       - alpha_balance:     total alpha tokens currently held
-    #       - cost_basis_tao:    TAO invested in remaining FIFO lots
-    #       - entry_price_tao:   weighted-avg TAO-per-alpha at purchase
+    #     For each open position we compute:
+    #       - alpha_purchased = alpha from FIFO lots (or cost_basis / entry_price)
+    #       - emission_alpha  = alpha_balance - alpha_purchased
+    #       - yield_gain      = emission_alpha × current_alpha_price
     #
-    #     alpha_purchased  = cost_basis_tao / entry_price_tao
-    #     emission_alpha   = alpha_balance - alpha_purchased
-    #     yield_gain       = emission_alpha × current_alpha_price
-    #
-    #     This cleanly separates "income from emissions" from "alpha repricing".
+    #     Positions without valid entry data are SKIPPED (not treated as 100% yield).
     pos_stmt = select(Position).where(Position.wallet_address == wallet)
     pos_result = await db.execute(pos_stmt)
     open_positions = pos_result.scalars().all()
 
     unrealized_yield_tao = Decimal("0")
     for pos in open_positions:
-        if (
-            pos.entry_price_tao
-            and pos.entry_price_tao > 0
-            and pos.alpha_balance
-            and pos.alpha_balance > 0
-            and pos.cost_basis_tao is not None
-        ):
+        # Skip positions without required data
+        if not pos.alpha_balance or pos.alpha_balance <= 0:
+            continue
+        if not pos.tao_value_mid or pos.tao_value_mid <= 0:
+            continue
+
+        # Determine alpha_purchased (from FIFO tracking or fallback calculation)
+        alpha_purchased = Decimal("0")
+
+        if pos.alpha_purchased and pos.alpha_purchased > 0:
+            # Use tracked alpha_purchased from FIFO lot computation
+            alpha_purchased = pos.alpha_purchased
+        elif pos.entry_price_tao and pos.entry_price_tao > 0 and pos.cost_basis_tao and pos.cost_basis_tao > 0:
+            # Fallback: calculate from cost basis and entry price
             alpha_purchased = pos.cost_basis_tao / pos.entry_price_tao
-            emission_alpha = pos.alpha_balance - alpha_purchased
-            if emission_alpha > 0:
-                current_alpha_price = pos.tao_value_mid / pos.alpha_balance
-                unrealized_yield_tao += emission_alpha * current_alpha_price
+        else:
+            # No valid data to determine alpha_purchased - SKIP this position
+            # Otherwise the entire position would incorrectly be treated as yield
+            continue
+
+        emission_alpha = pos.alpha_balance - alpha_purchased
+        if emission_alpha > 0:
+            current_alpha_price = pos.tao_value_mid / pos.alpha_balance
+            unrealized_yield_tao += emission_alpha * current_alpha_price
 
     # 6b. Query REALIZED yield from PositionCostBasis (survives position closure).
     #     This is the TAO value of emission alpha sold during unstakes.
