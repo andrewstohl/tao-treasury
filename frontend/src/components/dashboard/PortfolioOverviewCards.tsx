@@ -237,7 +237,7 @@ export default function PortfolioOverviewCards() {
               )}
             </div>
             <div className="text-right">
-              <div className={`text-lg font-bold ${pnlColor(safeFloat(overview.conversion_exposure.total_pnl_usd))}`}>
+              <div className="text-lg font-bold text-white">
                 {formatUsd(overview.conversion_exposure.total_pnl_usd)}
               </div>
               <div className="text-xs text-gray-500 tabular-nums">
