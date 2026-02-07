@@ -118,6 +118,11 @@ class PositionSummary(BaseModel):
     realized_pnl_tao: Decimal = Field(default=Decimal("0"))
     unrealized_pnl_tao: Decimal = Field(default=Decimal("0"))
     unrealized_pnl_pct: Decimal = Field(default=Decimal("0"))
+    # Decomposed yield and alpha P&L (single source of truth)
+    unrealized_yield_tao: Decimal = Field(default=Decimal("0"))
+    realized_yield_tao: Decimal = Field(default=Decimal("0"))
+    unrealized_alpha_pnl_tao: Decimal = Field(default=Decimal("0"))
+    realized_alpha_pnl_tao: Decimal = Field(default=Decimal("0"))
     # Slippage
     exit_slippage_50pct: Decimal = Field(default=Decimal("0"))
     exit_slippage_100pct: Decimal = Field(default=Decimal("0"))
@@ -263,6 +268,11 @@ class OverviewPnL(BaseModel):
     total: DualCurrencyValue = Field(default_factory=DualCurrencyValue)
     cost_basis: DualCurrencyValue = Field(default_factory=DualCurrencyValue)
     total_pnl_pct: Decimal = Field(default=Decimal("0"))
+    # Decomposed yield and alpha P&L (ledger aggregation from positions)
+    unrealized_yield: DualCurrencyValue = Field(default_factory=DualCurrencyValue)
+    realized_yield: DualCurrencyValue = Field(default_factory=DualCurrencyValue)
+    unrealized_alpha_pnl: DualCurrencyValue = Field(default_factory=DualCurrencyValue)
+    realized_alpha_pnl: DualCurrencyValue = Field(default_factory=DualCurrencyValue)
 
 
 class OverviewYield(BaseModel):

@@ -53,6 +53,17 @@ class Position(Base):
     unrealized_pnl_tao: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0"))
     unrealized_pnl_pct: Mapped[Decimal] = mapped_column(Numeric(10, 4), default=Decimal("0"))
 
+    # Decomposed yield and alpha P&L (single source of truth for ledger aggregation)
+    # Yield = TAO earned from emissions (alpha that grew without purchasing)
+    unrealized_yield_tao: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0"))
+    realized_yield_tao: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0"))
+    # Alpha P&L = price movement on purchased alpha
+    unrealized_alpha_pnl_tao: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0"))
+    realized_alpha_pnl_tao: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0"))
+    # Total P&L verification fields (should equal yield + alpha_pnl)
+    total_unrealized_pnl_tao: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0"))
+    total_realized_pnl_tao: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0"))
+
     # Yield metrics (from validator data)
     current_apy: Mapped[Decimal] = mapped_column(Numeric(10, 4), default=Decimal("0"))
     apy_30d_avg: Mapped[Decimal] = mapped_column(Numeric(10, 4), default=Decimal("0"))

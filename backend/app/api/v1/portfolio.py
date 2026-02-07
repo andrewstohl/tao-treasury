@@ -308,6 +308,11 @@ async def _get_top_positions(db: AsyncSession, wallet: str, limit: int = 10) -> 
             realized_pnl_tao=p.realized_pnl_tao,
             unrealized_pnl_tao=p.unrealized_pnl_tao,
             unrealized_pnl_pct=p.unrealized_pnl_pct,
+            # Decomposed yield and alpha P&L (pre-computed, single source of truth)
+            unrealized_yield_tao=p.unrealized_yield_tao,
+            realized_yield_tao=p.realized_yield_tao,
+            unrealized_alpha_pnl_tao=p.unrealized_alpha_pnl_tao,
+            realized_alpha_pnl_tao=p.realized_alpha_pnl_tao,
             exit_slippage_50pct=p.exit_slippage_50pct,
             exit_slippage_100pct=p.exit_slippage_100pct,
             validator_hotkey=p.validator_hotkey,
@@ -1167,6 +1172,12 @@ async def get_portfolio_overview(
         (total_pnl_tao / cost_basis_tao * 100) if cost_basis_tao else Decimal("0")
     )
 
+    # Get decomposed yield and alpha P&L from snapshot (pre-computed ledger aggregation)
+    unrealized_yield_tao_val = snapshot.total_unrealized_yield_tao or Decimal("0")
+    realized_yield_tao_val = snapshot.total_realized_yield_tao or Decimal("0")
+    unrealized_alpha_pnl_tao = snapshot.total_unrealized_alpha_pnl_tao or Decimal("0")
+    realized_alpha_pnl_tao = snapshot.total_realized_alpha_pnl_tao or Decimal("0")
+
     pnl = OverviewPnL(
         unrealized=DualCurrencyValue(
             tao=unrealized_tao,
@@ -1185,6 +1196,23 @@ async def get_portfolio_overview(
             usd=Decimal(str(round(float(cost_basis_tao) * tao_usd, 2))),
         ),
         total_pnl_pct=total_pnl_pct.quantize(Decimal("0.01")) if isinstance(total_pnl_pct, Decimal) else Decimal("0"),
+        # Decomposed yield and alpha P&L (from pre-computed ledger aggregation)
+        unrealized_yield=DualCurrencyValue(
+            tao=unrealized_yield_tao_val,
+            usd=Decimal(str(round(float(unrealized_yield_tao_val) * tao_usd, 2))),
+        ),
+        realized_yield=DualCurrencyValue(
+            tao=realized_yield_tao_val,
+            usd=Decimal(str(round(float(realized_yield_tao_val) * tao_usd, 2))),
+        ),
+        unrealized_alpha_pnl=DualCurrencyValue(
+            tao=unrealized_alpha_pnl_tao,
+            usd=Decimal(str(round(float(unrealized_alpha_pnl_tao) * tao_usd, 2))),
+        ),
+        realized_alpha_pnl=DualCurrencyValue(
+            tao=realized_alpha_pnl_tao,
+            usd=Decimal(str(round(float(realized_alpha_pnl_tao) * tao_usd, 2))),
+        ),
     )
 
     # 6. Build dual-currency yield
@@ -1194,54 +1222,11 @@ async def get_portfolio_overview(
     annualized_yield = daily_yield * 365
     portfolio_apy = snapshot.portfolio_apy or Decimal("0")
 
-    # 6a. Compute UNREALIZED yield from emission alpha on open positions.
-    #
-    #     For each open position we compute:
-    #       - alpha_purchased = alpha from FIFO lots (or cost_basis / entry_price)
-    #       - emission_alpha  = alpha_balance - alpha_purchased
-    #       - yield_gain      = emission_alpha × current_alpha_price
-    #
-    #     Positions without valid entry data are SKIPPED (not treated as 100% yield).
-    pos_stmt = select(Position).where(Position.wallet_address == wallet)
-    pos_result = await db.execute(pos_stmt)
-    open_positions = pos_result.scalars().all()
-
-    unrealized_yield_tao = Decimal("0")
-    for pos in open_positions:
-        # Skip positions without required data
-        if not pos.alpha_balance or pos.alpha_balance <= 0:
-            continue
-        if not pos.tao_value_mid or pos.tao_value_mid <= 0:
-            continue
-
-        # Determine alpha_purchased (from FIFO tracking or fallback calculation)
-        alpha_purchased = Decimal("0")
-
-        if pos.alpha_purchased and pos.alpha_purchased > 0:
-            # Use tracked alpha_purchased from FIFO lot computation
-            alpha_purchased = pos.alpha_purchased
-        elif pos.entry_price_tao and pos.entry_price_tao > 0 and pos.cost_basis_tao and pos.cost_basis_tao > 0:
-            # Fallback: calculate from cost basis and entry price
-            alpha_purchased = pos.cost_basis_tao / pos.entry_price_tao
-        else:
-            # No valid data to determine alpha_purchased - SKIP this position
-            # Otherwise the entire position would incorrectly be treated as yield
-            continue
-
-        emission_alpha = pos.alpha_balance - alpha_purchased
-        if emission_alpha > 0:
-            current_alpha_price = pos.tao_value_mid / pos.alpha_balance
-            unrealized_yield_tao += emission_alpha * current_alpha_price
-
-    # 6b. Query REALIZED yield from PositionCostBasis (survives position closure).
-    #     This is the TAO value of emission alpha sold during unstakes.
-    ry_stmt = select(
-        func.coalesce(func.sum(PositionCostBasis.realized_yield_tao), 0)
-    ).where(PositionCostBasis.wallet_address == wallet)
-    ry_result = await db.execute(ry_stmt)
-    realized_yield_tao_val = ry_result.scalar() or Decimal("0")
-
-    # 6c. Total yield = unrealized (open positions) + realized (closed/partial exits)
+    # 6a. Use pre-computed yield values from snapshot (single source of truth)
+    #     These are computed by PositionMetricsService and aggregated in the snapshot.
+    #     - unrealized_yield_tao: from open positions (emission_alpha × price)
+    #     - realized_yield_tao: from PositionCostBasis (survives position closure)
+    unrealized_yield_tao = unrealized_yield_tao_val  # From snapshot (computed above)
     total_yield_tao = unrealized_yield_tao + realized_yield_tao_val
     cumulative_yield_tao = total_yield_tao  # backwards compat
 
@@ -1300,7 +1285,12 @@ async def get_portfolio_overview(
     pos_count = snapshot.active_positions or 0
     eligible = snapshot.eligible_subnets or 0
 
-    # 10. Compute conversion exposure (FX risk)
+    # 10. Get open positions for conversion exposure calculation
+    pos_stmt = select(Position).where(Position.wallet_address == wallet)
+    pos_result = await db.execute(pos_stmt)
+    open_positions = pos_result.scalars().all()
+
+    # 11. Compute conversion exposure (FX risk)
     conversion_exposure = await _compute_conversion_exposure(
         db, wallet, open_positions, tao_usd
     )

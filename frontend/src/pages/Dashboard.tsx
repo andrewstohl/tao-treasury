@@ -14,8 +14,14 @@ import { formatTao, safeFloat } from '../utils/format'
 import SparklineCell from '../components/common/cells/SparklineCell'
 import RegimeBadge from '../components/common/cells/RegimeBadge'
 import ViabilityBadge from '../components/common/cells/ViabilityBadge'
-import SubnetExpandedRow, { FlowRow } from '../components/common/SubnetExpandedRow'
 import PortfolioOverviewCards from '../components/dashboard/PortfolioOverviewCards'
+import {
+  PositionKPICards,
+  SubnetPriceChart,
+  MomentumSignal,
+  ViabilityPanel,
+  SubnetAbout,
+} from '../components/dashboard/position-detail'
 
 type PositionTab = 'open' | 'closed' | 'all'
 type SortOption = 'value' | 'tao' | 'yield' | 'alpha' | 'pnl' | 'apy'
@@ -149,35 +155,17 @@ export default function Dashboard() {
   const openPositions = useMemo(() => {
     const positions = data?.top_positions || []
     return [...positions].sort((a, b) => {
-      // Helper to calculate yield and alpha for a position
-      const getYieldAndAlpha = (p: PositionSummary) => {
-        const enriched = enrichedLookup.get(p.netuid)
-        const entryPrice = safeFloat(p.entry_price_tao)
-        const costBasis = safeFloat(p.cost_basis_tao)
-        const alphaBalance = safeFloat(p.alpha_balance)
-        const currentPrice = enriched ? safeFloat(enriched.alpha_price_tao) : 0
-        const originalAlpha = entryPrice > 0 ? costBasis / entryPrice : 0
-        const yieldAlpha = alphaBalance - originalAlpha
-        const yieldTao = yieldAlpha * currentPrice
-        const alphaPnlTao = originalAlpha * (currentPrice - entryPrice)
-        return { yieldTao, alphaPnlTao }
-      }
-
       switch (sortOption) {
         case 'value':
         case 'tao':
           // Both sort by TAO value (USD value is proportional)
           return safeFloat(b.tao_value_mid) - safeFloat(a.tao_value_mid)
-        case 'yield': {
-          const aYield = getYieldAndAlpha(a).yieldTao
-          const bYield = getYieldAndAlpha(b).yieldTao
-          return bYield - aYield
-        }
-        case 'alpha': {
-          const aAlpha = getYieldAndAlpha(a).alphaPnlTao
-          const bAlpha = getYieldAndAlpha(b).alphaPnlTao
-          return bAlpha - aAlpha
-        }
+        case 'yield':
+          // Use pre-computed yield from backend (single source of truth)
+          return safeFloat(b.unrealized_yield_tao) - safeFloat(a.unrealized_yield_tao)
+        case 'alpha':
+          // Use pre-computed alpha P&L from backend (single source of truth)
+          return safeFloat(b.unrealized_alpha_pnl_tao) - safeFloat(a.unrealized_alpha_pnl_tao)
         case 'pnl':
           return safeFloat(b.unrealized_pnl_tao) - safeFloat(a.unrealized_pnl_tao)
         case 'apy':
@@ -186,7 +174,7 @@ export default function Dashboard() {
           return safeFloat(b.tao_value_mid) - safeFloat(a.tao_value_mid)
       }
     })
-  }, [data?.top_positions, sortOption, enrichedLookup])
+  }, [data?.top_positions, sortOption])
 
   // Filtered positions
   const filteredOpen = useMemo(() => {
@@ -499,19 +487,11 @@ function PositionCard({
   isExpanded: boolean
   onToggle: () => void
 }) {
-  const entryPrice = safeFloat(position.entry_price_tao)
-  const costBasis = safeFloat(position.cost_basis_tao)
-  const alphaBalance = safeFloat(position.alpha_balance)
-  const currentPrice = enriched ? safeFloat(enriched.alpha_price_tao) : 0
   const taoValue = safeFloat(position.tao_value_mid)
 
-  // Yield: alpha earned from emissions, valued at current price
-  const originalAlpha = entryPrice > 0 ? costBasis / entryPrice : 0
-  const yieldAlpha = alphaBalance - originalAlpha
-  const yieldTao = yieldAlpha * currentPrice
-
-  // Alpha: price appreciation on original position
-  const alphaPnlTao = originalAlpha * (currentPrice - entryPrice)
+  // Use pre-computed yield and alpha P&L from backend (single source of truth)
+  const yieldTao = safeFloat(position.unrealized_yield_tao)
+  const alphaPnlTao = safeFloat(position.unrealized_alpha_pnl_tao)
 
   const currentValueUsd = taoValue * taoPrice
   const unrealizedPnl = safeFloat(position.unrealized_pnl_tao)
@@ -610,7 +590,7 @@ function PositionCard({
       {/* Expanded detail */}
       {isExpanded && (
         <div className="border-t border-[#2a2f38]">
-          <DashboardPositionDetail position={position} enriched={enriched} />
+          <DashboardPositionDetail position={position} enriched={enriched} taoPrice={taoPrice} />
         </div>
       )}
     </div>
@@ -710,153 +690,49 @@ function ClosedPositionCard({
 function DashboardPositionDetail({
   position,
   enriched,
+  taoPrice,
 }: {
   position: PositionSummary
   enriched: EnrichedSubnet | null
+  taoPrice: number
 }) {
   const v = enriched?.volatile
-
-  // Compute P&L breakdown
-  const costBasis = safeFloat(position.cost_basis_tao)
   const entryPrice = safeFloat(position.entry_price_tao)
   const currentPrice = enriched ? safeFloat(enriched.alpha_price_tao) : 0
-  const alphaBalance = safeFloat(position.alpha_balance)
-  const unrealizedPnl = safeFloat(position.unrealized_pnl_tao)
-  const unrealizedPct = safeFloat(position.unrealized_pnl_pct)
-
-  // Alpha originally purchased (cost / entry price)
-  const originalAlpha = entryPrice > 0 ? costBasis / entryPrice : 0
-  // Alpha earned from yield/emissions
-  const yieldAlpha = alphaBalance - originalAlpha
-  // Value of earned alpha at current price
-  const yieldValueTao = yieldAlpha * currentPrice
-  // Price change component (original alpha * price delta)
-  const priceChangeTao = originalAlpha * (currentPrice - entryPrice)
-
-  const pnlColor = (val: number) => val >= 0 ? 'text-green-400' : 'text-red-400'
 
   return (
-    <div className="bg-[#0d0f12]/50">
-      {/* Row 1: Performance (left) + Taoflow & Trading (right) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 text-sm border-b border-[#23272e]">
-        {/* Performance */}
-        <div className="space-y-2">
-          <h4 className="text-xs font-semibold text-[#9ca3af] uppercase tracking-wider">Performance</h4>
-          <div className="space-y-1">
-            <DashDetailRow label="Entry Date" value={position.entry_date ? new Date(position.entry_date).toLocaleDateString() : '--'} />
-            <DashDetailRow label="Cost Basis" value={`${formatTao(position.cost_basis_tao)} τ`} />
-            <DashDetailRow label="Entry Price" value={`${entryPrice.toFixed(6)} τ`} />
-            <DashDetailRow
-              label="Current Price"
-              value={currentPrice > 0 ? `${currentPrice.toFixed(6)} τ` : '--'}
-            />
-            <div className="border-t border-[#2a2f38] my-1" />
-            <DashDetailRow label="Alpha Purchased" value={`${originalAlpha.toFixed(2)} α`} />
-            <DashDetailRow
-              label="Alpha from Yield"
-              value={`+${yieldAlpha.toFixed(2)} α`}
-              valueColor="text-green-400"
-            />
-            <DashDetailRow label="Total Alpha" value={`${alphaBalance.toFixed(2)} α`} />
-            <div className="border-t border-[#2a2f38] my-1" />
-            <DashDetailRow
-              label="Price Impact"
-              value={`${priceChangeTao >= 0 ? '+' : ''}${priceChangeTao.toFixed(4)} τ`}
-              valueColor={pnlColor(priceChangeTao)}
-            />
-            <DashDetailRow
-              label="Yield Earned"
-              value={`+${yieldValueTao.toFixed(4)} τ`}
-              valueColor="text-green-400"
-            />
-            <DashDetailRow
-              label="Unrealized P&L"
-              value={`${unrealizedPnl >= 0 ? '+' : ''}${unrealizedPnl.toFixed(4)} τ (${unrealizedPct >= 0 ? '+' : ''}${unrealizedPct.toFixed(2)}%)`}
-              valueColor={pnlColor(unrealizedPnl)}
-            />
-            {safeFloat(position.realized_pnl_tao) !== 0 && (
-              <DashDetailRow
-                label="Realized P&L"
-                value={`${formatTao(position.realized_pnl_tao)} τ`}
-                valueColor={pnlColor(safeFloat(position.realized_pnl_tao))}
-              />
-            )}
-            <div className="border-t border-[#2a2f38] my-1" />
-            <DashDetailRow
-              label="Current APY"
-              value={safeFloat(position.current_apy) > 0 ? `${safeFloat(position.current_apy).toFixed(1)}%` : '--'}
-              valueColor="text-green-400"
-            />
-            <DashDetailRow
-              label="Daily Yield"
-              value={safeFloat(position.daily_yield_tao) > 0 ? `+${safeFloat(position.daily_yield_tao).toFixed(4)} τ` : '--'}
-              valueColor="text-green-400"
-            />
-            {position.validator_hotkey && (
-              <DashDetailRow
-                label="Validator"
-                value={`${position.validator_hotkey.slice(0, 8)}...${position.validator_hotkey.slice(-6)}`}
-              />
-            )}
-          </div>
+    <div className="bg-[#0d0f12]/50 p-4 space-y-4">
+      {/* Row 1: Position KPI Cards */}
+      <PositionKPICards position={position} enriched={enriched} taoPrice={taoPrice} />
+
+      {/* Row 2: Chart + Trading Activity */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Price Chart - 2/3 width */}
+        <div className="lg:col-span-2">
+          <SubnetPriceChart
+            netuid={position.netuid}
+            entryPrice={entryPrice}
+            currentPrice={currentPrice}
+            high24h={v?.high_24h}
+            low24h={v?.low_24h}
+          />
         </div>
 
-        {/* Taoflow & Trading */}
-        <div className="space-y-2">
-          <h4 className="text-xs font-semibold text-[#9ca3af] uppercase tracking-wider">Taoflow & Trading</h4>
-          <div className="space-y-1">
-            <FlowRow label="1d Flow" value={enriched?.taoflow_1d} />
-            <FlowRow label="3d Flow" value={enriched?.taoflow_3d} />
-            <FlowRow label="7d Flow" value={enriched?.taoflow_7d} />
-            <FlowRow label="14d Flow" value={enriched?.taoflow_14d} />
-            <div className="border-t border-[#2a2f38] my-1" />
-            <DashDetailRow label="Buys (24h)" value={v?.buys_24h != null ? String(v.buys_24h) : '--'} />
-            <DashDetailRow label="Sells (24h)" value={v?.sells_24h != null ? String(v.sells_24h) : '--'} />
-            <DashDetailRow label="Buyers (24h)" value={v?.buyers_24h != null ? String(v.buyers_24h) : '--'} />
-            <DashDetailRow label="Sellers (24h)" value={v?.sellers_24h != null ? String(v.sellers_24h) : '--'} />
-            <DashDetailRow label="24h High" value={v?.high_24h != null ? v.high_24h.toFixed(6) + ' τ' : '--'} />
-            <DashDetailRow label="24h Low" value={v?.low_24h != null ? v.low_24h.toFixed(6) + ' τ' : '--'} />
-          </div>
+        {/* Flow Momentum - 1/3 width */}
+        <div>
+          <MomentumSignal volatile={v} enriched={enriched} />
         </div>
       </div>
 
-      {/* Row 2+3: About, then Pool Composition + Subnet Info */}
-      <SubnetExpandedRow
-        volatile={v}
-        identity={enriched?.identity}
-        ownerAddress={enriched?.owner_address}
-        ownerTake={enriched?.owner_take}
-        feeRate={enriched?.fee_rate}
-        incentiveBurn={enriched?.incentive_burn}
-        ageDays={enriched?.age_days}
-        holderCount={enriched?.holder_count}
-        ineligibilityReasons={enriched?.ineligibility_reasons}
-        taoflow1d={enriched?.taoflow_1d}
-        taoflow3d={enriched?.taoflow_3d}
-        taoflow7d={enriched?.taoflow_7d}
-        taoflow14d={enriched?.taoflow_14d}
-        viabilityScore={enriched?.viability_score}
-        viabilityTier={enriched?.viability_tier}
-        viabilityFactors={enriched?.viability_factors}
-        showTaoflow={false}
-      />
-    </div>
-  )
-}
-
-function DashDetailRow({
-  label,
-  value,
-  valueColor,
-}: {
-  label: string
-  value: string
-  valueColor?: string
-}) {
-  return (
-    <div className="flex justify-between">
-      <span className="text-[#8a8f98]">{label}</span>
-      <span className={`tabular-nums ${valueColor || 'text-[#8faabe]'}`}>{value}</span>
+      {/* Row 3: About (2/3) + Viability (1/3) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="lg:col-span-2">
+          <SubnetAbout identity={enriched?.identity} enriched={enriched} />
+        </div>
+        <div>
+          <ViabilityPanel enriched={enriched} />
+        </div>
+      </div>
     </div>
   )
 }

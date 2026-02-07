@@ -75,19 +75,12 @@ export default function PortfolioOverviewCards() {
   const realizedUsd = safeFloat(overview.pnl.realized.usd)
   const apyNum = safeFloat(overview.yield_income.portfolio_apy)
 
-  // Yield/Alpha decomposition of unrealized P&L
-  const yieldGainTao = safeFloat(overview.yield_income.unrealized_yield.tao)
-  const yieldGainUsd = safeFloat(overview.yield_income.unrealized_yield.usd)
-  const alphaPnlTao = unrealizedTao - yieldGainTao
-  const alphaPnlUsd = unrealizedUsd - yieldGainUsd
-
-  // Full alpha decomposition across realized + unrealized
-  const realizedYieldTao = safeFloat(overview.yield_income.realized_yield.tao)
-  const realizedYieldUsd = safeFloat(overview.yield_income.realized_yield.usd)
-  const realizedAlphaTao = realizedTao - realizedYieldTao
-  const realizedAlphaUsd = realizedUsd - realizedYieldUsd
-  const unrealizedAlphaTao = alphaPnlTao
-  const unrealizedAlphaUsd = alphaPnlUsd
+  // Use pre-computed decomposed values from backend (single source of truth)
+  // Alpha P&L: price movement on purchased alpha
+  const unrealizedAlphaTao = safeFloat(overview.pnl.unrealized_alpha_pnl.tao)
+  const unrealizedAlphaUsd = safeFloat(overview.pnl.unrealized_alpha_pnl.usd)
+  const realizedAlphaTao = safeFloat(overview.pnl.realized_alpha_pnl.tao)
+  const realizedAlphaUsd = safeFloat(overview.pnl.realized_alpha_pnl.usd)
   const totalAlphaTao = realizedAlphaTao + unrealizedAlphaTao
   const totalAlphaUsd = realizedAlphaUsd + unrealizedAlphaUsd
 

@@ -28,6 +28,11 @@ export interface PositionSummary {
   realized_pnl_tao: string
   unrealized_pnl_tao: string
   unrealized_pnl_pct: string
+  // Decomposed yield and alpha P&L (single source of truth)
+  unrealized_yield_tao: string
+  realized_yield_tao: string
+  unrealized_alpha_pnl_tao: string
+  realized_alpha_pnl_tao: string
   exit_slippage_50pct: string
   exit_slippage_100pct: string
   validator_hotkey: string | null
@@ -383,6 +388,11 @@ export interface OverviewPnL {
   total: DualCurrencyValue
   cost_basis: DualCurrencyValue
   total_pnl_pct: string
+  // Decomposed yield and alpha P&L (ledger aggregation from positions)
+  unrealized_yield: DualCurrencyValue
+  realized_yield: DualCurrencyValue
+  unrealized_alpha_pnl: DualCurrencyValue
+  realized_alpha_pnl: DualCurrencyValue
 }
 
 export interface OverviewYield {
@@ -738,4 +748,89 @@ export interface HealthResponse {
   taostats_api: string
   last_sync: string | null
   data_stale: boolean
+}
+
+// ==================== Rebalance Advisor ====================
+
+export interface RebalanceViabilityConfig {
+  min_age_days: number
+  min_reserve_tao: number
+  max_outflow_7d_pct: number
+  max_drawdown_pct: number
+  fai_weight: number
+  reserve_weight: number
+  emission_weight: number
+  stability_weight: number
+}
+
+export interface RebalanceConfigRequest {
+  strategy: 'equal_weight' | 'fai_weighted'
+  top_percentile: number
+  max_position_pct: number
+  position_threshold_pct: number
+  portfolio_threshold_pct: number
+  use_backend_viability_config: boolean
+  viability_config?: RebalanceViabilityConfig
+}
+
+export interface PositionSnapshot {
+  netuid: number
+  name: string
+  tao_value: number
+  weight_pct: number
+  viability_score?: number
+  is_viable: boolean
+  failure_reasons: string[]
+}
+
+export interface TradeRecommendation {
+  netuid: number
+  name: string
+  action: 'buy' | 'sell' | 'exit'
+  tao_amount: number
+  current_weight_pct: number
+  target_weight_pct: number
+  delta_pct: number
+  reason: string
+  priority: number
+}
+
+export interface RebalanceSummary {
+  current_portfolio_value: number
+  total_drift_pct: number
+  needs_rebalance: boolean
+  trades_count: number
+  total_buy_tao: number
+  total_sell_tao: number
+  net_turnover_pct: number
+}
+
+export interface ComputeTargetResponse {
+  computed_at: string
+  summary: RebalanceSummary
+  current_portfolio: PositionSnapshot[]
+  target_portfolio: PositionSnapshot[]
+  trades: TradeRecommendation[]
+  viable_subnets_count: number
+  filtered_out_count: number
+  config_used: Record<string, unknown>
+}
+
+export interface ViableSubnet {
+  netuid: number
+  name: string
+  viability_score: number
+  pool_tao_reserve: number
+  emission_share: number
+  age_days: number
+  taoflow_7d: number
+  max_drawdown_30d: number
+}
+
+export interface ViableSubnetsResponse {
+  total_subnets: number
+  viable_count: number
+  filtered_out_count: number
+  viable_subnets: ViableSubnet[]
+  failed_subnets: { netuid: number; name: string; failure_reasons: string[] }[]
 }

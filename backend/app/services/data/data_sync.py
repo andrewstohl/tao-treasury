@@ -160,6 +160,7 @@ class DataSyncService:
                 # Lazy imports to avoid circular imports
                 from app.services.analysis.transaction_sync import transaction_sync_service
                 from app.services.analysis.cost_basis import cost_basis_service
+                from app.services.analysis.position_metrics import position_metrics_service
                 from app.services.analysis.slippage_sync import slippage_sync_service
                 from app.services.analysis.nav_calculator import nav_calculator
                 from app.services.analysis.risk_monitor import risk_monitor
@@ -226,6 +227,21 @@ class DataSyncService:
                 except Exception as e:
                     logger.warning("Accounting P&L override failed", error=str(e))
                     results["accounting_pnl_computed"] = False
+
+                # Compute position-level yield and alpha P&L decomposition
+                # This is the single source of truth for all position metrics
+                try:
+                    metrics_results = await position_metrics_service.compute_all_position_metrics()
+                    results["position_metrics_computed"] = True
+                    results["positions_with_metrics"] = metrics_results.get("positions_processed", 0)
+                    logger.info(
+                        "Position metrics computed (yield/alpha decomposition)",
+                        positions=results["positions_with_metrics"],
+                    )
+                except Exception as e:
+                    logger.error("Position metrics computation failed", error=str(e))
+                    results["errors"].append(f"Position metrics: {str(e)}")
+                    results["position_metrics_computed"] = False
 
                 # Sync slippage surfaces
                 try:
@@ -1030,15 +1046,31 @@ class DataSyncService:
             cb_stmt = select(
                 func.coalesce(func.sum(PositionCostBasis.realized_pnl_tao), 0),
                 func.coalesce(func.sum(PositionCostBasis.net_invested_tao), 0),
+                func.coalesce(func.sum(PositionCostBasis.realized_yield_tao), 0),
             ).where(PositionCostBasis.wallet_address == wallet_address)
             cb_result = await db.execute(cb_stmt)
             cb_row = cb_result.fetchone()
             total_realized_pnl = cb_row[0] if cb_row else Decimal("0")
+            total_realized_yield_from_cb = cb_row[2] if cb_row else Decimal("0")
             # Derive cost basis so the ledger identity holds exactly:
             #   NAV = cost_basis + realized_pnl + unrealized_pnl
             # This equals the portfolio's implied initial capital
             # (total deposits minus withdrawals, before any gains/losses).
             total_cost_basis = nav_mid - total_realized_pnl - total_unrealized_pnl
+
+            # Decomposed yield and alpha P&L (pure aggregation from positions)
+            # For unrealized: sum from open positions (single source of truth)
+            total_unrealized_yield = sum(
+                p.unrealized_yield_tao for p in positions
+            )
+            total_unrealized_alpha_pnl = sum(
+                p.unrealized_alpha_pnl_tao for p in positions
+            )
+            # For realized: from PositionCostBasis (includes closed positions)
+            # realized_yield comes directly from cost basis table
+            # realized_alpha_pnl = total_realized_pnl - realized_yield
+            total_realized_yield = total_realized_yield_from_cb
+            total_realized_alpha_pnl = total_realized_pnl - total_realized_yield
 
             snapshot = PortfolioSnapshot(
                 wallet_address=wallet_address,
@@ -1062,6 +1094,11 @@ class DataSyncService:
                 total_unrealized_pnl_tao=total_unrealized_pnl,
                 total_realized_pnl_tao=total_realized_pnl,
                 total_cost_basis_tao=total_cost_basis,
+                # Decomposed yield and alpha P&L (pure ledger aggregation)
+                total_unrealized_yield_tao=total_unrealized_yield,
+                total_realized_yield_tao=total_realized_yield,
+                total_unrealized_alpha_pnl_tao=total_unrealized_alpha_pnl,
+                total_realized_alpha_pnl_tao=total_realized_alpha_pnl,
             )
             db.add(snapshot)
             await db.commit()

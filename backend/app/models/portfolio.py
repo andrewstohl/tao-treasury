@@ -70,6 +70,14 @@ class PortfolioSnapshot(Base):
     total_realized_pnl_tao: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0"))
     total_cost_basis_tao: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0"))
 
+    # Decomposed P&L for ledger aggregation (sum of position-level values)
+    # Yield = TAO earned from emissions
+    total_unrealized_yield_tao: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0"))
+    total_realized_yield_tao: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0"))
+    # Alpha P&L = price movement on purchased alpha
+    total_unrealized_alpha_pnl_tao: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0"))
+    total_realized_alpha_pnl_tao: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0"))
+
     __table_args__ = (
         Index("ix_portfolio_snapshots_wallet_ts", "wallet_address", "timestamp"),
     )
