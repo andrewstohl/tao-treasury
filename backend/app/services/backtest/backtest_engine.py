@@ -992,3 +992,458 @@ class BacktestEngine:
                 if dd > max_dd:
                     max_dd = dd
         return max_dd
+
+    # ==================== Viability-Based Portfolio Simulation (v2) ====================
+
+    async def simulate_portfolio_v2(
+        self,
+        interval_days: int = 7,
+        initial_capital: float = 100.0,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        # Hard failure thresholds
+        min_age_days: int = 60,
+        min_reserve_tao: float = 500.0,
+        max_outflow_7d_pct: float = 50.0,
+        max_drawdown_pct: float = 50.0,
+        # Viability scoring weights (4-factor)
+        fai_weight: float = 0.35,
+        reserve_weight: float = 0.25,
+        emission_weight: float = 0.25,
+        stability_weight: float = 0.15,
+        # Strategy
+        strategy: str = "equal_weight",  # "equal_weight" or "fai_weighted"
+        top_percentile: float = 50.0,  # Take top N% by viability score
+        max_position_pct: float = 10.0,  # Max weight per position (for diversification)
+    ) -> PortfolioSimResult:
+        """Simulate a portfolio using viability-based filtering.
+
+        This is the NEW simulation method that:
+        1. Applies hard failure thresholds (age, reserve, outflow, drawdown)
+        2. Scores passing subnets using 4-factor viability (FAI, Reserve, Emission, Stability)
+        3. Selects top N% by viability score (NOT by tier)
+        4. Applies equal weight or FAI-weighted allocation
+
+        Args:
+            interval_days: Days between rebalances (e.g. 7 for weekly).
+            initial_capital: Starting TAO (default 100).
+            start_date: ISO date string to start sim (default: data start or 2025-11-05).
+            end_date: ISO date string to end sim (default: latest data).
+            min_age_days: Minimum subnet age in days (hard failure).
+            min_reserve_tao: Minimum TAO reserve (hard failure).
+            max_outflow_7d_pct: Maximum 7d outflow as % of reserve (hard failure).
+            max_drawdown_pct: Maximum drawdown % (hard failure).
+            fai_weight: Weight for FAI/flow momentum in scoring.
+            reserve_weight: Weight for TAO reserve in scoring.
+            emission_weight: Weight for emission share in scoring.
+            stability_weight: Weight for stability (inverse drawdown) in scoring.
+            strategy: "equal_weight" or "fai_weighted".
+            top_percentile: Select top N% of viable subnets by score.
+            max_position_pct: Maximum weight per single position.
+        """
+        async with get_db_context() as db:
+            from app.models.subnet import SubnetSnapshot
+
+            # Data range
+            result = await db.execute(
+                select(
+                    func.min(SubnetSnapshot.timestamp),
+                    func.max(SubnetSnapshot.timestamp),
+                )
+            )
+            row = result.one()
+            data_start, data_end = row[0], row[1]
+
+            if not data_start or not data_end:
+                return PortfolioSimResult(
+                    start_date="", end_date="", initial_capital=initial_capital,
+                    final_value=initial_capital, total_return=0.0, num_periods=0,
+                    periods_in_root=0, equity_curve=[], periods=[], summary={},
+                )
+
+            # AMM change date - minimum valid start
+            amm_change_date = datetime(2025, 11, 5, tzinfo=timezone.utc)
+
+            # Determine sim start
+            if start_date:
+                sim_start = datetime.fromisoformat(start_date).replace(tzinfo=timezone.utc)
+            else:
+                sim_start = max(data_start + timedelta(days=30), amm_change_date)
+
+            # Enforce AMM change as minimum
+            sim_start = max(sim_start, amm_change_date)
+
+            # Determine sim end
+            if end_date:
+                sim_end = datetime.fromisoformat(end_date).replace(tzinfo=timezone.utc)
+            else:
+                sim_end = data_end
+
+            # Generate rebalance dates
+            rebalance_dates: List[datetime] = []
+            current = sim_start
+            while current <= sim_end - timedelta(days=interval_days):
+                rebalance_dates.append(current)
+                current += timedelta(days=interval_days)
+
+            if not rebalance_dates:
+                return PortfolioSimResult(
+                    start_date=sim_start.strftime("%Y-%m-%d"),
+                    end_date=sim_end.strftime("%Y-%m-%d"),
+                    initial_capital=initial_capital, final_value=initial_capital,
+                    total_return=0.0, num_periods=0, periods_in_root=0,
+                    equity_curve=[], periods=[], summary={},
+                )
+
+            portfolio_value = initial_capital
+            periods: List[PortfolioPeriod] = []
+            equity_curve: List[Dict[str, Any]] = []
+            periods_in_root = 0
+            winning_periods = 0
+            all_period_returns: List[float] = []
+
+            # Initial point
+            equity_curve.append({
+                "date": rebalance_dates[0].strftime("%Y-%m-%d"),
+                "value": round(portfolio_value, 4),
+                "return_pct": 0.0,
+                "in_root": False,
+                "num_holdings": 0,
+            })
+
+            for i, rebal_date in enumerate(rebalance_dates):
+                next_date = (
+                    rebalance_dates[i + 1]
+                    if i + 1 < len(rebalance_dates)
+                    else rebal_date + timedelta(days=interval_days)
+                )
+
+                # Reconstruct subnet states at this date
+                subnets = await self._reconstruct_subnets_at_time(db, rebal_date)
+                if not subnets:
+                    # No data → hold in root
+                    periods_in_root += 1
+                    period_return = 0.0
+                    all_period_returns.append(period_return)
+                    periods.append(PortfolioPeriod(
+                        date=rebal_date.strftime("%Y-%m-%d"),
+                        holdings=[], period_return=0.0,
+                        portfolio_value=round(portfolio_value, 4),
+                        in_root=True,
+                    ))
+                    equity_curve.append({
+                        "date": next_date.strftime("%Y-%m-%d"),
+                        "value": round(portfolio_value, 4),
+                        "return_pct": 0.0,
+                        "in_root": True,
+                        "num_holdings": 0,
+                    })
+                    continue
+
+                # Apply viability filtering with custom thresholds
+                viable_subnets = self._apply_viability_filter_v2(
+                    subnets,
+                    min_age_days=min_age_days,
+                    min_reserve_tao=min_reserve_tao,
+                    max_outflow_7d_pct=max_outflow_7d_pct,
+                    max_drawdown_pct=max_drawdown_pct,
+                )
+
+                if not viable_subnets:
+                    # No viable subnets → hold in root
+                    periods_in_root += 1
+                    period_return = 0.0
+                    all_period_returns.append(period_return)
+                    periods.append(PortfolioPeriod(
+                        date=rebal_date.strftime("%Y-%m-%d"),
+                        holdings=[], period_return=0.0,
+                        portfolio_value=round(portfolio_value, 4),
+                        in_root=True,
+                    ))
+                    equity_curve.append({
+                        "date": next_date.strftime("%Y-%m-%d"),
+                        "value": round(portfolio_value, 4),
+                        "return_pct": 0.0,
+                        "in_root": True,
+                        "num_holdings": 0,
+                    })
+                    continue
+
+                # Score viable subnets with 4-factor viability
+                scored_subnets = self._score_viability_v2(
+                    viable_subnets,
+                    fai_weight=fai_weight,
+                    reserve_weight=reserve_weight,
+                    emission_weight=emission_weight,
+                    stability_weight=stability_weight,
+                )
+
+                # Select top N% by viability score
+                num_to_select = max(1, int(len(scored_subnets) * top_percentile / 100))
+                selected = sorted(scored_subnets, key=lambda x: x[1], reverse=True)[:num_to_select]
+
+                if not selected:
+                    periods_in_root += 1
+                    period_return = 0.0
+                    all_period_returns.append(period_return)
+                    periods.append(PortfolioPeriod(
+                        date=rebal_date.strftime("%Y-%m-%d"),
+                        holdings=[], period_return=0.0,
+                        portfolio_value=round(portfolio_value, 4),
+                        in_root=True,
+                    ))
+                    equity_curve.append({
+                        "date": next_date.strftime("%Y-%m-%d"),
+                        "value": round(portfolio_value, 4),
+                        "return_pct": 0.0,
+                        "in_root": True,
+                        "num_holdings": 0,
+                    })
+                    continue
+
+                # Compute weights based on strategy
+                if strategy == "fai_weighted":
+                    weights = self._compute_fai_weights(selected, max_position_pct / 100)
+                else:
+                    # Equal weight, capped by max_position_pct
+                    base_weight = 1.0 / len(selected)
+                    capped_weight = min(base_weight, max_position_pct / 100)
+                    weights = {sn.netuid: capped_weight for sn, _ in selected}
+                    # Normalize if capping reduced total
+                    total_weight = sum(weights.values())
+                    if total_weight < 1.0:
+                        for netuid in weights:
+                            weights[netuid] /= total_weight
+
+                # Compute returns
+                holdings_detail: List[Dict[str, Any]] = []
+                weighted_return = 0.0
+
+                for sn, score in selected:
+                    weight = weights.get(sn.netuid, 0)
+                    entry_price = sn.alpha_price_tao
+                    exit_price_val = await self._get_price_at_time(db, sn.netuid, next_date)
+
+                    if exit_price_val and entry_price > 0:
+                        ret = (exit_price_val - entry_price) / entry_price
+                    else:
+                        ret = 0.0
+
+                    weighted_return += weight * ret
+                    holdings_detail.append({
+                        "netuid": sn.netuid,
+                        "name": sn.name,
+                        "tier": "viable",  # No tier system - just viable
+                        "score": round(score, 1),
+                        "weight": round(weight, 4),
+                        "entry_price": round(entry_price, 9),
+                        "exit_price": round(exit_price_val, 9) if exit_price_val else None,
+                        "return_pct": round(ret, 6),
+                    })
+
+                # Apply return to portfolio
+                portfolio_value *= (1 + weighted_return)
+                period_return = weighted_return
+                all_period_returns.append(period_return)
+                if period_return > 0:
+                    winning_periods += 1
+
+                periods.append(PortfolioPeriod(
+                    date=rebal_date.strftime("%Y-%m-%d"),
+                    holdings=holdings_detail,
+                    period_return=round(period_return, 6),
+                    portfolio_value=round(portfolio_value, 4),
+                    in_root=False,
+                ))
+
+                equity_curve.append({
+                    "date": next_date.strftime("%Y-%m-%d"),
+                    "value": round(portfolio_value, 4),
+                    "return_pct": round(period_return, 6),
+                    "in_root": False,
+                    "num_holdings": len(selected),
+                })
+
+            # Summary stats
+            total_return = (portfolio_value - initial_capital) / initial_capital
+            avg_period_return = sum(all_period_returns) / len(all_period_returns) if all_period_returns else 0.0
+            sorted_returns = sorted(all_period_returns)
+            median_period_return = (
+                sorted_returns[len(sorted_returns) // 2] if sorted_returns else 0.0
+            )
+            max_drawdown = self._compute_equity_drawdown(equity_curve)
+
+            summary = {
+                "total_return_pct": round(total_return, 6),
+                "avg_period_return_pct": round(avg_period_return, 6),
+                "median_period_return_pct": round(median_period_return, 6),
+                "win_rate": round(winning_periods / max(len(all_period_returns), 1), 4),
+                "max_drawdown_pct": round(max_drawdown, 6),
+                "best_period": round(max(all_period_returns), 6) if all_period_returns else 0.0,
+                "worst_period": round(min(all_period_returns), 6) if all_period_returns else 0.0,
+                "avg_holdings_per_period": round(
+                    sum(len(p.holdings) for p in periods) / max(len(periods), 1), 1
+                ),
+                "strategy": strategy,
+                "top_percentile": top_percentile,
+                "viability_config": {
+                    "min_age_days": min_age_days,
+                    "min_reserve_tao": min_reserve_tao,
+                    "max_outflow_7d_pct": max_outflow_7d_pct,
+                    "max_drawdown_pct": max_drawdown_pct,
+                    "weights": {
+                        "fai": fai_weight,
+                        "reserve": reserve_weight,
+                        "emission": emission_weight,
+                        "stability": stability_weight,
+                    },
+                },
+            }
+
+            logger.info(
+                "Viability-based portfolio simulation complete",
+                total_return=f"{total_return:.2%}",
+                periods=len(periods),
+                in_root=periods_in_root,
+                max_dd=f"{max_drawdown:.2%}",
+                strategy=strategy,
+                top_percentile=top_percentile,
+            )
+
+            return PortfolioSimResult(
+                start_date=rebalance_dates[0].strftime("%Y-%m-%d"),
+                end_date=(rebalance_dates[-1] + timedelta(days=interval_days)).strftime("%Y-%m-%d"),
+                initial_capital=initial_capital,
+                final_value=round(portfolio_value, 4),
+                total_return=round(total_return, 6),
+                num_periods=len(periods),
+                periods_in_root=periods_in_root,
+                equity_curve=equity_curve,
+                periods=periods,
+                summary=summary,
+            )
+
+    def _apply_viability_filter_v2(
+        self,
+        subnets: List[SubnetAtTime],
+        min_age_days: int,
+        min_reserve_tao: float,
+        max_outflow_7d_pct: float,
+        max_drawdown_pct: float,
+    ) -> List[SubnetAtTime]:
+        """Apply hard failure thresholds with custom parameters.
+
+        Returns subnets that pass ALL viability checks.
+        """
+        viable: List[SubnetAtTime] = []
+        for sn in subnets:
+            # Check age
+            if sn.age_days < min_age_days:
+                continue
+
+            # Check reserve
+            if sn.pool_tao_reserve < min_reserve_tao:
+                continue
+
+            # Check 7d outflow (as % of reserve)
+            if sn.pool_tao_reserve > 0:
+                outflow_pct = abs(min(sn.taoflow_7d, 0)) / sn.pool_tao_reserve * 100
+                if outflow_pct > max_outflow_7d_pct:
+                    continue
+
+            # Check drawdown
+            if sn.max_drawdown * 100 > max_drawdown_pct:
+                continue
+
+            viable.append(sn)
+
+        return viable
+
+    def _score_viability_v2(
+        self,
+        subnets: List[SubnetAtTime],
+        fai_weight: float,
+        reserve_weight: float,
+        emission_weight: float,
+        stability_weight: float,
+    ) -> List[Tuple[SubnetAtTime, float]]:
+        """Score subnets using 4-factor viability scoring.
+
+        Factors:
+        - FAI (Flow Momentum): 7d TAO flow relative to reserve
+        - Reserve: TAO reserve size
+        - Emission: Emission share
+        - Stability: Inverse of max drawdown
+
+        Returns list of (subnet, score) tuples.
+        """
+        if not subnets:
+            return []
+
+        # Collect raw values for percentile ranking
+        fai_values = []
+        reserve_values = []
+        emission_values = []
+        stability_values = []
+
+        for sn in subnets:
+            # FAI: flow relative to reserve (positive = inflow)
+            fai = sn.taoflow_7d / max(sn.pool_tao_reserve, 1) if sn.pool_tao_reserve > 0 else 0
+            fai_values.append(fai)
+            reserve_values.append(sn.pool_tao_reserve)
+            emission_values.append(sn.emission_share)
+            # Stability: inverse of drawdown (lower drawdown = higher stability)
+            stability_values.append(1.0 - sn.max_drawdown)
+
+        # Score each subnet
+        scored: List[Tuple[SubnetAtTime, float]] = []
+        for i, sn in enumerate(subnets):
+            # Percentile rank for each factor (0-100)
+            fai_pctile = self._percentile_rank(fai_values, fai_values[i])
+            reserve_pctile = self._percentile_rank(reserve_values, reserve_values[i])
+            emission_pctile = self._percentile_rank(emission_values, emission_values[i])
+            stability_pctile = self._percentile_rank(stability_values, stability_values[i])
+
+            # Weighted composite score
+            score = (
+                fai_weight * fai_pctile +
+                reserve_weight * reserve_pctile +
+                emission_weight * emission_pctile +
+                stability_weight * stability_pctile
+            )
+
+            scored.append((sn, score))
+
+        return scored
+
+    def _compute_fai_weights(
+        self,
+        selected: List[Tuple[SubnetAtTime, float]],
+        max_weight: float,
+    ) -> Dict[int, float]:
+        """Compute FAI-weighted allocation based on viability scores.
+
+        Higher scores get higher weights, capped by max_weight.
+        """
+        if not selected:
+            return {}
+
+        # Use scores as weights (normalized)
+        total_score = sum(score for _, score in selected)
+        if total_score <= 0:
+            # Fall back to equal weight
+            base_weight = min(1.0 / len(selected), max_weight)
+            return {sn.netuid: base_weight for sn, _ in selected}
+
+        weights: Dict[int, float] = {}
+        for sn, score in selected:
+            raw_weight = score / total_score
+            weights[sn.netuid] = min(raw_weight, max_weight)
+
+        # Normalize to sum to 1.0
+        total_weight = sum(weights.values())
+        if total_weight > 0:
+            for netuid in weights:
+                weights[netuid] /= total_weight
+
+        return weights

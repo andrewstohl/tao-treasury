@@ -88,6 +88,13 @@ export const api = {
     return data
   },
 
+  getSubnetChart: async (netuid: number, resolution: string = '60', days: number = 30) => {
+    const { data } = await client.get(`/api/v1/subnets/${netuid}/chart`, {
+      params: { resolution, days }
+    })
+    return data
+  },
+
   // Alerts
   getAlerts: async (activeOnly: boolean = true) => {
     const { data } = await client.get(`/api/v1/alerts?active_only=${activeOnly}`)
@@ -207,6 +214,44 @@ export const api = {
     return data
   },
 
+  // NEW: Viability-based simulation (v2)
+  simulatePortfolioV2: async (config: {
+    intervalDays?: number
+    initialCapital?: number
+    startDate?: string
+    endDate?: string
+    minAgeDays?: number
+    minReserveTao?: number
+    maxOutflow7dPct?: number
+    maxDrawdownPct?: number
+    faiWeight?: number
+    reserveWeight?: number
+    emissionWeight?: number
+    stabilityWeight?: number
+    strategy?: 'equal_weight' | 'fai_weighted'
+    topPercentile?: number
+    maxPositionPct?: number
+  }) => {
+    const params = new URLSearchParams()
+    if (config.intervalDays !== undefined) params.append('interval_days', String(config.intervalDays))
+    if (config.initialCapital !== undefined) params.append('initial_capital', String(config.initialCapital))
+    if (config.startDate) params.append('start_date', config.startDate)
+    if (config.endDate) params.append('end_date', config.endDate)
+    if (config.minAgeDays !== undefined) params.append('min_age_days', String(config.minAgeDays))
+    if (config.minReserveTao !== undefined) params.append('min_reserve_tao', String(config.minReserveTao))
+    if (config.maxOutflow7dPct !== undefined) params.append('max_outflow_7d_pct', String(config.maxOutflow7dPct))
+    if (config.maxDrawdownPct !== undefined) params.append('max_drawdown_pct', String(config.maxDrawdownPct))
+    if (config.faiWeight !== undefined) params.append('fai_weight', String(config.faiWeight))
+    if (config.reserveWeight !== undefined) params.append('reserve_weight', String(config.reserveWeight))
+    if (config.emissionWeight !== undefined) params.append('emission_weight', String(config.emissionWeight))
+    if (config.stabilityWeight !== undefined) params.append('stability_weight', String(config.stabilityWeight))
+    if (config.strategy) params.append('strategy', config.strategy)
+    if (config.topPercentile !== undefined) params.append('top_percentile', String(config.topPercentile))
+    if (config.maxPositionPct !== undefined) params.append('max_position_pct', String(config.maxPositionPct))
+    const { data } = await client.get(`/api/v1/backtest/simulate-v2?${params}`)
+    return data
+  },
+
   triggerBackfill: async (lookbackDays: number = 365) => {
     const { data } = await client.post(`/api/v1/backtest/backfill?lookback_days=${lookbackDays}`)
     return data
@@ -214,6 +259,52 @@ export const api = {
 
   getBackfillStatus: async () => {
     const { data } = await client.get('/api/v1/backtest/backfill/status')
+    return data
+  },
+
+  // Rebalance Advisor
+  computeTargetPortfolio: async (config: {
+    strategy: 'equal_weight' | 'fai_weighted'
+    top_percentile: number
+    max_position_pct: number
+    position_threshold_pct: number
+    portfolio_threshold_pct: number
+    use_backend_viability_config: boolean
+    viability_config?: {
+      min_age_days: number
+      min_reserve_tao: number
+      max_outflow_7d_pct: number
+      max_drawdown_pct: number
+      fai_weight: number
+      reserve_weight: number
+      emission_weight: number
+      stability_weight: number
+    }
+  }) => {
+    const { data } = await client.post('/api/v1/rebalance/compute-target', config)
+    return data
+  },
+
+  getViableSubnets: async (config?: {
+    min_age_days?: number
+    min_reserve_tao?: number
+    max_outflow_7d_pct?: number
+    max_drawdown_pct?: number
+    fai_weight?: number
+    reserve_weight?: number
+    emission_weight?: number
+    stability_weight?: number
+  }) => {
+    const params = new URLSearchParams()
+    if (config?.min_age_days !== undefined) params.append('min_age_days', String(config.min_age_days))
+    if (config?.min_reserve_tao !== undefined) params.append('min_reserve_tao', String(config.min_reserve_tao))
+    if (config?.max_outflow_7d_pct !== undefined) params.append('max_outflow_7d_pct', String(config.max_outflow_7d_pct))
+    if (config?.max_drawdown_pct !== undefined) params.append('max_drawdown_pct', String(config.max_drawdown_pct))
+    if (config?.fai_weight !== undefined) params.append('fai_weight', String(config.fai_weight))
+    if (config?.reserve_weight !== undefined) params.append('reserve_weight', String(config.reserve_weight))
+    if (config?.emission_weight !== undefined) params.append('emission_weight', String(config.emission_weight))
+    if (config?.stability_weight !== undefined) params.append('stability_weight', String(config.stability_weight))
+    const { data } = await client.get(`/api/v1/rebalance/viable-subnets?${params}`)
     return data
   },
 }

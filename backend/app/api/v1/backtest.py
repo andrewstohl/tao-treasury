@@ -116,3 +116,60 @@ async def simulate_portfolio(
         tier_weights=parsed_weights,
     )
     return asdict(result)
+
+
+@router.get("/simulate-v2")
+async def simulate_portfolio_v2(
+    # Rebalancing
+    interval_days: int = Query(default=7, ge=1, le=14, description="Days between rebalances"),
+    initial_capital: float = Query(default=100.0, ge=1, le=1000000, description="Starting TAO"),
+    start_date: Optional[str] = Query(default=None, description="Start date ISO format (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(default=None, description="End date ISO format (YYYY-MM-DD)"),
+    # Hard failure thresholds
+    min_age_days: int = Query(default=60, ge=0, le=365, description="Minimum subnet age in days"),
+    min_reserve_tao: float = Query(default=500.0, ge=0, le=10000, description="Minimum TAO reserve"),
+    max_outflow_7d_pct: float = Query(default=50.0, ge=0, le=100, description="Maximum 7d outflow as % of reserve"),
+    max_drawdown_pct: float = Query(default=50.0, ge=0, le=100, description="Maximum drawdown %"),
+    # Viability scoring weights
+    fai_weight: float = Query(default=0.35, ge=0, le=1, description="FAI (flow momentum) weight"),
+    reserve_weight: float = Query(default=0.25, ge=0, le=1, description="TAO reserve weight"),
+    emission_weight: float = Query(default=0.25, ge=0, le=1, description="Emission share weight"),
+    stability_weight: float = Query(default=0.15, ge=0, le=1, description="Stability (inverse drawdown) weight"),
+    # Strategy
+    strategy: str = Query(default="equal_weight", description="Allocation strategy: 'equal_weight' or 'fai_weighted'"),
+    top_percentile: float = Query(default=50.0, ge=10, le=100, description="Select top N% of viable subnets by score"),
+    max_position_pct: float = Query(default=10.0, ge=1, le=50, description="Maximum weight per position %"),
+):
+    """Simulate a portfolio using viability-based filtering (NEW v2).
+
+    This endpoint uses the NEW viability scoring system:
+    1. Applies hard failure thresholds (age, reserve, outflow, drawdown)
+    2. Scores passing subnets using 4-factor viability (FAI, Reserve, Emission, Stability)
+    3. Selects top N% by viability score (NOT by tier)
+    4. Applies equal weight or FAI-weighted allocation
+
+    Key differences from /simulate:
+    - No tier-based selection (T1/T2/T3/T4)
+    - Uses top percentile selection instead
+    - Full viability config customization
+    - AMM change date (Nov 5, 2025) enforced as minimum start
+    """
+    engine = BacktestEngine()
+    result = await engine.simulate_portfolio_v2(
+        interval_days=interval_days,
+        initial_capital=initial_capital,
+        start_date=start_date,
+        end_date=end_date,
+        min_age_days=min_age_days,
+        min_reserve_tao=min_reserve_tao,
+        max_outflow_7d_pct=max_outflow_7d_pct,
+        max_drawdown_pct=max_drawdown_pct,
+        fai_weight=fai_weight,
+        reserve_weight=reserve_weight,
+        emission_weight=emission_weight,
+        stability_weight=stability_weight,
+        strategy=strategy,
+        top_percentile=top_percentile,
+        max_position_pct=max_position_pct,
+    )
+    return asdict(result)

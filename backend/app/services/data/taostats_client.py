@@ -589,6 +589,67 @@ class TaoStatsClient:
             cache_ttl=timedelta(minutes=30),
         )
 
+    # ==================== TradingView Chart Endpoints ====================
+
+    async def get_tradingview_ohlc(
+        self,
+        netuid: int,
+        resolution: str = "60",
+        timestamp_start: Optional[int] = None,
+        timestamp_end: Optional[int] = None,
+        network: str = "finney"
+    ) -> Dict[str, Any]:
+        """Get OHLC candlestick data for a subnet via TradingView UDF endpoint.
+
+        Endpoint: GET /api/dtao/tradingview/udf/history
+
+        This endpoint returns proper OHLC (Open, High, Low, Close) data suitable
+        for candlestick charts, following the TradingView UDF format.
+
+        Args:
+            netuid: Subnet ID
+            resolution: Candle timeframe. Common values:
+                - "1", "5", "15", "30", "60" (minutes)
+                - "D" (daily), "W" (weekly)
+            timestamp_start: Unix timestamp for start of data range
+            timestamp_end: Unix timestamp for end of data range
+            network: Network name (default "finney")
+
+        Returns:
+            TradingView UDF format response with:
+            - t: array of timestamps
+            - o: array of open prices
+            - h: array of high prices
+            - l: array of low prices
+            - c: array of close prices
+            - v: array of volumes (optional)
+            - s: status ("ok" or "no_data")
+        """
+        import time as time_module
+
+        # Default to last 30 days if not specified
+        if timestamp_end is None:
+            timestamp_end = int(time_module.time())
+        if timestamp_start is None:
+            timestamp_start = timestamp_end - (30 * 24 * 60 * 60)  # 30 days ago
+
+        params = {
+            "symbol": f"SUB-{netuid}",
+            "resolution": resolution,
+            "from": timestamp_start,
+            "to": timestamp_end,
+        }
+
+        # Short cache since this is chart data that updates
+        cache_key = f"tradingview_ohlc:{netuid}:{resolution}:{timestamp_start}:{timestamp_end}"
+        return await self._request(
+            "GET",
+            "/api/dtao/tradingview/udf/history",
+            params=params,
+            cache_key=cache_key,
+            cache_ttl=timedelta(minutes=5),
+        )
+
     # ==================== Slippage Endpoints ====================
 
     async def get_slippage(

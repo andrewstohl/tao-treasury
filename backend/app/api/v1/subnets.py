@@ -427,3 +427,86 @@ async def get_subnet(
         created_at=subnet.created_at,
         updated_at=subnet.updated_at,
     )
+
+
+@router.get("/{netuid}/chart")
+async def get_subnet_chart(
+    netuid: int,
+    resolution: str = Query(
+        default="60",
+        regex="^(1|5|15|30|60|240|D|W)$",
+        description="Candle resolution: 1,5,15,30,60,240 (minutes) or D (daily), W (weekly)"
+    ),
+    days: int = Query(default=30, ge=1, le=365, description="Number of days of data"),
+) -> dict:
+    """Get OHLC candlestick chart data for a subnet.
+
+    Returns TradingView-compatible OHLC data for proper candlestick charts.
+
+    Args:
+        netuid: Subnet ID
+        resolution: Candle timeframe (1,5,15,30,60,240 minutes or D/W)
+        days: Number of days of history (default 30, max 365)
+
+    Returns:
+        OHLC data with timestamps, open, high, low, close arrays
+    """
+    import time as time_module
+
+    timestamp_end = int(time_module.time())
+    timestamp_start = timestamp_end - (days * 24 * 60 * 60)
+
+    try:
+        response = await taostats_client.get_tradingview_ohlc(
+            netuid=netuid,
+            resolution=resolution,
+            timestamp_start=timestamp_start,
+            timestamp_end=timestamp_end,
+        )
+
+        # TradingView UDF format returns arrays
+        # Transform to a more frontend-friendly format
+        status = response.get("s", "no_data")
+
+        if status != "ok":
+            return {
+                "netuid": netuid,
+                "resolution": resolution,
+                "status": status,
+                "candles": [],
+            }
+
+        timestamps = response.get("t", [])
+        opens = response.get("o", [])
+        highs = response.get("h", [])
+        lows = response.get("l", [])
+        closes = response.get("c", [])
+        volumes = response.get("v", [])
+
+        # Build candle array
+        candles = []
+        for i in range(len(timestamps)):
+            candle = {
+                "time": timestamps[i],
+                "open": opens[i] if i < len(opens) else None,
+                "high": highs[i] if i < len(highs) else None,
+                "low": lows[i] if i < len(lows) else None,
+                "close": closes[i] if i < len(closes) else None,
+            }
+            if volumes and i < len(volumes):
+                candle["volume"] = volumes[i]
+            candles.append(candle)
+
+        return {
+            "netuid": netuid,
+            "resolution": resolution,
+            "status": "ok",
+            "candles": candles,
+        }
+
+    except Exception as e:
+        logger.error("Failed to fetch OHLC data", netuid=netuid, error=str(e))
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to fetch chart data from TaoStats: {str(e)}"
+        )

@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   ArrowRightLeft,
   BookOpen,
+  FlaskConical,
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../services/api'
@@ -39,6 +40,7 @@ interface LayoutProps {
 const analyzeItems = [
   { path: '/analysis', label: 'Analysis', icon: TrendingUp },
   { path: '/strategy', label: 'Strategy', icon: Shield },
+  { path: '/backtest', label: 'Backtest', icon: FlaskConical },
   { path: '/alerts', label: 'Alerts', icon: AlertTriangle },
   { path: '/recommendations', label: 'Rebalance', icon: ArrowRightLeft },
   { path: '/examples', label: 'Examples', icon: BookOpen },
@@ -189,20 +191,39 @@ export default function Layout({ children }: LayoutProps) {
           </Link>
         </nav>
 
-        {/* Right: Status + Refresh */}
+        {/* Right: TAO Price */}
         <div className="flex items-center gap-3 ml-auto">
+          {taoPrice != null && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-[#6b7280]">TAO</span>
+              <span className="text-lg tabular-nums text-white font-semibold">
+                ${taoPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+              {taoChange != null && (
+                <span className={`text-sm tabular-nums ${taoChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {taoChange >= 0 ? '+' : ''}{taoChange.toFixed(1)}%
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      </header>
+
+      {/* Sync Status Bar - below header, right aligned */}
+      <div className="bg-[#0d0f12] border-b border-[#2a2f38] px-6 py-1 flex justify-end">
+        <div className="flex items-center gap-2">
           {/* Last Synced Status */}
           <div
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg ${
+            className={`flex items-center gap-1.5 px-2 py-0.5 rounded ${
               health?.data_stale ? 'bg-yellow-900/30' : 'bg-[#1e2128]/50'
             }`}
             title={health?.last_sync ? `Last synced: ${new Date(health.last_sync).toLocaleString()}` : 'Never synced'}
           >
-            <div className={`w-2 h-2 rounded-full ${
+            <div className={`w-1.5 h-1.5 rounded-full ${
               health?.data_stale ? 'bg-yellow-400' :
               health?.status === 'healthy' ? 'bg-green-400' : 'bg-yellow-400'
             }`} />
-            <span className={`text-sm ${health?.data_stale ? 'text-yellow-400' : 'text-[#9ca3af]'}`}>
+            <span className={`text-xs ${health?.data_stale ? 'text-yellow-400' : 'text-[#6b7280]'}`}>
               {formatRelativeTime(health?.last_sync ?? null)}
             </span>
           </div>
@@ -211,31 +232,14 @@ export default function Layout({ children }: LayoutProps) {
           <button
             onClick={() => refreshMutation.mutate()}
             disabled={refreshMutation.isPending}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1e2128] hover:bg-[#262b33] rounded-lg text-sm text-[#9ca3af] disabled:opacity-50 transition-colors"
+            className="flex items-center gap-1 px-2 py-0.5 bg-[#1e2128] hover:bg-[#262b33] rounded text-xs text-[#6b7280] disabled:opacity-50 transition-colors"
             title="Sync data from TaoStats"
           >
-            <RefreshCw className={`w-4 h-4 ${refreshMutation.isPending ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3 h-3 ${refreshMutation.isPending ? 'animate-spin' : ''}`} />
             {refreshMutation.isPending ? 'Syncing...' : 'Sync'}
           </button>
         </div>
-      </header>
-
-      {/* TAO Price Bar - below header, right aligned */}
-      {taoPrice != null && (
-        <div className="bg-[#0d0f12] border-b border-[#2a2f38] px-6 py-1.5 flex justify-end">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-[#6b7280]">TAO</span>
-            <span className="text-sm tabular-nums text-white font-medium">
-              ${taoPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </span>
-            {taoChange != null && (
-              <span className={`text-xs tabular-nums ${taoChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                {taoChange >= 0 ? '+' : ''}{taoChange.toFixed(1)}%
-              </span>
-            )}
-          </div>
-        </div>
-      )}
+      </div>
 
       {/* Main content */}
       <main className="flex-1 overflow-auto">

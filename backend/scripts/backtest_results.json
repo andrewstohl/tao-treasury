@@ -1,0 +1,13 @@
+{
+  "run_timestamp": "2026-02-06T19:18:10.673488",
+  "total_observations": 37855,
+  "subnets_analyzed": 129,
+  "results": [
+    {
+      "metric": "flow_1d",
+      "horizon": "1d",
+      "n": 37726,
+      "correlation": -0.00020079751692188725,
+      "r_squared": 4.0319642801995595e-08,
+      "p_value": 0.9688904082808341,
+      "is_significant": 

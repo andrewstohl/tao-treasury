@@ -8,6 +8,7 @@ import Recommendations from './pages/Recommendations'
 import Strategy from './pages/Strategy'
 import Settings from './pages/Settings'
 import Examples from './pages/Examples'
+import Backtest from './pages/Backtest'
 
 function App() {
   return (
@@ -21,6 +22,7 @@ function App() {
         <Route path="/strategy" element={<Strategy />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/examples/*" element={<Examples />} />
+        <Route path="/backtest" element={<Backtest />} />
       </Routes>
     </Layout>
   )

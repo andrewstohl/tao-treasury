@@ -1,8 +1,16 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Save, RotateCcw, AlertTriangle, CheckCircle, Info, Play, TrendingUp, TrendingDown, Download, Loader2 } from 'lucide-react'
+import { Save, RotateCcw, AlertTriangle, CheckCircle, Info, FlaskConical, ArrowRight, RefreshCw, Calendar } from 'lucide-react'
 import { api } from '../services/api'
-import type { ViabilityConfig, BacktestResult, BackfillStatus, PortfolioSimResult } from '../types'
+import type { ViabilityConfig } from '../types'
+import {
+  RebalanceConfig,
+  loadRebalanceConfig,
+  saveRebalanceConfig,
+  resetRebalanceConfig,
+  getDaysUntilRebalance,
+} from '../services/settingsStore'
 
 type NumericField = {
   key: string
@@ -61,6 +69,11 @@ export default function Settings() {
   const [draft, setDraft] = useState<Record<string, number> | null>(null)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle')
 
+  // Rebalance config (localStorage)
+  const [rebalanceConfig, setRebalanceConfig] = useState<RebalanceConfig>(() => loadRebalanceConfig())
+  const [rebalanceSaveStatus, setRebalanceSaveStatus] = useState<'idle' | 'saved'>('idle')
+  const daysUntilRebalance = getDaysUntilRebalance()
+
   const { data: config, isLoading } = useQuery<ViabilityConfig>({
     queryKey: ['viability-config'],
     queryFn: api.getViabilityConfig,
@@ -104,6 +117,24 @@ export default function Settings() {
   const updateField = useCallback((key: string, value: number) => {
     setDraft(prev => prev ? { ...prev, [key]: value } : prev)
     setSaveStatus('idle')
+  }, [])
+
+  const updateRebalanceConfig = useCallback((updates: Partial<RebalanceConfig>) => {
+    setRebalanceConfig(prev => ({ ...prev, ...updates }))
+    setRebalanceSaveStatus('idle')
+  }, [])
+
+  const handleSaveRebalanceConfig = useCallback(() => {
+    saveRebalanceConfig(rebalanceConfig)
+    setRebalanceSaveStatus('saved')
+    setTimeout(() => setRebalanceSaveStatus('idle'), 3000)
+  }, [rebalanceConfig])
+
+  const handleResetRebalanceConfig = useCallback(() => {
+    const defaults = resetRebalanceConfig()
+    setRebalanceConfig(defaults)
+    setRebalanceSaveStatus('saved')
+    setTimeout(() => setRebalanceSaveStatus('idle'), 3000)
   }, [])
 
   const weightSum = draft
@@ -333,762 +364,362 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* Backtest Section */}
-      <BacktestSection />
-
-      {/* Portfolio Simulation */}
-      <PortfolioSimSection />
-    </div>
-  )
-}
-
-const TIER_LABELS: Record<string, string> = {
-  tier_1: 'Tier 1 (Prime)',
-  tier_2: 'Tier 2 (Eligible)',
-  tier_3: 'Tier 3 (Watchlist)',
-  tier_4: 'Tier 4 (Excluded)',
-}
-const TIER_COLORS: Record<string, string> = {
-  tier_1: 'text-emerald-400',
-  tier_2: 'text-green-400',
-  tier_3: 'text-yellow-400',
-  tier_4: 'text-red-400',
-}
-const TIER_BG: Record<string, string> = {
-  tier_1: 'bg-emerald-900/30 border-emerald-700/50',
-  tier_2: 'bg-green-900/30 border-green-700/50',
-  tier_3: 'bg-yellow-900/30 border-yellow-700/50',
-  tier_4: 'bg-red-900/30 border-red-700/50',
-}
-
-function fmtPct(v: number | null | undefined): string {
-  if (v == null) return '--'
-  return `${v >= 0 ? '+' : ''}${(v * 100).toFixed(2)}%`
-}
-
-function fmtWr(v: number | null | undefined): string {
-  if (v == null) return '--'
-  return `${(v * 100).toFixed(0)}%`
-}
-
-function ReturnCell({ value }: { value: number | null | undefined }) {
-  if (value == null) return <span className="text-[#243a52]">--</span>
-  const color = value >= 0 ? 'text-green-400' : 'text-red-400'
-  return <span className={`tabular-nums ${color}`}>{fmtPct(value)}</span>
-}
-
-function BacktestSection() {
-  const [backtestData, setBacktestData] = useState<BacktestResult | null>(null)
-  const [isRunning, setIsRunning] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [intervalDays, setIntervalDays] = useState(3)
-
-  // Backfill state
-  const [backfillStatus, setBackfillStatus] = useState<BackfillStatus | null>(null)
-  const [isBackfilling, setIsBackfilling] = useState(false)
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
-  const runBacktest = async () => {
-    setIsRunning(true)
-    setError(null)
-    try {
-      const data = await api.runBacktest(intervalDays)
-      setBacktestData(data)
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Backtest failed')
-    } finally {
-      setIsRunning(false)
-    }
-  }
-
-  const triggerBackfill = async () => {
-    try {
-      await api.triggerBackfill(365)
-      setIsBackfilling(true)
-      // Start polling for status
-      pollRef.current = setInterval(async () => {
-        try {
-          const status = await api.getBackfillStatus()
-          setBackfillStatus(status)
-          if (!status.running) {
-            setIsBackfilling(false)
-            if (pollRef.current) clearInterval(pollRef.current)
-            pollRef.current = null
-          }
-        } catch {
-          // ignore polling errors
+      {/* Rebalance Settings */}
+      <Section
+        title="Rebalance Settings"
+        description="Configure automatic portfolio rebalancing schedule and thresholds."
+        icon={<RefreshCw className="w-5 h-5 text-amber-400" />}
+        headerRight={
+          <div className="flex items-center gap-3">
+            {rebalanceSaveStatus === 'saved' && (
+              <span className="flex items-center gap-1 text-sm text-green-400">
+                <CheckCircle className="w-4 h-4" /> Saved
+              </span>
+            )}
+            <button
+              onClick={handleResetRebalanceConfig}
+              className="flex items-center gap-2 px-3 py-1.5 bg-[#1a2d42] hover:bg-[#243a52] rounded text-xs text-[#8faabe]"
+            >
+              <RotateCcw size={12} />
+              Reset
+            </button>
+            <button
+              onClick={handleSaveRebalanceConfig}
+              className="flex items-center gap-2 px-3 py-1.5 bg-tao-600 hover:bg-tao-500 rounded text-xs font-medium text-white"
+            >
+              <Save size={12} />
+              Save
+            </button>
+          </div>
         }
-      }, 3000)
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Backfill trigger failed')
-    }
-  }
-
-  // Check backfill status on mount
-  useEffect(() => {
-    const checkStatus = async () => {
-      try {
-        const status = await api.getBackfillStatus()
-        setBackfillStatus(status)
-        if (status.running) {
-          setIsBackfilling(true)
-          pollRef.current = setInterval(async () => {
-            try {
-              const s = await api.getBackfillStatus()
-              setBackfillStatus(s)
-              if (!s.running) {
-                setIsBackfilling(false)
-                if (pollRef.current) clearInterval(pollRef.current)
-                pollRef.current = null
-              }
-            } catch { /* ignore */ }
-          }, 3000)
-        }
-      } catch { /* ignore */ }
-    }
-    checkStatus()
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current)
-    }
-  }, [])
-
-  const hardFailRate = backtestData?.tier_separation?.hard_failure_rate
-  const totalObs = backtestData ? Object.values(backtestData.summary).reduce((sum, s) => sum + s.count, 0) : 0
-  const passObs = backtestData ? totalObs - (backtestData.summary.tier_4?.count || 0) : 0
-
-  return (
-    <Section title="Backtest Validation" description="Replay viability scoring against historical data to validate tier quality.">
-      {/* Historical Data Backfill */}
-      <div className="bg-[#050d15]/40 rounded-lg p-4 border border-[#1e3a5f]/50 space-y-3">
-        <div className="flex items-center justify-between">
+      >
+        {/* Schedule Status */}
+        <div className="flex items-center gap-4 p-3 bg-[#0a1520]/50 rounded-lg border border-[#1e3a5f]/50">
+          <Calendar className="w-5 h-5 text-[#6f87a0]" />
           <div>
-            <h4 className="text-sm font-medium text-[#a8c4d9]">Historical Data</h4>
-            <p className="text-xs text-[#5a7a94] mt-0.5">
-              Fetch daily pool snapshots from TaoStats for deeper backtesting (up to 12 months).
-            </p>
-          </div>
-          <button
-            onClick={triggerBackfill}
-            disabled={isBackfilling}
-            className="flex items-center gap-2 px-3 py-1.5 bg-[#1a2d42] hover:bg-[#243a52] rounded text-sm text-[#8faabe] disabled:opacity-50 whitespace-nowrap"
-          >
-            {isBackfilling ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-            {isBackfilling ? 'Backfilling...' : 'Fetch History'}
-          </button>
-        </div>
-        {backfillStatus && (
-          <div className="text-xs text-[#6f87a0] space-y-1">
-            {backfillStatus.running ? (
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-2">
-                  <Loader2 size={12} className="animate-spin text-tao-400" />
-                  <span>Processing subnet {backfillStatus.current_netuid} ({backfillStatus.completed_subnets}/{backfillStatus.total_subnets})</span>
-                </div>
-                <div className="w-full bg-[#1a2d42] rounded-full h-1.5">
-                  <div
-                    className="bg-tao-500 h-1.5 rounded-full transition-all"
-                    style={{ width: `${backfillStatus.total_subnets > 0 ? (backfillStatus.completed_subnets / backfillStatus.total_subnets) * 100 : 0}%` }}
-                  />
-                </div>
-                <span className="text-[#5a7a94]">{backfillStatus.total_records_created.toLocaleString()} records created</span>
-              </div>
-            ) : backfillStatus.finished_at ? (
-              <div className="flex items-center gap-2">
-                <CheckCircle size={12} className="text-green-400" />
-                <span>
-                  Last backfill: {backfillStatus.total_records_created.toLocaleString()} records created
-                  {backfillStatus.errors.length > 0 && `, ${backfillStatus.errors.length} errors`}
-                </span>
-              </div>
-            ) : null}
-          </div>
-        )}
-      </div>
-
-      {/* Run controls */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <p className="text-sm text-[#6f87a0]">
-            Scores subnets at each historical date, then measures forward price performance per tier.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <select
-            value={intervalDays}
-            onChange={(e) => setIntervalDays(Number(e.target.value))}
-            className="bg-[#1a2d42] border border-[#2a4a66] rounded px-2 py-1.5 text-sm text-[#8faabe]"
-          >
-            <option value={1}>Every day</option>
-            <option value={3}>Every 3 days</option>
-            <option value={7}>Weekly</option>
-          </select>
-          <button
-            onClick={runBacktest}
-            disabled={isRunning}
-            className="flex items-center gap-2 px-4 py-2 bg-tao-600 hover:bg-tao-500 rounded text-sm font-medium text-white disabled:opacity-50 whitespace-nowrap"
-          >
-            <Play size={14} />
-            {isRunning ? 'Running...' : 'Run Backtest'}
-          </button>
-        </div>
-      </div>
-
-      {error && (
-        <div className="text-sm text-red-400 bg-red-900/20 rounded p-3 flex items-center gap-2">
-          <AlertTriangle className="w-4 h-4" /> {error}
-        </div>
-      )}
-
-      {backtestData && (
-        <div className="space-y-4 mt-2">
-          {/* Data range + summary stats */}
-          <div className="flex items-center justify-between text-xs text-[#5a7a94]">
-            <span>
-              Data: {backtestData.data_range.start} to {backtestData.data_range.end}
-              {' '}&middot;{' '}{backtestData.scoring_dates.length} scoring dates
-              {' '}&middot;{' '}{totalObs.toLocaleString()} observations
+            <span className="text-sm text-[#a8c4d9]">
+              {daysUntilRebalance === null ? (
+                'No rebalance scheduled'
+              ) : daysUntilRebalance <= 0 ? (
+                <span className="text-amber-400">Rebalance due now</span>
+              ) : (
+                <>Next rebalance in <span className="text-tao-400 font-medium">{daysUntilRebalance} days</span></>
+              )}
             </span>
-            {hardFailRate != null && (
-              <span className="text-[#6f87a0]">
-                Pass rate: <span className="tabular-nums">{((1 - hardFailRate) * 100).toFixed(1)}%</span>
-                {' '}({passObs.toLocaleString()} scored)
+            {rebalanceConfig.lastRebalanceDate && (
+              <span className="text-xs text-[#5a7a94] ml-3">
+                Last: {rebalanceConfig.lastRebalanceDate}
               </span>
             )}
           </div>
-
-          {/* Tier performance table */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[#1e3a5f]">
-                  <th className="text-left py-2 text-[#6f87a0] font-medium">Tier</th>
-                  <th className="text-right py-2 text-[#6f87a0] font-medium">Count</th>
-                  <th className="text-right py-2 text-[#6f87a0] font-medium">Median 1d</th>
-                  <th className="text-right py-2 text-[#6f87a0] font-medium">Median 3d</th>
-                  <th className="text-right py-2 text-[#6f87a0] font-medium">Median 7d</th>
-                  <th className="text-right py-2 text-[#6f87a0] font-medium">Win 1d</th>
-                  <th className="text-right py-2 text-[#6f87a0] font-medium">Win 3d</th>
-                  <th className="text-right py-2 text-[#6f87a0] font-medium">Win 7d</th>
-                </tr>
-              </thead>
-              <tbody>
-                {['tier_1', 'tier_2', 'tier_3', 'tier_4'].map(tier => {
-                  const s = backtestData.summary[tier]
-                  if (!s) return null
-                  return (
-                    <tr key={tier} className={`border-b border-[#132436] ${TIER_BG[tier]}`}>
-                      <td className={`py-2 font-medium ${TIER_COLORS[tier]}`}>{TIER_LABELS[tier]}</td>
-                      <td className="text-right py-2 tabular-nums text-[#8faabe]">{s.count.toLocaleString()}</td>
-                      <td className="text-right py-2"><ReturnCell value={s.median_return_1d} /></td>
-                      <td className="text-right py-2"><ReturnCell value={s.median_return_3d} /></td>
-                      <td className="text-right py-2"><ReturnCell value={s.median_return_7d} /></td>
-                      <td className="text-right py-2 tabular-nums text-[#8faabe]">{fmtWr(s.win_rate_1d)}</td>
-                      <td className="text-right py-2 tabular-nums text-[#8faabe]">{fmtWr(s.win_rate_3d)}</td>
-                      <td className="text-right py-2 tabular-nums text-[#8faabe]">{fmtWr(s.win_rate_7d)}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Tier separation cards — median return and win rate */}
-          <div>
-            <h4 className="text-xs font-semibold text-[#6f87a0] uppercase tracking-wider mb-2">T1 vs T4 Separation</h4>
-            <div className="grid grid-cols-3 gap-3">
-              {[1, 3, 7].map(h => {
-                const medKey = `tier1_vs_tier4_median_${h}d`
-                const wrKey = `tier1_vs_tier4_winrate_${h}d`
-                const medVal = backtestData.tier_separation[medKey]
-                const wrVal = backtestData.tier_separation[wrKey]
-                const medPositive = medVal != null && medVal > 0
-                const wrPositive = wrVal != null && wrVal > 0
-                return (
-                  <div key={h} className="bg-[#050d15]/60 rounded-lg p-3 border border-[#1e3a5f]">
-                    <div className="text-xs text-[#5a7a94] mb-2 text-center">{h}-day horizon</div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="text-center">
-                        <div className="text-[10px] text-[#243a52] uppercase">Median</div>
-                        <div className={`text-sm tabular-nums font-semibold ${medVal == null ? 'text-[#243a52]' : medPositive ? 'text-green-400' : 'text-red-400'}`}>
-                          {medVal == null ? '--' : fmtPct(medVal)}
-                        </div>
-                        <div className="mt-0.5">
-                          {medPositive ? (
-                            <TrendingUp className="w-3 h-3 text-green-500 inline" />
-                          ) : medVal != null ? (
-                            <TrendingDown className="w-3 h-3 text-red-500 inline" />
-                          ) : null}
-                        </div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-[10px] text-[#243a52] uppercase">Win Rate</div>
-                        <div className={`text-sm tabular-nums font-semibold ${wrVal == null ? 'text-[#243a52]' : wrPositive ? 'text-green-400' : 'text-red-400'}`}>
-                          {wrVal == null ? '--' : `${wrVal >= 0 ? '+' : ''}${(wrVal * 100).toFixed(1)}pp`}
-                        </div>
-                        <div className="mt-0.5">
-                          {wrPositive ? (
-                            <TrendingUp className="w-3 h-3 text-green-500 inline" />
-                          ) : wrVal != null ? (
-                            <TrendingDown className="w-3 h-3 text-red-500 inline" />
-                          ) : null}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* Daily tier distribution */}
-          {backtestData.daily_results.length > 0 && (
-            <div>
-              <h4 className="text-xs font-semibold text-[#6f87a0] uppercase tracking-wider mb-2">Daily Tier Distribution</h4>
-              <div className="space-y-1 max-h-[300px] overflow-y-auto">
-                {backtestData.daily_results.map(day => {
-                  const total = Object.values(day.tier_counts).reduce((a, b) => a + b, 0) || 1
-                  return (
-                    <div key={day.date} className="flex items-center gap-2 text-xs">
-                      <span className="text-[#5a7a94] w-20 tabular-nums">{day.date}</span>
-                      <div className="flex-1 flex h-4 rounded overflow-hidden bg-[#121f2d]">
-                        <div className="bg-emerald-600/60" style={{ width: `${(day.tier_counts.tier_1 || 0) / total * 100}%` }} title={`T1: ${day.tier_counts.tier_1 || 0}`} />
-                        <div className="bg-green-600/60" style={{ width: `${(day.tier_counts.tier_2 || 0) / total * 100}%` }} title={`T2: ${day.tier_counts.tier_2 || 0}`} />
-                        <div className="bg-yellow-600/50" style={{ width: `${(day.tier_counts.tier_3 || 0) / total * 100}%` }} title={`T3: ${day.tier_counts.tier_3 || 0}`} />
-                        <div className="bg-red-600/40" style={{ width: `${(day.tier_counts.tier_4 || 0) / total * 100}%` }} title={`T4: ${day.tier_counts.tier_4 || 0}`} />
-                      </div>
-                      <span className="text-[#243a52] w-28 text-right">
-                        {day.tier_counts.tier_1 || 0}/{day.tier_counts.tier_2 || 0}/{day.tier_counts.tier_3 || 0}/{day.tier_counts.tier_4 || 0}
-                      </span>
-                    </div>
-                  )
-                })}
-              </div>
-              <div className="flex gap-4 mt-1 text-xs text-[#243a52]">
-                <span><span className="inline-block w-2 h-2 rounded bg-emerald-600 mr-1" />T1</span>
-                <span><span className="inline-block w-2 h-2 rounded bg-green-600 mr-1" />T2</span>
-                <span><span className="inline-block w-2 h-2 rounded bg-yellow-600 mr-1" />T3</span>
-                <span><span className="inline-block w-2 h-2 rounded bg-red-600 mr-1" />T4</span>
-              </div>
-            </div>
-          )}
-
-          {/* Interpretation note */}
-          <div className="flex items-start gap-2 text-xs text-[#5a7a94] mt-2">
-            <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
-            <span>
-              Positive T1-vs-T4 separation = the model adds value. Median returns resist outlier distortion.
-              Win rate delta shows the probability edge of picking Tier 1 over Tier 4 subnets.
-              Adjust weights and thresholds above, then re-run to see the effect.
-            </span>
-          </div>
-        </div>
-      )}
-    </Section>
-  )
-}
-
-const TIER_OPTIONS = [
-  { key: 'tier_1', label: 'T1 (Prime)', color: 'text-emerald-400', bg: 'bg-emerald-600', border: 'border-emerald-500' },
-  { key: 'tier_2', label: 'T2 (Eligible)', color: 'text-green-400', bg: 'bg-green-600', border: 'border-green-500' },
-  { key: 'tier_3', label: 'T3 (Watchlist)', color: 'text-yellow-400', bg: 'bg-yellow-600', border: 'border-yellow-500' },
-] as const
-
-function PortfolioSimSection() {
-  const [simData, setSimData] = useState<PortfolioSimResult | null>(null)
-  const [isRunning, setIsRunning] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [intervalDays, setIntervalDays] = useState(3)
-  const [expandedPeriod, setExpandedPeriod] = useState<string | null>(null)
-
-  // Multi-tier state: which tiers are selected and their weight %
-  const [selectedTiers, setSelectedTiers] = useState<Record<string, boolean>>({
-    tier_1: true,
-    tier_2: false,
-    tier_3: false,
-  })
-  const [tierPcts, setTierPcts] = useState<Record<string, number>>({
-    tier_1: 100,
-    tier_2: 0,
-    tier_3: 0,
-  })
-
-  const activeTiers = Object.entries(selectedTiers).filter(([, v]) => v).map(([k]) => k)
-  const totalPct = activeTiers.reduce((sum, t) => sum + (tierPcts[t] || 0), 0)
-  const weightsValid = activeTiers.length > 0 && Math.abs(totalPct - 100) < 0.5
-
-  const toggleTier = (tier: string) => {
-    const next = { ...selectedTiers, [tier]: !selectedTiers[tier] }
-    setSelectedTiers(next)
-    // Auto-distribute weights evenly when toggling
-    const active = Object.entries(next).filter(([, v]) => v).map(([k]) => k)
-    if (active.length > 0) {
-      const even = Math.round(100 / active.length)
-      const pcts: Record<string, number> = {}
-      active.forEach((t, i) => {
-        pcts[t] = i === active.length - 1 ? 100 - even * (active.length - 1) : even
-      })
-      // Keep unselected at 0
-      for (const t of Object.keys(next)) {
-        if (!next[t]) pcts[t] = 0
-      }
-      setTierPcts(prev => ({ ...prev, ...pcts }))
-    }
-  }
-
-  const runSim = async () => {
-    setIsRunning(true)
-    setError(null)
-    try {
-      // Build tier_weights from selections
-      const weights: Record<string, number> = {}
-      for (const t of activeTiers) {
-        weights[t] = (tierPcts[t] || 0) / 100
-      }
-      const data = await api.simulatePortfolio(intervalDays, 'tier_1', undefined, 100, weights)
-      setSimData(data)
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Simulation failed')
-    } finally {
-      setIsRunning(false)
-    }
-  }
-
-  // Format the tier allocation label for display
-  const allocationLabel = activeTiers.length === 0
-    ? 'No tiers selected'
-    : activeTiers.map(t => {
-        const opt = TIER_OPTIONS.find(o => o.key === t)
-        return `${opt?.label ?? t} ${tierPcts[t]}%`
-      }).join(' + ')
-
-  return (
-    <Section title="Portfolio Simulation" description="Simulate a multi-tier weighted portfolio, rebalancing at each interval.">
-      {/* Tier selection + weight controls */}
-      <div className="bg-[#050d15]/40 rounded-lg p-4 border border-[#1e3a5f]/50 space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <h4 className="text-sm font-medium text-[#a8c4d9]">Tier Allocation</h4>
-            <p className="text-xs text-[#5a7a94] mt-0.5">
-              Select tiers to include and set weight for each. Weights must total 100%.
-            </p>
-          </div>
-          {!weightsValid && activeTiers.length > 0 && (
-            <span className="flex items-center gap-1 text-xs text-red-400">
-              <AlertTriangle className="w-3 h-3" /> Total: {totalPct}% (must be 100%)
-            </span>
-          )}
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
-          {TIER_OPTIONS.map(opt => {
-            const selected = selectedTiers[opt.key]
-            return (
-              <div
-                key={opt.key}
-                className={`rounded-lg border p-3 transition-all ${
-                  selected
-                    ? `${opt.border} bg-[#121f2d]/80`
-                    : 'border-[#1e3a5f] bg-[#121f2d]/30 opacity-60'
+        {/* Schedule */}
+        <div className="space-y-2">
+          <label className="text-sm text-[#8faabe]">Rebalance Schedule</label>
+          <div className="flex gap-3">
+            {[3, 7, 14].map(days => (
+              <button
+                key={days}
+                onClick={() => updateRebalanceConfig({ rebalanceIntervalDays: days })}
+                className={`px-4 py-2 rounded text-sm ${
+                  rebalanceConfig.rebalanceIntervalDays === days
+                    ? 'bg-tao-600 text-white'
+                    : 'bg-[#1a2d42] text-[#8faabe] hover:bg-[#243a52]'
                 }`}
               >
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={selected}
-                    onChange={() => toggleTier(opt.key)}
-                    className="w-4 h-4 rounded border-[#2a4a66] bg-[#1a2d42] text-tao-500 focus:ring-tao-500"
-                  />
-                  <span className={`text-sm font-medium ${opt.color}`}>{opt.label}</span>
-                </label>
-                {selected && (
-                  <div className="mt-2 flex items-center gap-2">
-                    <input
-                      type="range"
-                      min={5}
-                      max={100}
-                      step={5}
-                      value={tierPcts[opt.key] || 0}
-                      onChange={(e) => setTierPcts(prev => ({ ...prev, [opt.key]: Number(e.target.value) }))}
-                      className="flex-1 h-1.5 bg-[#1a2d42] rounded-lg appearance-none cursor-pointer accent-tao-500"
-                    />
-                    <input
-                      type="number"
-                      min={5}
-                      max={100}
-                      step={5}
-                      value={tierPcts[opt.key] || 0}
-                      onChange={(e) => setTierPcts(prev => ({ ...prev, [opt.key]: Number(e.target.value) }))}
-                      className="w-14 bg-[#1a2d42] border border-[#2a4a66] rounded px-1.5 py-0.5 text-sm text-center text-[#8faabe] tabular-nums"
-                    />
-                    <span className="text-xs text-[#5a7a94]">%</span>
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-
-        {/* Visual weight bar */}
-        {activeTiers.length > 0 && (
-          <div className="flex h-2.5 rounded-full overflow-hidden bg-[#1a2d42]">
-            {TIER_OPTIONS.filter(o => selectedTiers[o.key]).map(opt => (
-              <div
-                key={opt.key}
-                className={`${opt.bg} transition-all`}
-                style={{ width: `${totalPct > 0 ? (tierPcts[opt.key] / totalPct) * 100 : 0}%` }}
-                title={`${opt.label}: ${tierPcts[opt.key]}%`}
-              />
+                Every {days} days {days === 3 && '(Recommended)'}
+              </button>
             ))}
           </div>
-        )}
-      </div>
-
-      {/* Run controls */}
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-[#6f87a0]">
-          {allocationLabel}
-        </p>
-        <div className="flex items-center gap-2">
-          <select
-            value={intervalDays}
-            onChange={(e) => setIntervalDays(Number(e.target.value))}
-            className="bg-[#1a2d42] border border-[#2a4a66] rounded px-2 py-1.5 text-sm text-[#8faabe]"
-          >
-            <option value={1}>Daily rebal</option>
-            <option value={3}>3-day rebal</option>
-            <option value={7}>Weekly rebal</option>
-          </select>
-          <button
-            onClick={runSim}
-            disabled={isRunning || !weightsValid}
-            className="flex items-center gap-2 px-4 py-2 bg-tao-600 hover:bg-tao-500 rounded text-sm font-medium text-white disabled:opacity-50 whitespace-nowrap"
-          >
-            <Play size={14} />
-            {isRunning ? 'Running...' : 'Simulate'}
-          </button>
         </div>
-      </div>
 
-      {error && (
-        <div className="text-sm text-red-400 bg-red-900/20 rounded p-3 flex items-center gap-2">
-          <AlertTriangle className="w-4 h-4" /> {error}
+        {/* Thresholds */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <div className="flex justify-between items-baseline">
+              <label className="text-sm text-[#8faabe]">Position Threshold</label>
+              <span className="text-sm tabular-nums text-[#a8c4d9]">{rebalanceConfig.positionThresholdPct}%</span>
+            </div>
+            <input
+              type="range"
+              min={1}
+              max={10}
+              step={1}
+              value={rebalanceConfig.positionThresholdPct}
+              onChange={(e) => updateRebalanceConfig({ positionThresholdPct: Number(e.target.value) })}
+              className="w-full h-1.5 bg-[#1a2d42] rounded-lg appearance-none cursor-pointer accent-tao-500"
+            />
+            <p className="text-xs text-[#5a7a94]">Skip trades where position delta is below this %</p>
+          </div>
+          <div className="space-y-1.5">
+            <div className="flex justify-between items-baseline">
+              <label className="text-sm text-[#8faabe]">Portfolio Threshold</label>
+              <span className="text-sm tabular-nums text-[#a8c4d9]">{rebalanceConfig.portfolioThresholdPct}%</span>
+            </div>
+            <input
+              type="range"
+              min={2}
+              max={15}
+              step={1}
+              value={rebalanceConfig.portfolioThresholdPct}
+              onChange={(e) => updateRebalanceConfig({ portfolioThresholdPct: Number(e.target.value) })}
+              className="w-full h-1.5 bg-[#1a2d42] rounded-lg appearance-none cursor-pointer accent-tao-500"
+            />
+            <p className="text-xs text-[#5a7a94]">Skip rebalance if total portfolio drift is below this %</p>
+          </div>
         </div>
-      )}
 
-      {simData && (
-        <div className="space-y-4 mt-2">
-          {/* Summary cards */}
-          <div className="grid grid-cols-4 gap-3">
-            <StatCard
-              label="Total Return"
-              value={`${simData.total_return >= 0 ? '+' : ''}${(simData.total_return * 100).toFixed(1)}%`}
-              sub={`${simData.initial_capital} → ${simData.final_value.toFixed(1)} TAO`}
-              color={simData.total_return >= 0 ? 'text-green-400' : 'text-red-400'}
-            />
-            <StatCard
-              label="Win Rate"
-              value={`${(simData.summary.win_rate * 100).toFixed(0)}%`}
-              sub={`${simData.num_periods} periods`}
-              color={simData.summary.win_rate > 0.5 ? 'text-green-400' : 'text-yellow-400'}
-            />
-            <StatCard
-              label="Max Drawdown"
-              value={`-${(simData.summary.max_drawdown_pct * 100).toFixed(1)}%`}
-              sub={`${simData.periods_in_root} periods in root`}
-              color="text-red-400"
-            />
-            <StatCard
-              label="Avg Holdings"
-              value={`${simData.summary.avg_holdings_per_period}`}
-              sub={`per ${intervalDays}d period`}
-              color="text-[#8faabe]"
-            />
+        {/* Allocation Strategy */}
+        <div className="space-y-2">
+          <label className="text-sm text-[#8faabe]">Allocation Strategy</label>
+          <div className="flex gap-3">
+            <button
+              onClick={() => updateRebalanceConfig({ strategy: 'equal_weight' })}
+              className={`px-4 py-2 rounded text-sm ${
+                rebalanceConfig.strategy === 'equal_weight'
+                  ? 'bg-tao-600 text-white'
+                  : 'bg-[#1a2d42] text-[#8faabe] hover:bg-[#243a52]'
+              }`}
+            >
+              Equal Weight (Recommended)
+            </button>
+            <button
+              onClick={() => updateRebalanceConfig({ strategy: 'fai_weighted' })}
+              className={`px-4 py-2 rounded text-sm ${
+                rebalanceConfig.strategy === 'fai_weighted'
+                  ? 'bg-tao-600 text-white'
+                  : 'bg-[#1a2d42] text-[#8faabe] hover:bg-[#243a52]'
+              }`}
+            >
+              FAI-Weighted
+            </button>
           </div>
+        </div>
 
-          {/* Equity curve */}
-          <div>
-            <h4 className="text-xs font-semibold text-[#6f87a0] uppercase tracking-wider mb-2">
-              Equity Curve ({simData.start_date} to {simData.end_date})
-            </h4>
-            <EquityCurveChart data={simData.equity_curve} initial={simData.initial_capital} />
+        {/* Selection Parameters */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <div className="flex justify-between items-baseline">
+              <label className="text-sm text-[#8faabe]">Top Percentile</label>
+              <span className="text-sm tabular-nums text-[#a8c4d9]">{rebalanceConfig.topPercentile}%</span>
+            </div>
+            <input
+              type="range"
+              min={20}
+              max={80}
+              step={5}
+              value={rebalanceConfig.topPercentile}
+              onChange={(e) => updateRebalanceConfig({ topPercentile: Number(e.target.value) })}
+              className="w-full h-1.5 bg-[#1a2d42] rounded-lg appearance-none cursor-pointer accent-tao-500"
+            />
+            <p className="text-xs text-[#5a7a94]">Select top N% of viable subnets by score</p>
           </div>
+          <div className="space-y-1.5">
+            <div className="flex justify-between items-baseline">
+              <label className="text-sm text-[#8faabe]">Max Position Size</label>
+              <span className="text-sm tabular-nums text-[#a8c4d9]">{rebalanceConfig.maxPositionPct}%</span>
+            </div>
+            <input
+              type="range"
+              min={5}
+              max={25}
+              step={2.5}
+              value={rebalanceConfig.maxPositionPct}
+              onChange={(e) => updateRebalanceConfig({ maxPositionPct: Number(e.target.value) })}
+              className="w-full h-1.5 bg-[#1a2d42] rounded-lg appearance-none cursor-pointer accent-tao-500"
+            />
+            <p className="text-xs text-[#5a7a94]">Maximum weight allowed per position</p>
+          </div>
+        </div>
 
-          {/* Period details table */}
-          <div>
-            <h4 className="text-xs font-semibold text-[#6f87a0] uppercase tracking-wider mb-2">
-              Period Details (click to expand)
-            </h4>
-            <div className="max-h-[400px] overflow-y-auto space-y-0.5">
-              {simData.periods.map(period => (
-                <div key={period.date}>
-                  <button
-                    onClick={() => setExpandedPeriod(expandedPeriod === period.date ? null : period.date)}
-                    className="w-full flex items-center gap-2 text-xs py-1.5 px-2 rounded hover:bg-[#1a2d42]/50 text-left"
-                  >
-                    <span className="tabular-nums text-[#5a7a94] w-20">{period.date}</span>
-                    <span className={`tabular-nums w-16 text-right ${period.period_return >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                      {period.in_root ? '--' : fmtPct(period.period_return)}
-                    </span>
-                    <span className="tabular-nums text-[#6f87a0] w-20 text-right">{period.portfolio_value.toFixed(1)} TAO</span>
-                    <span className="text-[#243a52] flex-1 text-right">
-                      {period.in_root ? 'Root (no picks)' : `${period.holdings.length} holdings`}
-                    </span>
-                  </button>
-                  {expandedPeriod === period.date && period.holdings.length > 0 && (
-                    <div className="ml-6 mb-2 bg-[#050d15]/40 rounded p-2 text-xs space-y-1">
-                      {period.holdings.map(h => (
-                        <div key={h.netuid} className="flex items-center gap-3">
-                          <span className="text-[#6f87a0] w-12">SN{h.netuid}</span>
-                          <span className="text-[#8faabe] flex-1 truncate">{h.name}</span>
-                          {h.tier && (
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                              h.tier === 'tier_1' ? 'bg-emerald-900/40 text-emerald-400' :
-                              h.tier === 'tier_2' ? 'bg-green-900/40 text-green-400' :
-                              'bg-yellow-900/40 text-yellow-400'
-                            }`}>
-                              {h.tier === 'tier_1' ? 'T1' : h.tier === 'tier_2' ? 'T2' : 'T3'}
-                            </span>
-                          )}
-                          <span className="text-[#5a7a94] tabular-nums">{h.score ?? '--'}</span>
-                          <span className="text-[#5a7a94] tabular-nums">{(h.weight * 100).toFixed(0)}%</span>
-                          <span className={`tabular-nums w-16 text-right ${h.return_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                            {fmtPct(h.return_pct)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
+        {/* Viability Config Toggle */}
+        <div className="p-4 bg-[#0a1520]/50 rounded-lg border border-[#1e3a5f]/50">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={rebalanceConfig.useBackendViabilityConfig}
+              onChange={(e) => updateRebalanceConfig({ useBackendViabilityConfig: e.target.checked })}
+              className="w-4 h-4 rounded border-[#2a4a66] bg-[#1a2d42] text-tao-500 focus:ring-tao-500"
+            />
+            <div>
+              <span className="text-sm font-medium text-[#a8c4d9]">Use viability settings from above</span>
+              <p className="text-xs text-[#5a7a94]">
+                Inherits hard failure thresholds and scoring weights from the Viability Scoring configuration
+              </p>
+            </div>
+          </label>
+        </div>
+
+        {/* Custom Viability Overrides (shown when not using backend config) */}
+        {!rebalanceConfig.useBackendViabilityConfig && (
+          <div className="space-y-4 p-4 bg-[#0a1520]/30 rounded-lg border border-amber-600/30">
+            <p className="text-xs text-amber-400 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4" />
+              Custom viability settings for rebalancing (overrides main config)
+            </p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="space-y-1">
+                <label className="text-xs text-[#6f87a0]">Min Age (days)</label>
+                <input
+                  type="number"
+                  value={rebalanceConfig.minAgeDays}
+                  onChange={(e) => updateRebalanceConfig({ minAgeDays: Number(e.target.value) })}
+                  className="w-full px-2 py-1 bg-[#1a2d42] border border-[#2a4a66] rounded text-sm text-[#a8c4d9]"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-[#6f87a0]">Min Reserve (TAO)</label>
+                <input
+                  type="number"
+                  value={rebalanceConfig.minReserveTao}
+                  onChange={(e) => updateRebalanceConfig({ minReserveTao: Number(e.target.value) })}
+                  className="w-full px-2 py-1 bg-[#1a2d42] border border-[#2a4a66] rounded text-sm text-[#a8c4d9]"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-[#6f87a0]">Max Outflow 7d (%)</label>
+                <input
+                  type="number"
+                  value={rebalanceConfig.maxOutflow7dPct}
+                  onChange={(e) => updateRebalanceConfig({ maxOutflow7dPct: Number(e.target.value) })}
+                  className="w-full px-2 py-1 bg-[#1a2d42] border border-[#2a4a66] rounded text-sm text-[#a8c4d9]"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-[#6f87a0]">Max Drawdown (%)</label>
+                <input
+                  type="number"
+                  value={rebalanceConfig.maxDrawdownPct}
+                  onChange={(e) => updateRebalanceConfig({ maxDrawdownPct: Number(e.target.value) })}
+                  className="w-full px-2 py-1 bg-[#1a2d42] border border-[#2a4a66] rounded text-sm text-[#a8c4d9]"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="space-y-1">
+                <label className="text-xs text-[#6f87a0]">FAI Weight</label>
+                <input
+                  type="number"
+                  step="0.05"
+                  min="0"
+                  max="1"
+                  value={rebalanceConfig.faiWeight}
+                  onChange={(e) => updateRebalanceConfig({ faiWeight: Number(e.target.value) })}
+                  className="w-full px-2 py-1 bg-[#1a2d42] border border-[#2a4a66] rounded text-sm text-[#a8c4d9]"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-[#6f87a0]">Reserve Weight</label>
+                <input
+                  type="number"
+                  step="0.05"
+                  min="0"
+                  max="1"
+                  value={rebalanceConfig.reserveWeight}
+                  onChange={(e) => updateRebalanceConfig({ reserveWeight: Number(e.target.value) })}
+                  className="w-full px-2 py-1 bg-[#1a2d42] border border-[#2a4a66] rounded text-sm text-[#a8c4d9]"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-[#6f87a0]">Emission Weight</label>
+                <input
+                  type="number"
+                  step="0.05"
+                  min="0"
+                  max="1"
+                  value={rebalanceConfig.emissionWeight}
+                  onChange={(e) => updateRebalanceConfig({ emissionWeight: Number(e.target.value) })}
+                  className="w-full px-2 py-1 bg-[#1a2d42] border border-[#2a4a66] rounded text-sm text-[#a8c4d9]"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-[#6f87a0]">Stability Weight</label>
+                <input
+                  type="number"
+                  step="0.05"
+                  min="0"
+                  max="1"
+                  value={rebalanceConfig.stabilityWeight}
+                  onChange={(e) => updateRebalanceConfig({ stabilityWeight: Number(e.target.value) })}
+                  className="w-full px-2 py-1 bg-[#1a2d42] border border-[#2a4a66] rounded text-sm text-[#a8c4d9]"
+                />
+              </div>
             </div>
           </div>
+        )}
+      </Section>
 
-          <div className="flex items-start gap-2 text-xs text-[#5a7a94] mt-2">
-            <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
-            <span>
-              Multi-tier simulation: each tier gets its designated weight share. Within each tier,
-              subnets are equal-weighted. If a tier has no qualifying subnets for a period, that
-              allocation is parked in root (0% return). Adjust tier selection, weights, and rebalance
-              frequency above and re-run.
-            </span>
+      {/* Link to Backtest Page */}
+      <Link
+        to="/backtest"
+        className="flex items-center justify-between p-5 bg-[#121f2d] rounded-lg border border-[#1e3a5f] hover:border-tao-500/50 transition-colors group"
+      >
+        <div className="flex items-center gap-4">
+          <div className="p-3 bg-tao-600/20 rounded-lg">
+            <FlaskConical className="w-6 h-6 text-tao-400" />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-white group-hover:text-tao-400 transition-colors">
+              Strategy Backtesting
+            </h2>
+            <p className="text-sm text-[#5a7a94] mt-0.5">
+              Test viability and allocation strategies against historical data
+            </p>
           </div>
         </div>
-      )}
-    </Section>
-  )
-}
+        <ArrowRight className="w-5 h-5 text-[#5a7a94] group-hover:text-tao-400 transition-colors" />
+      </Link>
 
-function StatCard({ label, value, sub, color }: { label: string; value: string; sub: string; color: string }) {
-  return (
-    <div className="bg-[#050d15]/60 rounded-lg p-3 border border-[#1e3a5f]">
-      <div className="text-xs text-[#5a7a94]">{label}</div>
-      <div className={`text-xl tabular-nums font-bold mt-1 ${color}`}>{value}</div>
-      <div className="text-[10px] text-[#243a52] mt-0.5">{sub}</div>
+      {/* Link to Rebalance Page */}
+      <Link
+        to="/recommendations"
+        className="flex items-center justify-between p-5 bg-[#121f2d] rounded-lg border border-[#1e3a5f] hover:border-amber-500/50 transition-colors group"
+      >
+        <div className="flex items-center gap-4">
+          <div className="p-3 bg-amber-600/20 rounded-lg">
+            <RefreshCw className="w-6 h-6 text-amber-400" />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-white group-hover:text-amber-400 transition-colors">
+              Rebalance Advisor
+            </h2>
+            <p className="text-sm text-[#5a7a94] mt-0.5">
+              Compare current portfolio to optimal target and get trade recommendations
+            </p>
+          </div>
+        </div>
+        <ArrowRight className="w-5 h-5 text-[#5a7a94] group-hover:text-amber-400 transition-colors" />
+      </Link>
     </div>
   )
 }
 
-function EquityCurveChart({ data, initial }: { data: { date: string; value: number; in_root: boolean; num_holdings: number }[]; initial: number }) {
-  if (data.length < 2) return null
 
-  const maxVal = Math.max(...data.map(d => d.value))
-  const minVal = Math.min(...data.map(d => d.value))
-  const range = maxVal - minVal || 1
-
-  const width = 800
-  const height = 200
-  const padL = 50
-  const padR = 10
-  const padT = 10
-  const padB = 25
-  const chartW = width - padL - padR
-  const chartH = height - padT - padB
-
-  const points = data.map((d, i) => {
-    const x = padL + (i / (data.length - 1)) * chartW
-    const y = padT + chartH - ((d.value - minVal) / range) * chartH
-    return { x, y, ...d }
-  })
-
-  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')
-
-  // Fill area under curve
-  const areaPath = linePath + ` L${points[points.length - 1].x},${padT + chartH} L${points[0].x},${padT + chartH} Z`
-
-  // Reference line at initial capital
-  const refY = padT + chartH - ((initial - minVal) / range) * chartH
-
-  // Y axis labels
-  const yLabels = [minVal, initial, maxVal].map(v => ({
-    val: v,
-    y: padT + chartH - ((v - minVal) / range) * chartH,
-    label: v.toFixed(0),
-  }))
-
-  // X axis labels (show ~5 dates)
-  const step = Math.max(1, Math.floor(data.length / 5))
-  const xLabels = data.filter((_, i) => i % step === 0 || i === data.length - 1).map((d) => ({
-    x: padL + (data.indexOf(d) / (data.length - 1)) * chartW,
-    label: d.date.slice(5), // MM-DD
-  }))
-
-  const finalReturn = data.length > 0 ? ((data[data.length - 1].value - initial) / initial) : 0
-  const curveColor = finalReturn >= 0 ? '#4ade80' : '#f87171'
-  const fillColor = finalReturn >= 0 ? 'rgba(74,222,128,0.1)' : 'rgba(248,113,113,0.1)'
-
-  return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="w-full" style={{ maxHeight: 240 }}>
-      {/* Grid lines */}
-      {yLabels.map((yl, i) => (
-        <g key={i}>
-          <line x1={padL} y1={yl.y} x2={width - padR} y2={yl.y} stroke="#374151" strokeWidth={0.5} strokeDasharray={yl.val === initial ? '4,2' : '0'} />
-          <text x={padL - 4} y={yl.y + 3} textAnchor="end" fill="#6b7280" fontSize={10}>{yl.label}</text>
-        </g>
-      ))}
-
-      {/* X axis labels */}
-      {xLabels.map((xl, i) => (
-        <text key={i} x={xl.x} y={height - 4} textAnchor="middle" fill="#6b7280" fontSize={9}>{xl.label}</text>
-      ))}
-
-      {/* Reference line */}
-      <line x1={padL} y1={refY} x2={width - padR} y2={refY} stroke="#6b7280" strokeWidth={1} strokeDasharray="4,2" />
-      <text x={padL - 4} y={refY - 5} textAnchor="end" fill="#9ca3af" fontSize={9}>start</text>
-
-      {/* Area fill */}
-      <path d={areaPath} fill={fillColor} />
-
-      {/* Line */}
-      <path d={linePath} fill="none" stroke={curveColor} strokeWidth={2} />
-
-      {/* Root periods (gray dots) */}
-      {points.filter(p => p.in_root).map((p, i) => (
-        <circle key={i} cx={p.x} cy={p.y} r={3} fill="#6b7280" />
-      ))}
-
-      {/* Final value label */}
-      {points.length > 0 && (
-        <text
-          x={points[points.length - 1].x}
-          y={points[points.length - 1].y - 8}
-          textAnchor="end"
-          fill={curveColor}
-          fontSize={11}
-          fontWeight="bold"
-        >
-          {data[data.length - 1].value.toFixed(1)}
-        </text>
-      )}
-    </svg>
-  )
-}
-
-function Section({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
+function Section({
+  title,
+  description,
+  children,
+  icon,
+  headerRight,
+}: {
+  title: string
+  description: string
+  children: React.ReactNode
+  icon?: React.ReactNode
+  headerRight?: React.ReactNode
+}) {
   return (
     <div className="bg-[#121f2d] rounded-lg border border-[#1e3a5f] p-5 space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold text-white">{title}</h2>
-        <p className="text-xs text-[#5a7a94] mt-0.5">{description}</p>
+      <div className="flex items-start justify-between">
+        <div className="flex items-start gap-3">
+          {icon && <div className="mt-0.5">{icon}</div>}
+          <div>
+            <h2 className="text-lg font-semibold text-white">{title}</h2>
+            <p className="text-xs text-[#5a7a94] mt-0.5">{description}</p>
+          </div>
+        </div>
+        {headerRight && <div>{headerRight}</div>}
       </div>
       {children}
     </div>
