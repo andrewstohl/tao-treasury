@@ -217,16 +217,11 @@ class DataSyncService:
                     results["errors"].append(f"Accounting cost basis: {str(e)}")
                     results["accounting_cost_basis_computed"] = False
 
-                # Also compute TAO-based realized P&L override for portfolio totals
-                try:
-                    acct_pnl_results = await cost_basis_service.compute_realized_pnl_from_accounting()
-                    results["accounting_pnl_computed"] = True
-                    results["accounting_realized_pnl"] = float(
-                        acct_pnl_results.get("total_realized_pnl", 0)
-                    )
-                except Exception as e:
-                    logger.warning("Accounting P&L override failed", error=str(e))
-                    results["accounting_pnl_computed"] = False
+                # Accounting-based realized P&L override disabled — the FIFO
+                # tracker already produces correct per-subnet realized PnL.
+                # The accounting override was incorrectly consuming ALL lots on
+                # every credit entry, inflating realized losses for open positions.
+                results["accounting_pnl_computed"] = False
 
                 # Compute position-level yield and alpha P&L decomposition
                 # This is the single source of truth for all position metrics
@@ -1041,7 +1036,11 @@ class DataSyncService:
             # P&L aggregates — read realized P&L and cost basis from
             # position_cost_basis table which includes CLOSED positions
             # (the positions table only has open positions).
-            total_unrealized_pnl = sum(p.unrealized_pnl_tao for p in positions)
+            # Use decomposed yield + alpha P&L (authoritative from TaoStats API)
+            total_unrealized_pnl = sum(
+                (p.unrealized_yield_tao or Decimal("0")) + (p.unrealized_alpha_pnl_tao or Decimal("0"))
+                for p in positions
+            )
 
             cb_stmt = select(
                 func.coalesce(func.sum(PositionCostBasis.realized_pnl_tao), 0),

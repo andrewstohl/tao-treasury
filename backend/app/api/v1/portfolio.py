@@ -1164,19 +1164,21 @@ async def get_portfolio_overview(
     )
 
     # 5. Build dual-currency P&L
-    unrealized_tao = snapshot.total_unrealized_pnl_tao or Decimal("0")
+    # Get decomposed yield and alpha P&L from snapshot (pre-computed ledger aggregation)
+    unrealized_yield_tao_val = snapshot.total_unrealized_yield_tao or Decimal("0")
+    realized_yield_tao_val = snapshot.total_realized_yield_tao or Decimal("0")
+    unrealized_alpha_pnl_tao = snapshot.total_unrealized_alpha_pnl_tao or Decimal("0")
+    realized_alpha_pnl_tao = snapshot.total_realized_alpha_pnl_tao or Decimal("0")
+
+    # Unrealized = alpha P&L only (matches TaoStats "unrealized gains").
+    # Yield is shown separately via yield_income.
+    unrealized_tao = unrealized_alpha_pnl_tao
     realized_tao = snapshot.total_realized_pnl_tao or Decimal("0")
     total_pnl_tao = unrealized_tao + realized_tao
     cost_basis_tao = snapshot.total_cost_basis_tao or Decimal("0")
     total_pnl_pct = (
         (total_pnl_tao / cost_basis_tao * 100) if cost_basis_tao else Decimal("0")
     )
-
-    # Get decomposed yield and alpha P&L from snapshot (pre-computed ledger aggregation)
-    unrealized_yield_tao_val = snapshot.total_unrealized_yield_tao or Decimal("0")
-    realized_yield_tao_val = snapshot.total_realized_yield_tao or Decimal("0")
-    unrealized_alpha_pnl_tao = snapshot.total_unrealized_alpha_pnl_tao or Decimal("0")
-    realized_alpha_pnl_tao = snapshot.total_realized_alpha_pnl_tao or Decimal("0")
 
     pnl = OverviewPnL(
         unrealized=DualCurrencyValue(

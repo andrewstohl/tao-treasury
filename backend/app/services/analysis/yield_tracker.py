@@ -40,8 +40,14 @@ class YieldTrackerService:
     """
 
     def __init__(self):
-        settings = get_settings()
-        self.wallet_address = settings.wallet_address
+        self._wallet_address = None
+
+    @property
+    def wallet_address(self):
+        if self._wallet_address is None:
+            settings = get_settings()
+            self._wallet_address = settings.wallet_address
+        return self._wallet_address
 
     async def compute_all_position_yields(self) -> Dict[str, Any]:
         """Compute yield for all open positions using accounting/tax API.
