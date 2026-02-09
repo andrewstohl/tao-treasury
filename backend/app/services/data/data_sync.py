@@ -141,6 +141,29 @@ class DataSyncService:
             position_count = await self.sync_positions()
             results["positions"] = position_count
 
+            # Targeted FIFO recomputation for positions with alpha decrease.
+            # Runs in ALL tiers so position changes are processed immediately.
+            # Adds 1 API call per changed position to the accounting/tax endpoint.
+            decreased_netuids = getattr(self, '_decreased_netuids', set())
+            if decreased_netuids:
+                try:
+                    from app.services.analysis.cost_basis import cost_basis_service
+                    from app.services.analysis.position_metrics import position_metrics_service
+
+                    logger.info(
+                        "Triggering targeted FIFO for decreased positions",
+                        netuids=list(decreased_netuids),
+                    )
+                    await cost_basis_service.compute_cost_basis_from_accounting(
+                        netuids=list(decreased_netuids)
+                    )
+                    # Copy realized values from PositionCostBasis → Position
+                    await position_metrics_service._compute_realized_metrics()
+                    results["targeted_fifo_netuids"] = list(decreased_netuids)
+                except Exception as e:
+                    logger.error("Targeted FIFO recomputation failed", error=str(e))
+                    results["errors"].append(f"Targeted FIFO: {str(e)}")
+
             # Sync validators (1 paginated API call)
             validator_count = await self.sync_validators()
             results["validators"] = validator_count
@@ -333,11 +356,14 @@ class DataSyncService:
     async def _recompute_unrealized_decomposition(self) -> int:
         """Recompute unrealized PnL decomposition from cached Position fields.
 
-        Pure math — zero API calls. Uses cost_basis_tao, alpha_purchased,
-        and entry_price_tao from the last full sync to enforce ledger identity:
-            unrealized_pnl = tao_value_mid - cost_basis
-            unrealized_alpha_pnl = alpha_purchased * (current_price - entry_price)
+        Enforces ledger identity by construction:
+            unrealized_pnl = tao_value_mid - effective_cost_basis
+            unrealized_alpha_pnl = effective_alpha_purchased * (current_price - entry_price)
             unrealized_yield = unrealized_pnl - unrealized_alpha_pnl
+
+        The decomposition function handles stale FIFO gracefully using local
+        effective values (when alpha_purchased > alpha_balance due to API lag).
+        FIFO-owned fields are NEVER modified here.
         """
         from app.services.analysis.yield_tracker import compute_unrealized_decomposition
 
@@ -558,22 +584,36 @@ class DataSyncService:
 
         Partial failure protection: Validates response before updating.
         Note: Empty positions list may be valid (wallet has no stakes).
+
+        Side effect: populates self._decreased_netuids with netuids where
+        alpha_balance decreased >0.5% or was zeroed out, for targeted FIFO.
         """
         wallets = await self.get_active_wallets()
         if not wallets:
             logger.info("No active wallets - skipping position sync")
+            self._decreased_netuids: set[int] = set()
             return 0
 
         total_count = 0
+        all_decreased: set[int] = set()
         for wallet_address in wallets:
-            count = await self._sync_positions_for_wallet(wallet_address)
+            count, decreased = await self._sync_positions_for_wallet(wallet_address)
             total_count += count
+            all_decreased.update(decreased)
+
+        self._decreased_netuids = all_decreased
+        if all_decreased:
+            logger.info("Positions with alpha decrease detected", netuids=list(all_decreased))
 
         _record_sync_status("positions", True, total_count)
         return total_count
 
-    async def _sync_positions_for_wallet(self, wallet_address: str) -> int:
-        """Sync positions for a single wallet."""
+    async def _sync_positions_for_wallet(self, wallet_address: str) -> tuple[int, set[int]]:
+        """Sync positions for a single wallet.
+
+        Returns (count, decreased_netuids) where decreased_netuids is the set
+        of netuids where alpha_balance decreased >0.5% or was zeroed out.
+        """
         logger.info("Syncing positions", wallet=wallet_address)
 
         try:
@@ -601,13 +641,25 @@ class DataSyncService:
 
             async with get_db_context() as db:
                 count = 0
+                decreased_netuids: set[int] = set()
 
                 # Get current netuids from API
                 api_netuids = set(stakes_by_netuid.keys())
 
-                # Zero out positions no longer in the API (inactive).
-                # Positions are NEVER deleted — realized values are preserved.
+                # Find positions that will be zeroed (no longer in API = full exit).
+                # These need targeted FIFO to finalize realized P&L.
                 if api_netuids:
+                    zeroed_stmt = select(Position.netuid).where(
+                        Position.wallet_address == wallet_address,
+                        Position.netuid.notin_(api_netuids),
+                        Position.alpha_balance > 0,
+                    )
+                    zeroed_result = await db.execute(zeroed_stmt)
+                    zeroed_netuids = {row[0] for row in zeroed_result.fetchall()}
+                    decreased_netuids.update(zeroed_netuids)
+
+                    # Zero out positions no longer in the API (inactive).
+                    # Positions are NEVER deleted — realized values are preserved.
                     zero_stmt = (
                         update(Position)
                         .where(
@@ -635,21 +687,32 @@ class DataSyncService:
                         logger.info("Zeroed inactive positions", wallet=wallet_address, count=result.rowcount)
 
                 for netuid, stake_data in stakes_by_netuid.items():
-                    await self._upsert_position(db, wallet_address, stake_data)
+                    position, alpha_decreased = await self._upsert_position(db, wallet_address, stake_data)
+                    if alpha_decreased:
+                        decreased_netuids.add(netuid)
                     await self._create_position_snapshot(db, wallet_address, stake_data)
                     count += 1
 
                 await db.commit()
-                logger.info("Positions synced", wallet=wallet_address, count=count)
-                return count
+                logger.info("Positions synced", wallet=wallet_address, count=count, decreased_netuids=list(decreased_netuids))
+                return count, decreased_netuids
 
         except Exception as e:
             logger.error("Failed to sync positions", wallet=wallet_address, error=str(e))
             _record_sync_status("positions", False, 0)
             raise
 
-    async def _upsert_position(self, db: AsyncSession, wallet_address: str, stake_data: Dict) -> Position:
-        """Insert or update position record."""
+    async def _upsert_position(self, db: AsyncSession, wallet_address: str, stake_data: Dict) -> tuple[Position, bool]:
+        """Insert or update position record.
+
+        Returns (position, alpha_decreased) where alpha_decreased is True when
+        the position's alpha balance dropped >0.5%, signaling the caller to
+        trigger a targeted FIFO recomputation.
+
+        On unstakes, we do NOT adjust cost_basis_tao or alpha_purchased — the
+        FIFO engine is the sole authority for those fields. On new stakes, we
+        set interim values (FIFO can't fill the gap until the API indexes the buy).
+        """
         netuid = stake_data.get("netuid")
         stmt = select(Position).where(
             Position.wallet_address == wallet_address,
@@ -666,7 +729,8 @@ class DataSyncService:
         subnet = subnet_result.scalar_one_or_none()
         subnet_name = subnet.name if subnet else f"Subnet {netuid}"
 
-        if position is None:
+        is_new = position is None
+        if is_new:
             position = Position(
                 wallet_address=wallet_address,
                 netuid=netuid,
@@ -678,24 +742,96 @@ class DataSyncService:
         else:
             position.subnet_name = subnet_name
 
-        # Update position data - 'balance' is alpha balance in rao
-        alpha_balance = rao_to_tao(stake_data.get("balance", 0) or 0)
-        position.alpha_balance = alpha_balance
+        # Capture old values BEFORE updating
+        old_alpha = position.alpha_balance or Decimal("0")
+        old_cost = position.cost_basis_tao or Decimal("0")
 
-        # Get TAO value from 'balance_as_tao' (mid valuation in rao)
+        # Update position data from staking API
+        alpha_balance = rao_to_tao(stake_data.get("balance", 0) or 0)
         tao_value = rao_to_tao(stake_data.get("balance_as_tao", 0) or 0)
+
+        position.alpha_balance = alpha_balance
         position.tao_value_mid = tao_value
 
-        # Compute alpha price from balance ratio
-        if alpha_balance > 0:
-            alpha_price = tao_value / alpha_balance
-        else:
-            alpha_price = Decimal("0")
+        # Compute current alpha price
+        alpha_price = (
+            tao_value / alpha_balance if alpha_balance > 0 else Decimal("0")
+        )
 
-        # Set entry price if first time
-        if position.entry_price_tao == 0 and alpha_price > 0:
-            position.entry_price_tao = alpha_price
+        # ============================================================
+        # Cost basis handling for position changes
+        #
+        # FIFO is the sole authority on cost_basis_tao, alpha_purchased,
+        # entry_price_tao, and all realized P&L fields.
+        #
+        # On UNSTAKES: Do NOT modify cost_basis fields. The caller triggers
+        # a targeted FIFO recomputation instead. If the accounting API hasn't
+        # indexed the transaction yet, the FIFO returns the same stale values
+        # (matching TaoStats), and the decomposition handles it with effective
+        # local values.
+        #
+        # On NEW STAKES: Set interim values because the FIFO can't fill the
+        # gap until the API indexes the buy.
+        #
+        # Thresholds:
+        #   Decrease >0.5%  → unstake (emissions never decrease alpha)
+        #   Increase >2%    → new stake (emissions are typically <0.3%/day)
+        # ============================================================
+        alpha_decreased = False
+
+        if not is_new and old_alpha > 0 and alpha_balance > 0 and old_cost > 0:
+            change_pct = (alpha_balance - old_alpha) / old_alpha
+
+            if change_pct < Decimal("-0.005"):
+                # UNSTAKE: do NOT adjust cost_basis — FIFO is the authority.
+                # Signal the caller to trigger targeted FIFO recomputation.
+                alpha_decreased = True
+                logger.info(
+                    "Position alpha decreased (unstake detected)",
+                    netuid=netuid,
+                    old_alpha=float(old_alpha),
+                    new_alpha=float(alpha_balance),
+                    change_pct=float(change_pct),
+                )
+
+            elif change_pct > Decimal("0.02"):
+                # NEW STAKE: add cost basis for new alpha at current price
+                delta_alpha = alpha_balance - old_alpha
+                delta_cost = delta_alpha * alpha_price
+                position.cost_basis_tao = old_cost + delta_cost
+                old_purchased = position.alpha_purchased or Decimal("0")
+                position.alpha_purchased = old_purchased + delta_alpha
+                # Update weighted average entry price
+                if position.alpha_purchased > 0:
+                    position.entry_price_tao = (
+                        position.cost_basis_tao / position.alpha_purchased
+                    )
+                logger.info(
+                    "Interim cost basis adjustment (new stake)",
+                    netuid=netuid,
+                    delta_alpha=float(delta_alpha),
+                    delta_cost=float(delta_cost),
+                    new_cost=float(position.cost_basis_tao),
+                )
+
+        elif not is_new and old_alpha <= 0 and alpha_balance > 0:
+            # RE-ENTRY: position was inactive, now active again
             position.cost_basis_tao = tao_value
+            position.entry_price_tao = alpha_price
+            position.alpha_purchased = alpha_balance
+            position.entry_date = now
+            logger.info(
+                "Position re-entry",
+                netuid=netuid,
+                alpha_balance=float(alpha_balance),
+                tao_value=float(tao_value),
+            )
+
+        elif is_new and alpha_balance > 0:
+            # FIRST ENTRY: set initial cost basis
+            position.cost_basis_tao = tao_value
+            position.entry_price_tao = alpha_price
+            position.alpha_purchased = alpha_balance
 
         # Extract validator hotkey from nested structure
         hotkey_data = stake_data.get("hotkey")
@@ -706,7 +842,7 @@ class DataSyncService:
 
         position.updated_at = now
 
-        return position
+        return position, alpha_decreased
 
     async def _create_position_snapshot(self, db: AsyncSession, wallet_address: str, stake_data: Dict) -> PositionSnapshot:
         """Create position snapshot for history."""

@@ -176,8 +176,8 @@ Each field is written by exactly ONE service. No overrides.
 
 | Service | Owns These Fields | Data Source |
 |---|---|---|
-| **data_sync** | `tao_value_mid`, `alpha_balance`, `current_apy`, `daily_yield_tao` | staking API + validator API |
-| **cost_basis_service** | `entry_price_tao`, `cost_basis_tao`, `alpha_purchased`, `realized_pnl_tao`, `realized_yield_tao`, `realized_alpha_pnl_tao` | accounting/tax API (`token=SN{n}`) — alpha FIFO. Writes to BOTH Position and PositionCostBasis. |
+| **data_sync** | `tao_value_mid`, `alpha_balance`, `current_apy`, `daily_yield_tao` + **interim** `cost_basis_tao`, `alpha_purchased`, `entry_price_tao` (NEW STAKES/RE-ENTRY ONLY) | staking API + validator API. Interim cost basis for new stakes/re-entry only (FIFO can't fill gap until API indexes buy). On unstakes: triggers targeted FIFO instead of adjusting fields. |
+| **cost_basis_service** | `entry_price_tao`, `cost_basis_tao`, `alpha_purchased`, `realized_pnl_tao`, `realized_yield_tao`, `realized_alpha_pnl_tao` (SOLE AUTHORITY) | accounting/tax API (`token=SN{n}`) — alpha FIFO. Writes to BOTH Position and PositionCostBasis. Called on full sync AND targeted (on position decreases in any tier). |
 | **yield_tracker** | `total_yield_alpha`, `unrealized_pnl_tao`, `unrealized_yield_tao`, `unrealized_alpha_pnl_tao` | `total_yield_alpha` from accounting/tax API (`daily_income`). Unrealized fields computed with enforced identity: `pnl = value - cost`, `alpha = purchased * (price - entry)`, `yield = pnl - alpha`. |
 | **position_metrics_service** | Orchestrator only | Calls cost_basis_service + yield_tracker in correct order |
 
@@ -195,7 +195,9 @@ Each field is written by exactly ONE service. No overrides.
 
 ### Key Design Decisions
 
-- **`compute_unrealized_decomposition()`** is a pure math function (zero API calls) that recomputes `unrealized_pnl`, `unrealized_yield`, and `unrealized_alpha_pnl` from cached Position fields (`cost_basis_tao`, `alpha_purchased`, `entry_price_tao` from last full sync). This is what makes Tier 1 fast.
+- **Targeted FIFO on position changes**: When `sync_positions()` detects alpha_balance decreased >0.5%, `sync_all()` immediately calls `cost_basis_service.compute_cost_basis_from_accounting(netuids=changed)` before the decomposition step. This adds 1 API call per changed position to any sync tier. If the accounting API hasn't indexed the transaction yet, the FIFO returns the same stale values (matching TaoStats), and the decomposition uses effective values locally. On new stakes (increase >2%), interim cost_basis is set at current price (FIFO can't fill the gap until the buy is indexed).
+- **FIFO authority principle**: FIFO-owned fields (`cost_basis_tao`, `alpha_purchased`, `entry_price_tao`, `realized_*`) are ONLY written by `cost_basis_service`. Exception: initial values on first-entry/re-entry/new-stake in `_upsert_position()` (overwritten by FIFO on next run). No other code modifies these fields.
+- **`compute_unrealized_decomposition()`** is a pure math function (zero API calls) that recomputes `unrealized_pnl`, `unrealized_yield`, and `unrealized_alpha_pnl` from cached Position fields. Handles stale FIFO gracefully: when `alpha_purchased > alpha_balance` (API lag after unstake), uses `total_yield_alpha` to estimate emission alpha held, computes `effective_purchased = alpha_balance - emission_estimate` (excludes emission from alpha_pnl), and `effective_cost = cost_basis * (effective_purchased / alpha_purchased)`. Yield is floored at 0 (emission income can never be negative). FIFO-owned DB fields are never modified. This is what makes Tier 1 fast.
 - **`total_yield_alpha`** (from `daily_income` API) is written by yield_tracker in Tier 2 but is **not used by KPI cards or frontend**. KPI yield uses `unrealized_yield_tao` (the residual from ledger identity).
 - **Slippage** is 60-70% of all API calls but only feeds executable NAV, which is not shown on KPI cards.
 
@@ -220,8 +222,9 @@ Default mode is `refresh`. Frontend: click = refresh, shift+click = full.
 ## KNOWN LIMITATIONS
 
 - **dtao/trade endpoint** misses batch extrinsics (cross-subnet rebalances). Cost basis uses accounting/tax API instead.
-- Realized P&L split (realized vs unrealized) may differ slightly from TaoStats due to FIFO vs their methodology.
+- **Unrealized/realized split differs from TaoStats**: We use FIFO book cost (cost of remaining lots) for unrealized; TaoStats uses net invested (total_staked - total_unstaked). Both produce the same total P&L (unrealized + realized), just split differently. Our FIFO gives a more precise per-position view (better for tax); TaoStats gives a simpler aggregate. Yield matches closely (<1% gap).
 - Positions without accounting data fall back to dtao/trade-based FIFO (may be incomplete).
+- **API lag after position changes**: Between a position change and the accounting/tax API indexing it (typically minutes), the decomposition uses effective values that approximate the yield/alpha split. For unindexed buys (FIFO shows 0 lots but position is active), interim cost_basis is set from current price. TaoStats match is preserved during this window because both systems use the same stale data. The FIFO catches up on the next sync after the API indexes the transaction.
 
 ---
 
@@ -250,6 +253,35 @@ Default mode is `refresh`. Frontend: click = refresh, shift+click = full.
   - `scheduler.py`: Three jobs (`data_sync_refresh` 5m, `data_sync_full` 60m, `data_sync_deep` 24h).
   - `tasks.py`: `mode` query parameter on `/api/v1/tasks/refresh`.
   - Frontend: click = refresh, shift+click = full sync.
+
+### 2026-02-09: Interim cost basis adjustments for position changes (SUPERSEDED — see fix below)
+- **Problem**: When user shifted ~10τ from Chutes (SN64) to DSperse (SN2), Chutes showed the TAO reduction as negative yield.
+- **Fix attempted**: Two-layer interim cost basis adjustment (proportional scaling on unstake + `_correct_stale_cost_basis()` safety net).
+- **Result**: Broke TaoStats match. See next entry for root cause and proper fix.
+
+### 2026-02-09: Fix position change accounting (revert interim adjustments)
+- **Problem**: Interim cost_basis adjustments (from entry above) broke TaoStats match by reducing cost_basis without increasing realized_pnl. Also zeroed yield by scaling alpha_purchased ≈ alpha_balance. The proportional scaling approach was fundamentally wrong because it changed one side of the ledger without the other.
+- **Fix**: Reverted interim unstake adjustments. Established FIFO as sole authority on cost_basis/alpha_purchased/realized fields. Added targeted FIFO recomputation (1 API call per changed position) on alpha decreases in all sync tiers. Added stale-FIFO detection in decomposition that uses effective local values when alpha_purchased > alpha_balance.
+- **Key principle**: TaoStats and our FIFO use the same data source (accounting/tax API) with the same lag. Don't try to be "ahead" of TaoStats — stale FIFO values that match TaoStats are better than interim values that diverge.
+- **Architectural rule**: FIFO-owned fields (cost_basis_tao, alpha_purchased, entry_price_tao, realized_*) are ONLY written by cost_basis_service. Exception: initial values on first-entry/re-entry/new-stake in _upsert_position (overwritten by FIFO on next run).
+- **Key changes**:
+  - `data_sync.py`: Removed proportional scaling on unstake. Removed `_correct_stale_cost_basis()` entirely. `_upsert_position()` returns `(position, alpha_decreased)` signal. `sync_positions()` collects decreased netuids. `sync_all()` triggers targeted FIFO before decomposition.
+  - `cost_basis.py`: `compute_cost_basis_from_accounting(netuids=...)` accepts optional filter for targeted recomputation.
+  - `yield_tracker.py`: `compute_unrealized_decomposition()` uses effective local values (`min(alpha_purchased, alpha_balance)`) when FIFO is stale, preserving TaoStats match.
+
+### 2026-02-09: Fix stale-FIFO decomposition and unindexed buy handling
+- **Problem 1**: Chutes (SN64) yield was -0.000000346τ. When stale FIFO (alpha_purchased > alpha_balance), `effective_purchased = alpha_balance` included emission alpha (~10.1α). This over-attributed to alpha_pnl, leaving yield as an impossible small negative.
+- **Problem 2**: DSperse (SN2) had cost_basis=0, alpha_purchased=0 despite holding 886.77α worth 9.91τ. The FIFO correctly consumed all old lots (3 buys, 3 sells). The recent buy (Chutes→DSperse rebalance) wasn't indexed by the accounting API. The decomposition guard `if effective_cost > 0 else 0` zeroed unrealized PnL.
+- **Root cause analysis**: P&L gap of 1.17τ (our total_pnl 1.68 vs true total_pnl 2.85) was almost entirely from DSperse's missing unrealized. Unrealized/realized split differs from TaoStats because we use FIFO book_cost, they use net_invested — total P&L converges, split differs. Yield matched well even before fix (6.55 vs 7.53).
+- **Fix 1** (`yield_tracker.py`): In stale FIFO case, use `total_yield_alpha` to estimate emission alpha held: `effective_purchased = max(alpha_balance - min(total_yield_alpha, alpha_balance), 0)`. This correctly excludes emission from alpha_pnl calculation. Added yield floor at 0 (emission income cannot be negative).
+- **Fix 2** (`cost_basis.py`): After FIFO processing, when all lots consumed but position active with alpha exceeding emission estimate, set interim cost_basis from current price. `unindexed_alpha = alpha_balance - emission_estimate`, `cost_basis = unindexed_alpha * current_price`. Overwritten when API indexes the buy.
+- **Results after fix**: Chutes yield = +0.95τ (was -0.000). DSperse cost_basis = 9.79τ (was 0), unrealized = +0.11τ. Total yield = 7.60τ (TaoStats: 7.53τ, <1% gap). P&L gap reduced from 1.17τ to 0.13τ (89% reduction). Zero negative yields. Zero ledger identity violations.
+
+### 2026-02-09: FX Exposure card rewrite (per-position decomposition)
+- **Problem**: `_compute_conversion_exposure()` had 4 bugs: inactive positions invisible (query found nothing after position model changes), active positions missed realized FX, aggregated entry price lost per-position accuracy, root yield misattributed.
+- **Fix**: Rewrote with single per-position loop over PositionCostBasis records. For each position: α/τ = tao_pnl × entry_usd_per_tao, τ/$ = total_usd_pnl - α/τ (residual enforces identity). Root: α/τ = 0, τ/$ = total_usd_pnl.
+- **Key changes**: `portfolio.py` `_compute_conversion_exposure()` reduced from ~240 lines to ~95 lines. No schema/frontend changes needed.
+- **Result**: Identity α/τ + τ/$ = total_pnl_usd holds exactly (0.00 difference). 46/46 positions included (39 active + 7 inactive).
 
 ### 2026-02-07: Eliminated competing calculation paths
 - Removed yield_tracker writes to `alpha_purchased`/`entry_price_tao` (owned by cost_basis)

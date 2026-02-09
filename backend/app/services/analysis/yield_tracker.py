@@ -34,9 +34,14 @@ def compute_unrealized_decomposition(position) -> None:
     """Pure math: compute unrealized PnL decomposition from Position fields.
 
     No API calls. Enforces ledger identity by construction:
-        unrealized_pnl = tao_value_mid - cost_basis
-        unrealized_alpha_pnl = alpha_purchased * (current_price - entry_price)
+        unrealized_pnl = tao_value_mid - effective_cost_basis
+        unrealized_alpha_pnl = effective_alpha_purchased * (current_price - entry_price)
         unrealized_yield = unrealized_pnl - unrealized_alpha_pnl  (residual)
+
+    Stale-FIFO handling: When the accounting API hasn't indexed a recent unstake,
+    alpha_purchased > alpha_balance (FIFO still has lots for sold alpha). We use
+    LOCAL effective values for decomposition only — FIFO-owned DB fields are NEVER
+    modified here. When the FIFO catches up, it overwrites with authoritative values.
 
     For inactive positions (alpha_balance <= 0), all unrealized fields are zeroed.
     """
@@ -51,24 +56,54 @@ def compute_unrealized_decomposition(position) -> None:
     cost_basis = position.cost_basis_tao or Decimal("0")
     alpha_purchased = position.alpha_purchased or Decimal("0")
     entry_price = position.entry_price_tao or Decimal("0")
+    alpha_balance = position.alpha_balance
     current_alpha_price = (
-        position.tao_value_mid / position.alpha_balance
-        if position.alpha_balance > 0 and position.tao_value_mid > 0
+        position.tao_value_mid / alpha_balance
+        if alpha_balance > 0 and position.tao_value_mid > 0
         else Decimal("0")
     )
 
-    pnl = position.tao_value_mid - cost_basis if cost_basis > 0 else Decimal("0")
-    pnl_pct = (pnl / cost_basis * 100) if cost_basis > 0 else Decimal("0")
-    alpha = (
-        alpha_purchased * (current_alpha_price - entry_price)
-        if alpha_purchased > 0 and entry_price > 0
+    # Stale-FIFO detection: FIFO thinks more purchased alpha remains than
+    # actual balance (unstake not yet indexed by accounting API).
+    # Use effective local values for decomposition only — do NOT write back
+    # to cost_basis_tao or alpha_purchased.
+    if alpha_purchased > alpha_balance and alpha_purchased > 0:
+        # Stale FIFO: recent unstake not indexed. Estimate purchased alpha
+        # by subtracting emission alpha held from total balance.
+        # total_yield_alpha (sum of daily_income from API) is the total
+        # emission earned. It's an upper bound for emission currently held
+        # (some may have been sold in past unstakes). This is conservative:
+        # overestimating emission → less alpha_pnl → more yield.
+        total_yield = getattr(position, 'total_yield_alpha', None) or Decimal("0")
+        emission_held_estimate = min(total_yield, alpha_balance)
+        effective_purchased = max(alpha_balance - emission_held_estimate, Decimal("0"))
+        # Scale cost proportionally to the fraction of purchased alpha remaining
+        effective_cost = cost_basis * (effective_purchased / alpha_purchased)
+    else:
+        # Normal case: FIFO is current. alpha_purchased <= alpha_balance.
+        effective_purchased = alpha_purchased
+        effective_cost = cost_basis
+
+    pnl = position.tao_value_mid - effective_cost if effective_cost > 0 else Decimal("0")
+    pnl_pct = (pnl / effective_cost * 100) if effective_cost > 0 else Decimal("0")
+    alpha_pnl = (
+        effective_purchased * (current_alpha_price - entry_price)
+        if effective_purchased > 0 and entry_price > 0
         else Decimal("0")
     )
+
+    # Yield is the residual: pnl - alpha_pnl. Floor at 0 because yield
+    # (emission income) cannot be negative. In rare edge cases the emission
+    # estimate may be slightly off, so clamping prevents impossible negatives.
+    unrealized_yield = pnl - alpha_pnl
+    if unrealized_yield < 0:
+        unrealized_yield = Decimal("0")
+        alpha_pnl = pnl  # preserve identity: pnl = alpha_pnl + yield
 
     position.unrealized_pnl_tao = pnl
     position.unrealized_pnl_pct = pnl_pct
-    position.unrealized_alpha_pnl_tao = alpha
-    position.unrealized_yield_tao = pnl - alpha
+    position.unrealized_alpha_pnl_tao = alpha_pnl
+    position.unrealized_yield_tao = unrealized_yield
     position.total_unrealized_pnl_tao = pnl
 
 

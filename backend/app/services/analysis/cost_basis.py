@@ -431,7 +431,9 @@ class CostBasisService:
             # NOTE: unrealized_pnl_tao/pct are owned by yield_tracker
             # (ledger identity enforcement). Do NOT write here.
 
-    async def compute_cost_basis_from_accounting(self) -> Dict[str, Any]:
+    async def compute_cost_basis_from_accounting(
+        self, netuids: Optional[List[int]] = None
+    ) -> Dict[str, Any]:
         """Compute alpha-based FIFO cost basis from accounting/tax API.
 
         This is the PRIMARY and AUTHORITATIVE source for cost basis because the
@@ -448,12 +450,20 @@ class CostBasisService:
         This runs AFTER compute_all_cost_basis() and overwrites its results
         with complete data.
 
+        Args:
+            netuids: If provided, only process positions for these netuids.
+                     Used for targeted recomputation after position changes.
+
         Returns:
             Dict with computation results
         """
         from app.services.data.taostats_client import get_taostats_client
 
-        logger.info("Computing authoritative cost basis from accounting/tax API")
+        netuids_set = set(netuids) if netuids is not None else None
+        logger.info(
+            "Computing authoritative cost basis from accounting/tax API",
+            targeted_netuids=list(netuids_set) if netuids_set else None,
+        )
 
         client = get_taostats_client()
         results = {
@@ -479,6 +489,11 @@ class CostBasisService:
 
                 for position in positions:
                     netuid = position.netuid
+
+                    # Skip positions not in the targeted set (when filtering)
+                    if netuids_set is not None and netuid not in netuids_set:
+                        continue
+
                     token = f"SN{netuid}"
 
                     try:
@@ -674,6 +689,30 @@ class CostBasisService:
                         position.cost_basis_tao = book_cost
                         position.alpha_purchased = total_remaining_alpha
 
+                        # Handle unindexed buy: all FIFO lots consumed but position
+                        # is still active with alpha well beyond what emission explains.
+                        # This happens when a recent buy (e.g., cross-subnet rebalance)
+                        # hasn't been indexed by the accounting API yet.
+                        # Set interim values so the decomposition works correctly.
+                        # These will be overwritten by FIFO when the buy is indexed.
+                        if total_remaining_alpha == 0 and position.alpha_balance > 0:
+                            emission_estimate = position.total_yield_alpha or Decimal("0")
+                            unindexed_alpha = position.alpha_balance - min(emission_estimate, position.alpha_balance)
+                            if unindexed_alpha > 0:
+                                current_price = (
+                                    position.tao_value_mid / position.alpha_balance
+                                    if position.alpha_balance > 0 else Decimal("0")
+                                )
+                                position.cost_basis_tao = unindexed_alpha * current_price
+                                position.alpha_purchased = unindexed_alpha
+                                position.entry_price_tao = current_price
+                                logger.info(
+                                    "Interim cost basis for unindexed buy",
+                                    netuid=netuid,
+                                    unindexed_alpha=float(unindexed_alpha),
+                                    interim_cost=float(position.cost_basis_tao),
+                                )
+
                         if first_stake_at:
                             position.entry_date = first_stake_at
 
@@ -684,9 +723,9 @@ class CostBasisService:
                             netuid=netuid,
                             buys=stake_count,
                             sells=unstake_count,
-                            alpha_purchased=float(total_remaining_alpha),
-                            book_cost=float(book_cost),
-                            avg_entry=float(weighted_avg_price),
+                            alpha_purchased=float(position.alpha_purchased),
+                            book_cost=float(position.cost_basis_tao),
+                            avg_entry=float(position.entry_price_tao),
                             realized_pnl=float(realized_pnl_tao),
                             realized_yield=float(realized_yield_tao),
                         )
