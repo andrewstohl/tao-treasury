@@ -30,6 +30,48 @@ from app.services.data.taostats_client import taostats_client, TaoStatsError
 logger = structlog.get_logger()
 
 
+def compute_unrealized_decomposition(position) -> None:
+    """Pure math: compute unrealized PnL decomposition from Position fields.
+
+    No API calls. Enforces ledger identity by construction:
+        unrealized_pnl = tao_value_mid - cost_basis
+        unrealized_alpha_pnl = alpha_purchased * (current_price - entry_price)
+        unrealized_yield = unrealized_pnl - unrealized_alpha_pnl  (residual)
+
+    For inactive positions (alpha_balance <= 0), all unrealized fields are zeroed.
+    """
+    if position.alpha_balance <= 0:
+        position.unrealized_pnl_tao = Decimal("0")
+        position.unrealized_pnl_pct = Decimal("0")
+        position.unrealized_yield_tao = Decimal("0")
+        position.unrealized_alpha_pnl_tao = Decimal("0")
+        position.total_unrealized_pnl_tao = Decimal("0")
+        return
+
+    cost_basis = position.cost_basis_tao or Decimal("0")
+    alpha_purchased = position.alpha_purchased or Decimal("0")
+    entry_price = position.entry_price_tao or Decimal("0")
+    current_alpha_price = (
+        position.tao_value_mid / position.alpha_balance
+        if position.alpha_balance > 0 and position.tao_value_mid > 0
+        else Decimal("0")
+    )
+
+    pnl = position.tao_value_mid - cost_basis if cost_basis > 0 else Decimal("0")
+    pnl_pct = (pnl / cost_basis * 100) if cost_basis > 0 else Decimal("0")
+    alpha = (
+        alpha_purchased * (current_alpha_price - entry_price)
+        if alpha_purchased > 0 and entry_price > 0
+        else Decimal("0")
+    )
+
+    position.unrealized_pnl_tao = pnl
+    position.unrealized_pnl_pct = pnl_pct
+    position.unrealized_alpha_pnl_tao = alpha
+    position.unrealized_yield_tao = pnl - alpha
+    position.total_unrealized_pnl_tao = pnl
+
+
 class YieldTrackerService:
     """Service for tracking yield using TaoStats accounting/tax API.
 
@@ -120,106 +162,45 @@ class YieldTrackerService:
         - avg_entry_price: Weighted average from token_swap prices
         """
         netuid = position.netuid
-
-        # Skip SN0 (Root) - it uses TAO directly, not alpha tokens
-        if netuid == 0:
-            return None
-
         token = f"SN{netuid}"
+
+        # Skip inactive positions (alpha_balance = 0) — unrealized fields already zeroed
+        if position.alpha_balance <= 0:
+            return None
 
         # Fetch accounting data for this alpha token
         # Handle 12-month API limit by fetching from position entry date
         records = await self._fetch_accounting_records(token, position.entry_date)
 
-        if not records:
-            # No accounting data - reset yield to 0 (don't trust old derived values)
-            logger.debug("No accounting records found, resetting yield to 0", netuid=netuid)
-            position.total_yield_alpha = Decimal("0")
-            position.unrealized_yield_tao = Decimal("0")
-            position.unrealized_alpha_pnl_tao = Decimal("0")
-            position.total_unrealized_pnl_tao = Decimal("0")
-            return {"total_yield_alpha": Decimal("0"), "unrealized_yield_tao": Decimal("0")}
-
-        # Process records to extract yield and purchase data
+        # Extract total_yield_alpha from daily_income (authoritative from TaoStats).
         total_yield_alpha = Decimal("0")
-        total_purchased_alpha = Decimal("0")
-        total_sold_alpha = Decimal("0")
-        weighted_price_sum = Decimal("0")
+        if records:
+            for record in records:
+                daily_income = Decimal(str(record.get("daily_income") or 0))
+                if daily_income > 0:
+                    total_yield_alpha += daily_income
 
-        for record in records:
-            tx_type = record.get("transaction_type")
-            credit = Decimal(str(record.get("credit_amount") or 0))
-            debit = Decimal(str(record.get("debit_amount") or 0))
-            daily_income = Decimal(str(record.get("daily_income") or 0))
-            price_tao = record.get("token_price_in_tao")
+        # Compute unrealized decomposition (pure math, no API)
+        compute_unrealized_decomposition(position)
 
-            # Yield from daily_income (authoritative)
-            if daily_income > 0:
-                total_yield_alpha += daily_income
-
-            # Alpha purchased/sold from token_swap transactions
-            if tx_type == "token_swap":
-                if credit > 0:
-                    total_purchased_alpha += credit
-                    # Track weighted entry price
-                    if price_tao:
-                        weighted_price_sum += credit * Decimal(str(price_tao))
-                if debit > 0:
-                    total_sold_alpha += debit
-
-        # Calculate net purchased alpha (what we still hold from purchases)
-        net_purchased_alpha = total_purchased_alpha - total_sold_alpha
-
-        # Calculate weighted average entry price
-        if total_purchased_alpha > 0:
-            avg_entry_price = weighted_price_sum / total_purchased_alpha
-        else:
-            avg_entry_price = Decimal("0")
-
-        # Get current alpha price from position
-        current_alpha_price = Decimal("0")
-        if position.alpha_balance > 0 and position.tao_value_mid > 0:
-            current_alpha_price = position.tao_value_mid / position.alpha_balance
-
-        # Calculate unrealized yield in TAO
-        # Yield alpha is still held, so value it at current price
-        unrealized_yield_tao = total_yield_alpha * current_alpha_price
-
-        # Calculate alpha P&L (price movement on purchased alpha)
-        # P&L = net_purchased × (current_price - entry_price)
-        if net_purchased_alpha > 0 and avg_entry_price > 0:
-            unrealized_alpha_pnl_tao = net_purchased_alpha * (
-                current_alpha_price - avg_entry_price
-            )
-        else:
-            unrealized_alpha_pnl_tao = Decimal("0")
-
-        # Update position with authoritative values
+        # Write total_yield_alpha from API (the only API-dependent field)
         position.total_yield_alpha = total_yield_alpha
-        position.alpha_purchased = net_purchased_alpha  # Update to authoritative value
-        position.unrealized_yield_tao = unrealized_yield_tao
-        position.unrealized_alpha_pnl_tao = unrealized_alpha_pnl_tao
-        position.total_unrealized_pnl_tao = unrealized_yield_tao + unrealized_alpha_pnl_tao
-
-        # Update entry price if we have better data
-        if avg_entry_price > 0:
-            position.entry_price_tao = avg_entry_price
 
         logger.debug(
-            "Computed yield from accounting API",
+            "Computed yield with ledger identity",
             netuid=netuid,
             total_yield_alpha=total_yield_alpha,
-            net_purchased_alpha=net_purchased_alpha,
-            unrealized_yield_tao=unrealized_yield_tao,
-            unrealized_alpha_pnl_tao=unrealized_alpha_pnl_tao,
+            unrealized_pnl=position.unrealized_pnl_tao,
+            unrealized_yield=position.unrealized_yield_tao,
+            unrealized_alpha_pnl=position.unrealized_alpha_pnl_tao,
         )
 
         return {
             "total_yield_alpha": total_yield_alpha,
-            "net_purchased_alpha": net_purchased_alpha,
-            "avg_entry_price": avg_entry_price,
-            "unrealized_yield_tao": unrealized_yield_tao,
-            "unrealized_alpha_pnl_tao": unrealized_alpha_pnl_tao,
+            "alpha_purchased": position.alpha_purchased or Decimal("0"),
+            "entry_price": position.entry_price_tao or Decimal("0"),
+            "unrealized_yield_tao": position.unrealized_yield_tao,
+            "unrealized_alpha_pnl_tao": position.unrealized_alpha_pnl_tao,
         }
 
     async def _fetch_accounting_records(

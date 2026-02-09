@@ -266,10 +266,13 @@ async def get_portfolio_history(
 
 
 async def _get_top_positions(db: AsyncSession, wallet: str, limit: int = 10) -> list[PositionSummary]:
-    """Helper to get top positions by TAO value."""
+    """Helper to get active positions (alpha_balance > 0) by TAO value."""
     stmt = (
         select(Position)
-        .where(Position.wallet_address == wallet)
+        .where(
+            Position.wallet_address == wallet,
+            Position.alpha_balance > 0,
+        )
         .order_by(Position.tao_value_mid.desc())
         .limit(limit)
     )
@@ -650,36 +653,41 @@ async def get_dashboard(
     # Compute market pulse from TaoStats pool data
     market_pulse = await _compute_market_pulse(top_positions)
 
-    # --- Closed positions ---
-    # Find netuids in cost basis table that have no open Position
-    open_netuids = {p.netuid for p in top_positions}
-    cb_stmt = select(PositionCostBasis).where(
-        PositionCostBasis.wallet_address == wallet,
+    # --- Inactive positions (alpha_balance = 0, realized values preserved) ---
+    inactive_stmt = (
+        select(Position)
+        .where(
+            Position.wallet_address == wallet,
+            Position.alpha_balance <= 0,
+        )
+        .order_by(Position.netuid)
     )
-    cb_result = await db.execute(cb_stmt)
-    all_cost_basis = cb_result.scalars().all()
+    inactive_result = await db.execute(inactive_stmt)
+    inactive_positions = inactive_result.scalars().all()
 
-    # Batch-load subnet names for closed positions
-    closed_netuids = [cb.netuid for cb in all_cost_basis if cb.netuid not in open_netuids]
-    closed_subnet_names: Dict[int, str] = {}
-    if closed_netuids:
-        sn_stmt = select(Subnet.netuid, Subnet.name).where(Subnet.netuid.in_(closed_netuids))
-        sn_result = await db.execute(sn_stmt)
-        for row in sn_result.fetchall():
-            closed_subnet_names[row[0]] = row[1]
+    # Enrich with PositionCostBasis data (staked/unstaked totals, dates)
+    inactive_netuids = [p.netuid for p in inactive_positions]
+    cb_lookup: Dict[int, PositionCostBasis] = {}
+    if inactive_netuids:
+        cb_stmt = select(PositionCostBasis).where(
+            PositionCostBasis.wallet_address == wallet,
+            PositionCostBasis.netuid.in_(inactive_netuids),
+        )
+        cb_result = await db.execute(cb_stmt)
+        for cb in cb_result.scalars().all():
+            cb_lookup[cb.netuid] = cb
 
     closed_positions = []
-    for cb in all_cost_basis:
-        if cb.netuid in open_netuids:
-            continue
+    for p in inactive_positions:
+        cb = cb_lookup.get(p.netuid)
         closed_positions.append(ClosedPositionSummary(
-            netuid=cb.netuid,
-            subnet_name=closed_subnet_names.get(cb.netuid, f"Subnet {cb.netuid}"),
-            total_staked_tao=cb.total_staked_tao,
-            total_unstaked_tao=cb.total_unstaked_tao,
-            realized_pnl_tao=cb.realized_pnl_tao,
-            first_entry=cb.first_stake_at,
-            last_trade=cb.last_transaction_at,
+            netuid=p.netuid,
+            subnet_name=p.subnet_name or f"Subnet {p.netuid}",
+            total_staked_tao=cb.total_staked_tao if cb else Decimal("0"),
+            total_unstaked_tao=cb.total_unstaked_tao if cb else Decimal("0"),
+            realized_pnl_tao=p.total_realized_pnl_tao or Decimal("0"),
+            first_entry=cb.first_stake_at if cb else p.entry_date,
+            last_trade=cb.last_transaction_at if cb else None,
         ))
 
     # --- Free TAO balance ---
@@ -1170,9 +1178,10 @@ async def get_portfolio_overview(
     unrealized_alpha_pnl_tao = snapshot.total_unrealized_alpha_pnl_tao or Decimal("0")
     realized_alpha_pnl_tao = snapshot.total_realized_alpha_pnl_tao or Decimal("0")
 
-    # Unrealized = alpha P&L only (matches TaoStats "unrealized gains").
-    # Yield is shown separately via yield_income.
-    unrealized_tao = unrealized_alpha_pnl_tao
+    # Unrealized = total unrealized P&L (yield + alpha), so the Current Value
+    # card's "Realized + Unrealized = Total" identity holds.
+    # The Yield and Alpha cards show the decomposed components separately.
+    unrealized_tao = snapshot.total_unrealized_pnl_tao or Decimal("0")
     realized_tao = snapshot.total_realized_pnl_tao or Decimal("0")
     total_pnl_tao = unrealized_tao + realized_tao
     cost_basis_tao = snapshot.total_cost_basis_tao or Decimal("0")

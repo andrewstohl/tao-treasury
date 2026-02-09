@@ -64,6 +64,7 @@ class SyncResponse(BaseModel):
     """Data sync response."""
     success: bool
     timestamp: datetime
+    mode: str = "full"
     subnets: int = 0
     pools: int = 0
     positions: int = 0

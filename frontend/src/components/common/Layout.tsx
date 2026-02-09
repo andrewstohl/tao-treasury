@@ -78,7 +78,7 @@ export default function Layout({ children }: LayoutProps) {
   })
 
   const refreshMutation = useMutation({
-    mutationFn: api.triggerRefresh,
+    mutationFn: (mode: string) => api.triggerRefresh(mode),
     onSuccess: () => {
       queryClient.invalidateQueries()
     },
@@ -228,12 +228,12 @@ export default function Layout({ children }: LayoutProps) {
             </span>
           </div>
 
-          {/* Sync Button */}
+          {/* Sync Button — click=refresh, shift+click=full */}
           <button
-            onClick={() => refreshMutation.mutate()}
+            onClick={(e) => refreshMutation.mutate(e.shiftKey ? 'full' : 'refresh')}
             disabled={refreshMutation.isPending}
             className="flex items-center gap-1 px-2 py-0.5 bg-[#1e2128] hover:bg-[#262b33] rounded text-xs text-[#6b7280] disabled:opacity-50 transition-colors"
-            title="Sync data from TaoStats"
+            title="Sync data (Shift+click for full sync)"
           >
             <RefreshCw className={`w-3 h-3 ${refreshMutation.isPending ? 'animate-spin' : ''}`} />
             {refreshMutation.isPending ? 'Syncing...' : 'Sync'}

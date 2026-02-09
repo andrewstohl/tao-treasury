@@ -125,8 +125,8 @@ export const api = {
   },
 
   // Tasks
-  triggerRefresh: async () => {
-    const { data } = await client.post('/api/v1/tasks/refresh')
+  triggerRefresh: async (mode: string = 'refresh') => {
+    const { data } = await client.post(`/api/v1/tasks/refresh?mode=${mode}`)
     return data
   },
 

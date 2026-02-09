@@ -122,12 +122,30 @@ class PositionMetricsService:
                     results["total_realized_yield_tao"] += realized_yield
                     results["total_realized_alpha_pnl_tao"] += realized_alpha_pnl
 
-                    # Update position if open
+                    # Update position, creating if missing (backfill orphaned subnets)
                     if cb.netuid in positions:
                         position = positions[cb.netuid]
-                        position.realized_yield_tao = realized_yield
-                        position.realized_alpha_pnl_tao = realized_alpha_pnl
-                        position.total_realized_pnl_tao = total_realized
+                    else:
+                        # PositionCostBasis exists without a Position record.
+                        # Create an inactive Position to hold realized values.
+                        position = Position(
+                            wallet_address=self.wallet_address,
+                            netuid=cb.netuid,
+                            subnet_name=f"Subnet {cb.netuid}",
+                            alpha_balance=Decimal("0"),
+                            tao_value_mid=Decimal("0"),
+                            entry_date=cb.first_stake_at,
+                        )
+                        db.add(position)
+                        positions[cb.netuid] = position
+                        logger.info(
+                            "Created Position for orphaned PositionCostBasis",
+                            netuid=cb.netuid,
+                        )
+
+                    position.realized_yield_tao = realized_yield
+                    position.realized_alpha_pnl_tao = realized_alpha_pnl
+                    position.total_realized_pnl_tao = total_realized
 
                 await db.commit()
 

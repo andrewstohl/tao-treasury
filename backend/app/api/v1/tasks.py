@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, Query
 
 from app.schemas.common import SyncResponse
 from app.services.data.data_sync import data_sync_service
@@ -11,24 +11,22 @@ router = APIRouter()
 
 
 @router.post("/refresh", response_model=SyncResponse)
-async def trigger_refresh(background_tasks: BackgroundTasks) -> SyncResponse:
-    """Manually trigger a data refresh with full analysis.
+async def trigger_refresh(
+    mode: str = Query(default="refresh", pattern="^(refresh|full|deep)$"),
+) -> SyncResponse:
+    """Trigger a data sync.
 
-    This runs:
-    - Subnet and pool sync
-    - Position sync
-    - Validator sync
-    - Transaction history sync
-    - Cost basis computation
-    - Slippage surface sync
-    - NAV calculation with executable pricing
-    - Risk check (drawdown, concentration)
+    Modes:
+    - **refresh**: Fast (~3s). Positions, validators, APY, unrealized decomposition, snapshot.
+    - **full**: Complete (~60s). Adds transactions, cost basis, yield tracker, risk monitor.
+    - **deep**: Everything (~120s+). Adds slippage surfaces and executable NAV.
     """
-    results = await data_sync_service.sync_all(include_analysis=True)
+    results = await data_sync_service.sync_all(mode=mode)
 
     return SyncResponse(
         success=len(results.get("errors", [])) == 0,
         timestamp=datetime.now(timezone.utc),
+        mode=results.get("mode", mode),
         subnets=results.get("subnets", 0),
         pools=results.get("pools", 0),
         positions=results.get("positions", 0),

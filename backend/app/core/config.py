@@ -295,6 +295,7 @@ class Settings(BaseSettings):
 
     # Scheduler Intervals
     wallet_refresh_minutes: int = Field(default=5)
+    full_sync_minutes: int = Field(default=60)
     pools_refresh_minutes: int = Field(default=10)
     flow_refresh_minutes: int = Field(default=30)
     validator_refresh_minutes: int = Field(default=60)

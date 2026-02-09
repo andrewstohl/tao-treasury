@@ -221,8 +221,8 @@ export default function Dashboard() {
   const closedCount = data.closed_positions?.length || 0
 
   const tabs: { key: PositionTab; label: string; count: number }[] = [
-    { key: 'open', label: 'Open Positions', count: openCount },
-    { key: 'closed', label: 'Closed Positions', count: closedCount },
+    { key: 'open', label: 'Active Positions', count: openCount },
+    { key: 'closed', label: 'Inactive Positions', count: closedCount },
     { key: 'all', label: 'All Positions', count: openCount + closedCount },
   ]
 

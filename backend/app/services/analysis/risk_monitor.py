@@ -29,6 +29,17 @@ MAX_POSITION_PCT = Decimal("25.0")  # No single position > 25%
 WARNING_POSITION_PCT = Decimal("20.0")  # Warn at 20%
 
 
+def _sanitize_for_json(data):
+    """Convert Decimal values to float for JSONB storage."""
+    if isinstance(data, dict):
+        return {k: _sanitize_for_json(v) for k, v in data.items()}
+    elif isinstance(data, (list, tuple)):
+        return [_sanitize_for_json(item) for item in data]
+    elif isinstance(data, Decimal):
+        return float(data)
+    return data
+
+
 class RiskMonitor:
     """Monitors portfolio risk metrics and generates alerts."""
 
@@ -340,7 +351,7 @@ class RiskMonitor:
                     severity=severity,
                     title=title,
                     message=message,
-                    metrics_snapshot=data,
+                    metrics_snapshot=_sanitize_for_json(data) if data else None,
                 )
                 db.add(alert)
                 await db.commit()

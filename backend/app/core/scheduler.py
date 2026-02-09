@@ -29,15 +29,15 @@ _last_sync_result: dict = {
 }
 
 
-async def _run_scheduled_sync() -> None:
+async def _run_scheduled_sync(mode: str = "refresh") -> None:
     """Run the scheduled data sync job with rate limit handling."""
     global _last_sync_result
     from app.services.data import data_sync_service
     from app.services.data.taostats_client import TaoStatsRateLimitError
 
-    logger.info("Scheduled sync starting")
+    logger.info("Scheduled sync starting", mode=mode)
     try:
-        results = await data_sync_service.sync_all(include_analysis=True)
+        results = await data_sync_service.sync_all(mode=mode)
 
         # Check if sync had errors (including rate limit)
         errors = results.get("errors", [])
@@ -50,7 +50,7 @@ async def _run_scheduled_sync() -> None:
             _last_sync_result["success"] = False
             _last_sync_result["timestamp"] = datetime.now(timezone.utc).isoformat()
 
-            # Back off: reschedule next sync with exponential delay
+            # Back off: reschedule next refresh with exponential delay
             _handle_rate_limit_backoff()
         elif len(errors) > 0:
             _last_sync_result["consecutive_failures"] += 1
@@ -58,7 +58,7 @@ async def _run_scheduled_sync() -> None:
             _last_sync_result["success"] = False
             _last_sync_result["rate_limited"] = False
             _last_sync_result["timestamp"] = datetime.now(timezone.utc).isoformat()
-            logger.warning("Scheduled sync completed with errors", errors=errors)
+            logger.warning("Scheduled sync completed with errors", mode=mode, errors=errors)
         else:
             # Success - reset failure counter and restore normal interval
             _last_sync_result["consecutive_failures"] = 0
@@ -72,9 +72,8 @@ async def _run_scheduled_sync() -> None:
 
             logger.info(
                 "Scheduled sync completed",
-                subnets=results.get("subnets", 0),
+                mode=mode,
                 positions=results.get("positions", 0),
-                pools=results.get("pools", 0),
             )
 
     except TaoStatsRateLimitError as e:
@@ -92,7 +91,7 @@ async def _run_scheduled_sync() -> None:
         _last_sync_result["success"] = False
         _last_sync_result["rate_limited"] = False
         _last_sync_result["timestamp"] = datetime.now(timezone.utc).isoformat()
-        logger.error("Scheduled sync failed", error=str(e))
+        logger.error("Scheduled sync failed", mode=mode, error=str(e))
 
 
 def _handle_rate_limit_backoff(retry_after: int | None = None) -> None:
@@ -123,8 +122,8 @@ def _handle_rate_limit_backoff(retry_after: int | None = None) -> None:
         consecutive_failures=_last_sync_result.get("consecutive_failures", 0),
     )
 
-    # Reschedule the job to run after the backoff period
-    job = scheduler.get_job("data_sync")
+    # Reschedule the refresh job to run after the backoff period
+    job = scheduler.get_job("data_sync_refresh")
     if job:
         job.reschedule(trigger=DateTrigger(run_date=next_run))
 
@@ -138,7 +137,12 @@ def get_scheduler() -> AsyncIOScheduler:
 
 
 def start_scheduler() -> None:
-    """Start the background scheduler with configured sync interval."""
+    """Start the background scheduler with three sync tiers.
+
+    - refresh: every wallet_refresh_minutes (5 min) — ~5 API calls, <3s
+    - full: every full_sync_minutes (60 min) — ~130 API calls
+    - deep: every slippage_refresh_hours (24h) — ~500+ API calls
+    """
     settings = get_settings()
     scheduler = get_scheduler()
 
@@ -147,24 +151,48 @@ def start_scheduler() -> None:
         logger.warning("Scheduler already running")
         return
 
-    # Add the sync job - runs every 5 minutes by default (uses wallet_refresh_minutes)
-    interval_minutes = settings.wallet_refresh_minutes
-
+    # Tier 1: Fast refresh (positions, APY, unrealized decomposition, snapshot)
     scheduler.add_job(
         _run_scheduled_sync,
-        trigger=IntervalTrigger(minutes=interval_minutes),
-        id="data_sync",
-        name="Automatic Data Sync",
+        trigger=IntervalTrigger(minutes=settings.wallet_refresh_minutes),
+        id="data_sync_refresh",
+        name="Refresh Sync (Tier 1)",
+        kwargs={"mode": "refresh"},
         replace_existing=True,
-        max_instances=1,  # Prevent overlapping syncs
-        coalesce=True,  # If missed runs, only run once
+        max_instances=1,
+        coalesce=True,
+    )
+
+    # Tier 2: Full sync (adds transactions, cost basis, yield tracker, risk)
+    scheduler.add_job(
+        _run_scheduled_sync,
+        trigger=IntervalTrigger(minutes=settings.full_sync_minutes),
+        id="data_sync_full",
+        name="Full Sync (Tier 2)",
+        kwargs={"mode": "full"},
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+
+    # Tier 3: Deep sync (adds slippage surfaces + executable NAV)
+    scheduler.add_job(
+        _run_scheduled_sync,
+        trigger=IntervalTrigger(hours=settings.slippage_refresh_hours),
+        id="data_sync_deep",
+        name="Deep Sync (Tier 3)",
+        kwargs={"mode": "deep"},
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
     )
 
     scheduler.start()
     logger.info(
-        "Scheduler started",
-        sync_interval_minutes=interval_minutes,
-        next_run=scheduler.get_job("data_sync").next_run_time,
+        "Scheduler started with three sync tiers",
+        refresh_interval=f"{settings.wallet_refresh_minutes}m",
+        full_interval=f"{settings.full_sync_minutes}m",
+        deep_interval=f"{settings.slippage_refresh_hours}h",
     )
 
 
@@ -179,18 +207,18 @@ def stop_scheduler() -> None:
 def get_scheduler_status() -> dict:
     """Get current scheduler status for health checks."""
     scheduler = get_scheduler()
-    job = scheduler.get_job("data_sync") if scheduler.running else None
+    refresh_job = scheduler.get_job("data_sync_refresh") if scheduler.running else None
 
     return {
         "running": scheduler.running,
-        "next_sync": job.next_run_time.isoformat() if job and job.next_run_time else None,
+        "next_sync": refresh_job.next_run_time.isoformat() if refresh_job and refresh_job.next_run_time else None,
         "job_count": len(scheduler.get_jobs()) if scheduler.running else 0,
         "last_sync": _last_sync_result.copy(),
     }
 
 
 def reset_to_normal_interval() -> None:
-    """Reset the scheduler to normal interval after backoff period.
+    """Reset the refresh scheduler to normal interval after backoff period.
 
     Call this after a successful sync to restore normal scheduling.
     """
@@ -200,7 +228,7 @@ def reset_to_normal_interval() -> None:
     if not scheduler.running:
         return
 
-    job = scheduler.get_job("data_sync")
+    job = scheduler.get_job("data_sync_refresh")
     if job:
         # Restore normal interval trigger
         job.reschedule(trigger=IntervalTrigger(minutes=settings.wallet_refresh_minutes))

@@ -11,7 +11,7 @@ from decimal import Decimal
 from typing import Dict, List, Optional, Any
 
 import structlog
-from sqlalchemy import delete, func, select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -22,7 +22,7 @@ from app.models.portfolio import PortfolioSnapshot
 from app.models.slippage import SlippageSurface
 from app.models.validator import Validator
 from app.models.wallet import Wallet
-from app.models.transaction import DelegationEvent, PositionCostBasis, PositionYieldHistory
+from app.models.transaction import DelegationEvent, PositionYieldHistory
 from app.services.data.taostats_client import taostats_client, TaoStatsError
 from app.services.data.coingecko_client import fetch_tao_price as cg_fetch_tao_price
 
@@ -87,19 +87,33 @@ class DataSyncService:
             result = await db.execute(stmt)
             return [row[0] for row in result.fetchall()]
 
-    async def sync_all(self, include_analysis: bool = True) -> Dict[str, Any]:
-        """Run full data synchronization.
+    async def sync_all(self, mode: str = "full", include_analysis: bool = True) -> Dict[str, Any]:
+        """Run data synchronization in tiered mode.
+
+        Modes:
+            refresh: Tier 1 only (~5 API calls, <3s). Positions, validators,
+                     APY, pure-math unrealized decomposition, portfolio snapshot.
+            full:    Tier 1 + Tier 2 (~130 API calls). Adds transactions,
+                     cost basis, yield tracker API, risk monitor.
+            deep:    Tier 1 + Tier 2 + Tier 3 (~500+ API calls). Adds slippage
+                     surfaces and executable NAV computation.
 
         Args:
-            include_analysis: If True, run transaction sync, cost basis, NAV, and risk analysis.
+            mode: One of "refresh", "full", "deep".
+            include_analysis: Legacy flag. If False, forces mode="refresh".
         """
+        # Legacy compatibility: include_analysis=False → refresh mode
+        if not include_analysis:
+            mode = "refresh"
+
         wallets = await self.get_active_wallets()
-        logger.info("Starting full data sync", wallets=wallets, include_analysis=include_analysis)
+        logger.info("Starting data sync", mode=mode, wallets=wallets)
 
         if not wallets:
             logger.warning("No active wallets configured - skipping wallet-specific sync")
-            # Still sync subnet/pool data even without wallets
+
         results = {
+            "mode": mode,
             "subnets": 0,
             "pools": 0,
             "positions": 0,
@@ -117,28 +131,57 @@ class DataSyncService:
         }
 
         try:
-            # Sync subnets and pools
+            # ================================================================
+            # TIER 1: Fast refresh (~5 API calls, <3 seconds)
+            # Positions, validators, APY mapping, unrealized decomposition,
+            # portfolio snapshot. Everything KPI cards need.
+            # ================================================================
+
+            # Sync wallet positions (1 API call)
+            position_count = await self.sync_positions()
+            results["positions"] = position_count
+
+            # Sync validators (1 paginated API call)
+            validator_count = await self.sync_validators()
+            results["validators"] = validator_count
+
+            # Compute subnet-level APYs (0 API calls, DB compute)
+            subnet_apy_count = await self.sync_subnet_apys()
+            results["subnet_apys"] = subnet_apy_count
+
+            # Map validator APY to positions (0 API calls, DB join)
+            yield_count = await self.sync_position_yields()
+            results["positions_with_yield"] = yield_count
+
+            # Recompute unrealized PnL decomposition (0 API calls, pure math)
+            # Uses cached cost_basis_tao, alpha_purchased, entry_price_tao
+            # from last full sync to enforce ledger identity.
+            decomp_count = await self._recompute_unrealized_decomposition()
+            results["unrealized_decomposition"] = decomp_count
+
+            # Create portfolio snapshot (2 API calls: TAO price + account balance)
+            await self.create_portfolio_snapshot()
+            results["portfolio_snapshot"] = True
+
+            if mode == "refresh":
+                self._last_sync = datetime.now(timezone.utc)
+                self._last_sync_results = results
+                logger.info("Refresh sync completed", results=results)
+                return results
+
+            # ================================================================
+            # TIER 2: Full sync (~130 API calls)
+            # Adds subnets, pools, transactions, cost basis (FIFO),
+            # yield tracker API, position metrics, risk monitor.
+            # Re-snapshots with updated cost basis data.
+            # ================================================================
+
+            # Sync subnets and pools (2 API calls)
             subnet_count = await self.sync_subnets()
             results["subnets"] = subnet_count
 
             pool_count = await self.sync_pools()
             results["pools"] = pool_count
-
-            # Sync wallet positions
-            position_count = await self.sync_positions()
-            results["positions"] = position_count
-
-            # Sync validators
-            validator_count = await self.sync_validators()
-            results["validators"] = validator_count
-
-            # Compute subnet-level APYs (stake-weighted average across all subnets)
-            subnet_apy_count = await self.sync_subnet_apys()
-            results["subnet_apys"] = subnet_apy_count
-
-            # Sync yield data to positions (uses validator APY data)
-            yield_count = await self.sync_position_yields()
-            results["positions_with_yield"] = yield_count
 
             # Sync delegation events for historical income tracking
             try:
@@ -156,129 +199,161 @@ class DataSyncService:
                 logger.warning("Stake balance history sync failed", error=str(e))
                 results["yield_history_records"] = 0
 
-            if include_analysis:
-                # Lazy imports to avoid circular imports
-                from app.services.analysis.transaction_sync import transaction_sync_service
-                from app.services.analysis.cost_basis import cost_basis_service
-                from app.services.analysis.position_metrics import position_metrics_service
-                from app.services.analysis.slippage_sync import slippage_sync_service
-                from app.services.analysis.nav_calculator import nav_calculator
-                from app.services.analysis.risk_monitor import risk_monitor
+            # Lazy imports to avoid circular imports
+            from app.services.analysis.transaction_sync import transaction_sync_service
+            from app.services.analysis.cost_basis import cost_basis_service
+            from app.services.analysis.position_metrics import position_metrics_service
+            from app.services.analysis.risk_monitor import risk_monitor
 
-                # Sync transaction history (dTAO trades for SN1+)
-                try:
-                    tx_results = await transaction_sync_service.sync_transactions()
-                    results["transactions"] = tx_results.get("new_transactions", 0)
-                except Exception as e:
-                    logger.error("Transaction sync failed", error=str(e))
-                    results["errors"].append(f"Transaction sync: {str(e)}")
+            # Sync transaction history (dTAO trades for SN1+)
+            try:
+                tx_results = await transaction_sync_service.sync_transactions()
+                results["transactions"] = tx_results.get("new_transactions", 0)
+            except Exception as e:
+                logger.error("Transaction sync failed", error=str(e))
+                results["errors"].append(f"Transaction sync: {str(e)}")
 
-                # Bridge Root (SN0) delegation events into stake_transactions
-                # (dtao/trade endpoint doesn't capture Root staking)
-                try:
-                    root_results = await transaction_sync_service.sync_root_transactions()
-                    root_new = root_results.get("new_transactions", 0)
-                    results["transactions"] += root_new
-                    if root_new > 0:
-                        logger.info("Root transactions bridged", count=root_new)
-                except Exception as e:
-                    logger.error("Root transaction sync failed", error=str(e))
-                    results["errors"].append(f"Root transaction sync: {str(e)}")
+            # Bridge Root (SN0) delegation events into stake_transactions
+            # (dtao/trade endpoint doesn't capture Root staking)
+            try:
+                root_results = await transaction_sync_service.sync_root_transactions()
+                root_new = root_results.get("new_transactions", 0)
+                results["transactions"] += root_new
+                if root_new > 0:
+                    logger.info("Root transactions bridged", count=root_new)
+            except Exception as e:
+                logger.error("Root transaction sync failed", error=str(e))
+                results["errors"].append(f"Root transaction sync: {str(e)}")
 
-                # Compute cost basis from transactions (alpha-based FIFO for entry prices)
-                try:
-                    cb_results = await cost_basis_service.compute_all_cost_basis()
-                    results["cost_basis_computed"] = cb_results.get("positions_computed", 0) > 0
-                except Exception as e:
-                    logger.error("Cost basis computation failed", error=str(e))
-                    results["errors"].append(f"Cost basis: {str(e)}")
+            # Compute cost basis from transactions (alpha-based FIFO for entry prices)
+            try:
+                cb_results = await cost_basis_service.compute_all_cost_basis()
+                results["cost_basis_computed"] = cb_results.get("positions_computed", 0) > 0
+            except Exception as e:
+                logger.error("Cost basis computation failed", error=str(e))
+                results["errors"].append(f"Cost basis: {str(e)}")
 
-                # Compute TAO and USD cost basis from accounting/tax API (PRIMARY SOURCE).
-                # The accounting endpoint captures ALL transactions including batch
-                # extrinsics that dtao/trade misses. This is authoritative for:
-                # - TAO staked/unstaked per position
-                # - USD staked/unstaked (enriched with historical prices)
-                # - Realized P&L in both TAO and USD
-                try:
-                    acct_cost_basis_results = await cost_basis_service.compute_cost_basis_from_accounting()
-                    results["accounting_cost_basis_computed"] = True
-                    results["accounting_positions_updated"] = (
-                        acct_cost_basis_results.get("positions_updated", 0) +
-                        acct_cost_basis_results.get("positions_created", 0)
-                    )
-                    results["total_staked_usd"] = float(acct_cost_basis_results.get("total_staked_usd", 0))
-                    logger.info(
-                        "Accounting-based cost basis computed (primary source)",
-                        positions=results["accounting_positions_updated"],
-                        total_staked_usd=results["total_staked_usd"],
-                    )
-                except Exception as e:
-                    logger.error("Accounting cost basis computation failed", error=str(e))
-                    results["errors"].append(f"Accounting cost basis: {str(e)}")
-                    results["accounting_cost_basis_computed"] = False
+            # Compute TAO and USD cost basis from accounting/tax API (PRIMARY SOURCE).
+            # The accounting endpoint captures ALL transactions including batch
+            # extrinsics that dtao/trade misses. This is authoritative for:
+            # - TAO staked/unstaked per position
+            # - USD staked/unstaked (enriched with historical prices)
+            # - Realized P&L in both TAO and USD
+            try:
+                acct_cost_basis_results = await cost_basis_service.compute_cost_basis_from_accounting()
+                results["accounting_cost_basis_computed"] = True
+                results["accounting_positions_updated"] = (
+                    acct_cost_basis_results.get("positions_updated", 0) +
+                    acct_cost_basis_results.get("positions_created", 0)
+                )
+                results["total_staked_usd"] = float(acct_cost_basis_results.get("total_staked_usd", 0))
+                logger.info(
+                    "Accounting-based cost basis computed (primary source)",
+                    positions=results["accounting_positions_updated"],
+                    total_staked_usd=results["total_staked_usd"],
+                )
+            except Exception as e:
+                logger.error("Accounting cost basis computation failed", error=str(e))
+                results["errors"].append(f"Accounting cost basis: {str(e)}")
+                results["accounting_cost_basis_computed"] = False
 
-                # Accounting-based realized P&L override disabled — the FIFO
-                # tracker already produces correct per-subnet realized PnL.
-                # The accounting override was incorrectly consuming ALL lots on
-                # every credit entry, inflating realized losses for open positions.
-                results["accounting_pnl_computed"] = False
+            # Accounting-based realized P&L override disabled — the FIFO
+            # tracker already produces correct per-subnet realized PnL.
+            results["accounting_pnl_computed"] = False
 
-                # Compute position-level yield and alpha P&L decomposition
-                # This is the single source of truth for all position metrics
-                try:
-                    metrics_results = await position_metrics_service.compute_all_position_metrics()
-                    results["position_metrics_computed"] = True
-                    results["positions_with_metrics"] = metrics_results.get("positions_processed", 0)
-                    logger.info(
-                        "Position metrics computed (yield/alpha decomposition)",
-                        positions=results["positions_with_metrics"],
-                    )
-                except Exception as e:
-                    logger.error("Position metrics computation failed", error=str(e))
-                    results["errors"].append(f"Position metrics: {str(e)}")
-                    results["position_metrics_computed"] = False
+            # Compute position-level yield and alpha P&L decomposition
+            # This is the single source of truth for all position metrics
+            try:
+                metrics_results = await position_metrics_service.compute_all_position_metrics()
+                results["position_metrics_computed"] = True
+                results["positions_with_metrics"] = metrics_results.get("positions_processed", 0)
+                logger.info(
+                    "Position metrics computed (yield/alpha decomposition)",
+                    positions=results["positions_with_metrics"],
+                )
+            except Exception as e:
+                logger.error("Position metrics computation failed", error=str(e))
+                results["errors"].append(f"Position metrics: {str(e)}")
+                results["position_metrics_computed"] = False
 
-                # Sync slippage surfaces
-                try:
-                    slip_results = await slippage_sync_service.sync_slippage_surfaces()
-                    results["slippage_surfaces"] = slip_results.get("surfaces_updated", 0)
-                except Exception as e:
-                    logger.error("Slippage sync failed", error=str(e))
-                    results["errors"].append(f"Slippage sync: {str(e)}")
+            # Run risk check
+            try:
+                risk_result = await risk_monitor.run_risk_check()
+                results["risk_check"] = True
+                results["risk_score"] = risk_result.get("risk_score", 0)
+                results["alerts"] = len(risk_result.get("alerts", []))
+            except Exception as e:
+                logger.error("Risk check failed", error=str(e))
+                results["errors"].append(f"Risk check: {str(e)}")
 
-                # Compute NAV with executable pricing
-                try:
-                    nav_result = await nav_calculator.compute_portfolio_nav()
-                    results["nav_computed"] = True
-                    results["nav_executable_tao"] = float(nav_result.get("nav_executable_tao", 0))
-                except Exception as e:
-                    logger.error("NAV computation failed", error=str(e))
-                    results["errors"].append(f"NAV: {str(e)}")
-
-                # Run risk check
-                try:
-                    risk_result = await risk_monitor.run_risk_check()
-                    results["risk_check"] = True
-                    results["risk_score"] = risk_result.get("risk_score", 0)
-                    results["alerts"] = len(risk_result.get("alerts", []))
-                except Exception as e:
-                    logger.error("Risk check failed", error=str(e))
-                    results["errors"].append(f"Risk check: {str(e)}")
-
-            # Create portfolio snapshot AFTER analysis so cost basis /
-            # realized P&L data is included in the snapshot.
+            # Re-snapshot with updated cost basis and realized P&L data
             await self.create_portfolio_snapshot()
-            results["portfolio_snapshot"] = True
+
+            if mode == "full":
+                self._last_sync = datetime.now(timezone.utc)
+                self._last_sync_results = results
+                logger.info("Full sync completed", results=results)
+                return results
+
+            # ================================================================
+            # TIER 3: Deep sync (~380 additional API calls)
+            # Slippage surfaces and executable NAV. Only needed for
+            # trade sizing and risk analysis, not KPI cards.
+            # ================================================================
+            from app.services.analysis.slippage_sync import slippage_sync_service
+            from app.services.analysis.nav_calculator import nav_calculator
+
+            # Sync slippage surfaces (~380 API calls)
+            try:
+                slip_results = await slippage_sync_service.sync_slippage_surfaces()
+                results["slippage_surfaces"] = slip_results.get("surfaces_updated", 0)
+            except Exception as e:
+                logger.error("Slippage sync failed", error=str(e))
+                results["errors"].append(f"Slippage sync: {str(e)}")
+
+            # Compute NAV with executable pricing (0 API calls, uses cached slippage)
+            try:
+                nav_result = await nav_calculator.compute_portfolio_nav()
+                results["nav_computed"] = True
+                results["nav_executable_tao"] = float(nav_result.get("nav_executable_tao", 0))
+            except Exception as e:
+                logger.error("NAV computation failed", error=str(e))
+                results["errors"].append(f"NAV: {str(e)}")
 
             self._last_sync = datetime.now(timezone.utc)
             self._last_sync_results = results
-            logger.info("Data sync completed", results=results)
+            logger.info("Deep sync completed", results=results)
 
         except Exception as e:
             logger.error("Data sync failed", error=str(e))
             results["errors"].append(str(e))
 
         return results
+
+    async def _recompute_unrealized_decomposition(self) -> int:
+        """Recompute unrealized PnL decomposition from cached Position fields.
+
+        Pure math — zero API calls. Uses cost_basis_tao, alpha_purchased,
+        and entry_price_tao from the last full sync to enforce ledger identity:
+            unrealized_pnl = tao_value_mid - cost_basis
+            unrealized_alpha_pnl = alpha_purchased * (current_price - entry_price)
+            unrealized_yield = unrealized_pnl - unrealized_alpha_pnl
+        """
+        from app.services.analysis.yield_tracker import compute_unrealized_decomposition
+
+        async with get_db_context() as db:
+            stmt = select(Position)
+            result = await db.execute(stmt)
+            positions = result.scalars().all()
+
+            count = 0
+            for p in positions:
+                compute_unrealized_decomposition(p)
+                count += 1
+
+            await db.commit()
+            logger.info("Unrealized decomposition recomputed", positions=count)
+            return count
 
     async def sync_subnets(self) -> int:
         """Sync subnet data from TaoStats.
@@ -530,14 +605,34 @@ class DataSyncService:
                 # Get current netuids from API
                 api_netuids = set(stakes_by_netuid.keys())
 
-                # Delete positions that no longer exist in the API
-                delete_stmt = delete(Position).where(
-                    Position.wallet_address == wallet_address,
-                    Position.netuid.notin_(api_netuids) if api_netuids else True
-                )
-                result = await db.execute(delete_stmt)
-                if result.rowcount > 0:
-                    logger.info("Removed stale positions", wallet=wallet_address, count=result.rowcount)
+                # Zero out positions no longer in the API (inactive).
+                # Positions are NEVER deleted — realized values are preserved.
+                if api_netuids:
+                    zero_stmt = (
+                        update(Position)
+                        .where(
+                            Position.wallet_address == wallet_address,
+                            Position.netuid.notin_(api_netuids),
+                            Position.alpha_balance > 0,  # only touch currently-active ones
+                        )
+                        .values(
+                            alpha_balance=Decimal("0"),
+                            tao_value_mid=Decimal("0"),
+                            tao_value_exec_50pct=Decimal("0"),
+                            tao_value_exec_100pct=Decimal("0"),
+                            unrealized_pnl_tao=Decimal("0"),
+                            unrealized_pnl_pct=Decimal("0"),
+                            unrealized_yield_tao=Decimal("0"),
+                            unrealized_alpha_pnl_tao=Decimal("0"),
+                            total_unrealized_pnl_tao=Decimal("0"),
+                            daily_yield_tao=Decimal("0"),
+                            weekly_yield_tao=Decimal("0"),
+                            current_apy=Decimal("0"),
+                        )
+                    )
+                    result = await db.execute(zero_stmt)
+                    if result.rowcount > 0:
+                        logger.info("Zeroed inactive positions", wallet=wallet_address, count=result.rowcount)
 
                 for netuid, stake_data in stakes_by_netuid.items():
                     await self._upsert_position(db, wallet_address, stake_data)
@@ -877,15 +972,9 @@ class DataSyncService:
                     position.daily_yield_tao = Decimal("0")
                     position.weekly_yield_tao = Decimal("0")
 
-                # Calculate unrealized P&L
-                if position.cost_basis_tao > 0:
-                    position.unrealized_pnl_tao = position.tao_value_mid - position.cost_basis_tao
-                    position.unrealized_pnl_pct = (
-                        (position.unrealized_pnl_tao / position.cost_basis_tao) * Decimal("100")
-                    )
-                else:
-                    position.unrealized_pnl_tao = Decimal("0")
-                    position.unrealized_pnl_pct = Decimal("0")
+                # NOTE: unrealized_pnl_tao is computed by cost_basis_service
+                # and decomposed yield/alpha P&L by position_metrics_service.
+                # Do NOT overwrite here — single writer principle.
 
                 count += 1
 
@@ -1003,73 +1092,63 @@ class DataSyncService:
                 except TaoStatsError:
                     tao_price_usd = Decimal("0")
 
-            # Get wallet TAO balance
+            # Get wallet unstaked TAO balance (free balance only)
             try:
                 account_data = await taostats_client.get_account(wallet_address)
                 account_info = account_data.get("data", [{}])[0] if account_data.get("data") else {}
                 tao_balance = rao_to_tao(account_info.get("balance_free", 0) or 0)
-                root_stake = rao_to_tao(account_info.get("balance_staked_root", 0) or 0)
             except TaoStatsError:
                 tao_balance = Decimal("0")
-                root_stake = Decimal("0")
 
-            # Calculate totals — exclude SN0 from the positions sum
-            # because root_stake already captures it from the account API.
-            # Including both would double-count root stake in the NAV.
-            dtao_value_mid = sum(
-                p.tao_value_mid for p in positions if p.netuid != 0
-            )
-            nav_mid = tao_balance + root_stake + dtao_value_mid
+            # === PURE POSITION SUMS (per CLAUDE.md subnet position model) ===
+            # SN0 (Root) is just another subnet — no carve-outs, no root_stake add-back.
+            # NAV = unstaked_tao + sum(ALL position.tao_value_mid)
+            active_positions = [p for p in positions if p.alpha_balance > 0]
+            total_position_value = sum(p.tao_value_mid for p in positions)
+            nav_mid = tao_balance + total_position_value
 
-            # Calculate yield aggregates from positions
-            total_daily_yield = sum(p.daily_yield_tao for p in positions)
-            total_weekly_yield = sum(p.weekly_yield_tao for p in positions)
+            # SN0 value for informational breakdown (root vs dTAO allocation)
+            sn0_value = sum(p.tao_value_mid for p in positions if p.netuid == 0)
+            dtao_value = total_position_value - sn0_value
+
+            # Yield aggregates from active positions
+            total_daily_yield = sum(p.daily_yield_tao for p in active_positions)
+            total_weekly_yield = sum(p.weekly_yield_tao for p in active_positions)
             total_monthly_yield = total_daily_yield * Decimal("30")
 
-            # Calculate weighted average APY across positions
-            total_value = sum(p.tao_value_mid for p in positions)
-            if total_value > 0:
-                weighted_apy = sum(p.tao_value_mid * p.current_apy for p in positions) / total_value
+            # Weighted average APY across active positions
+            active_value = sum(p.tao_value_mid for p in active_positions)
+            if active_value > 0:
+                weighted_apy = sum(p.tao_value_mid * p.current_apy for p in active_positions) / active_value
             else:
                 weighted_apy = Decimal("0")
 
-            # P&L aggregates — read realized P&L and cost basis from
-            # position_cost_basis table which includes CLOSED positions
-            # (the positions table only has open positions).
-            # Use decomposed yield + alpha P&L (authoritative from TaoStats API)
+            # === P&L AGGREGATES — pure sums of Position records ===
+            # Positions are never deleted, so ALL realized values live in Position table
+            # (copied from PositionCostBasis by position_metrics_service each sync).
             total_unrealized_pnl = sum(
-                (p.unrealized_yield_tao or Decimal("0")) + (p.unrealized_alpha_pnl_tao or Decimal("0"))
-                for p in positions
+                (p.unrealized_pnl_tao or Decimal("0")) for p in positions
+            )
+            total_realized_pnl = sum(
+                (p.total_realized_pnl_tao or Decimal("0")) for p in positions
+            )
+            total_cost_basis = sum(
+                (p.cost_basis_tao or Decimal("0")) for p in positions
             )
 
-            cb_stmt = select(
-                func.coalesce(func.sum(PositionCostBasis.realized_pnl_tao), 0),
-                func.coalesce(func.sum(PositionCostBasis.net_invested_tao), 0),
-                func.coalesce(func.sum(PositionCostBasis.realized_yield_tao), 0),
-            ).where(PositionCostBasis.wallet_address == wallet_address)
-            cb_result = await db.execute(cb_stmt)
-            cb_row = cb_result.fetchone()
-            total_realized_pnl = cb_row[0] if cb_row else Decimal("0")
-            total_realized_yield_from_cb = cb_row[2] if cb_row else Decimal("0")
-            # Derive cost basis so the ledger identity holds exactly:
-            #   NAV = cost_basis + realized_pnl + unrealized_pnl
-            # This equals the portfolio's implied initial capital
-            # (total deposits minus withdrawals, before any gains/losses).
-            total_cost_basis = nav_mid - total_realized_pnl - total_unrealized_pnl
-
-            # Decomposed yield and alpha P&L (pure aggregation from positions)
-            # For unrealized: sum from open positions (single source of truth)
+            # Decomposed yield and alpha P&L (pure sums from Position records)
             total_unrealized_yield = sum(
-                p.unrealized_yield_tao for p in positions
+                (p.unrealized_yield_tao or Decimal("0")) for p in positions
             )
             total_unrealized_alpha_pnl = sum(
-                p.unrealized_alpha_pnl_tao for p in positions
+                (p.unrealized_alpha_pnl_tao or Decimal("0")) for p in positions
             )
-            # For realized: from PositionCostBasis (includes closed positions)
-            # realized_yield comes directly from cost basis table
-            # realized_alpha_pnl = total_realized_pnl - realized_yield
-            total_realized_yield = total_realized_yield_from_cb
-            total_realized_alpha_pnl = total_realized_pnl - total_realized_yield
+            total_realized_yield = sum(
+                (p.realized_yield_tao or Decimal("0")) for p in positions
+            )
+            total_realized_alpha_pnl = sum(
+                (p.realized_alpha_pnl_tao or Decimal("0")) for p in positions
+            )
 
             snapshot = PortfolioSnapshot(
                 wallet_address=wallet_address,
@@ -1080,10 +1159,10 @@ class DataSyncService:
                 nav_exec_100pct=nav_mid,  # Will be computed by analysis service
                 tao_price_usd=tao_price_usd,
                 nav_usd=nav_mid * tao_price_usd,
-                root_allocation_tao=root_stake,
-                dtao_allocation_tao=dtao_value_mid,
+                root_allocation_tao=sn0_value,
+                dtao_allocation_tao=dtao_value,
                 unstaked_buffer_tao=tao_balance,
-                active_positions=len(positions),
+                active_positions=len(active_positions),
                 # Yield aggregates
                 portfolio_apy=weighted_apy,
                 daily_yield_tao=total_daily_yield,
