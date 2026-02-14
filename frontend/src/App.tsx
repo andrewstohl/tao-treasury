@@ -1,14 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/common/Layout'
-import Dashboard from './pages/Dashboard'
-import Analysis from './pages/Analysis'
-import Subnets from './pages/Subnets'
-import Alerts from './pages/Alerts'
-import Recommendations from './pages/Recommendations'
-import Strategy from './pages/Strategy'
-import Settings from './pages/Settings'
-import Examples from './pages/Examples'
-import Backtest from './pages/Backtest'
 import CommandCenter from './pages/CommandCenter'
 import Tournament from './pages/Tournament'
 import Ledger from './pages/Ledger'
@@ -18,17 +9,10 @@ function App() {
     <Layout>
       <Routes>
         <Route path="/" element={<Navigate to="/command-center" replace />} />
-        <Route path="/analysis" element={<Analysis />} />
-        <Route path="/subnets" element={<Subnets />} />
-        <Route path="/alerts" element={<Alerts />} />
-        <Route path="/recommendations" element={<Recommendations />} />
-        <Route path="/strategy" element={<Strategy />} />
-        <Route path="/settings" element={<Settings />} />
-        <Route path="/examples/*" element={<Examples />} />
-        <Route path="/backtest" element={<Backtest />} />
         <Route path="/command-center" element={<CommandCenter />} />
         <Route path="/tournament" element={<Tournament />} />
         <Route path="/ledger" element={<Ledger />} />
+        <Route path="*" element={<Navigate to="/command-center" replace />} />
       </Routes>
     </Layout>
   )
