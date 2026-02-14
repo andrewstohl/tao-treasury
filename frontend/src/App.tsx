@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/common/Layout'
 import Dashboard from './pages/Dashboard'
 import Analysis from './pages/Analysis'
@@ -17,7 +17,7 @@ function App() {
   return (
     <Layout>
       <Routes>
-        <Route path="/" element={<Dashboard />} />
+        <Route path="/" element={<Navigate to="/command-center" replace />} />
         <Route path="/analysis" element={<Analysis />} />
         <Route path="/subnets" element={<Subnets />} />
         <Route path="/alerts" element={<Alerts />} />
