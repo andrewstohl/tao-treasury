@@ -385,4 +385,15 @@ export const supabaseQueries = {
       }
     }
   },
+
+  // Get raw portfolio data from raw_api_data table
+  getPortfolioData: async () => {
+    const { data, error } = await supabase
+      .from('raw_api_data')
+      .select('response, fetched_at')
+      .eq('source', 'portfolio_current')
+      .single()
+    if (error) throw error
+    return data
+  },
 }
