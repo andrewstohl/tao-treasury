@@ -5,8 +5,8 @@ interface PasswordGateProps {
   children: ReactNode;
 }
 
-// SHA-256 hash of "TAO_Renaissance_2026!"
-const PASSWORD_HASH = 'c06464d523fb707423ea2e85430017067303bd3a9a077eab27becc476dfb2ae5';
+// SHA-256 hash of "TAO2026!"
+const PASSWORD_HASH = '42b540a42c16751f05c3e4f55edaebe5da0db2e983fb08a173bfb7d667d77c66';
 const STORAGE_KEY = 'taofund_auth';
 
 async function sha256(message: string): Promise<string> {
