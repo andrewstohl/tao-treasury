@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   LineChart,
@@ -18,6 +19,8 @@ import {
   BarChart3,
   Target,
   Activity,
+  ChevronRight,
+  ExternalLink,
 } from 'lucide-react'
 import { format, parseISO, subDays } from 'date-fns'
 import { supabaseQueries, type StrategyLedger } from '../services/supabase'
@@ -254,23 +257,38 @@ export default function Tournament() {
             const color = STRATEGY_COLORS[index % STRATEGY_COLORS.length]
             
             return (
-              <button
+              <div
                 key={strategyId}
-                onClick={() => toggleStrategy(strategyId)}
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-all ${
                   isSelected
                     ? 'bg-[#1e2128] border border-[#2a2f38]'
                     : 'bg-transparent border border-[#2a2f38] opacity-50'
                 }`}
               >
-                <div
-                  className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: color }}
-                />
-                <span className={isSelected ? 'text-white' : 'text-[#6b7280]'}>
+                <button
+                  onClick={() => toggleStrategy(strategyId)}
+                  className="flex items-center gap-2"
+                >
+                  <div
+                    className="w-3 h-3 rounded-full"
+                    style={{ backgroundColor: color }}
+                  />
+                </button>
+                <Link
+                  to={`/strategy/${strategyId}`}
+                  className={`hover:text-[#2a3ded] transition-colors ${
+                    isSelected ? 'text-white' : 'text-[#6b7280]'
+                  }`}
+                >
                   {STRATEGY_DISPLAY_NAMES[strategyId] || strategyId}
-                </span>
-              </button>
+                </Link>
+                <Link
+                  to={`/strategy/${strategyId}`}
+                  className="text-[#6b7280] hover:text-[#2a3ded] transition-colors"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                </Link>
+              </div>
             )
           })}
         </div>
@@ -394,6 +412,9 @@ export default function Tournament() {
                   <th className="px-4 py-3 text-right text-xs font-semibold text-[#6b7280] uppercase tracking-wider">
                     Sharpe Ratio
                   </th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-[#6b7280] uppercase tracking-wider">
+                    Details
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#2a2f38]">
@@ -411,15 +432,18 @@ export default function Tournament() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
+                      <Link
+                        to={`/strategy/${metric.strategyId}`}
+                        className="flex items-center gap-2 group"
+                      >
                         <div
                           className="w-3 h-3 rounded-full"
                           style={{ backgroundColor: metric.color }}
                         />
-                        <span className="text-sm font-medium text-white">
+                        <span className="text-sm font-medium text-white group-hover:text-[#2a3ded] transition-colors">
                           {STRATEGY_DISPLAY_NAMES[metric.strategyId] || metric.strategyId}
                         </span>
-                      </div>
+                      </Link>
                     </td>
                     <td className="px-4 py-3 text-right">
                       <span
@@ -468,6 +492,14 @@ export default function Tournament() {
                       <span className="text-sm text-white tabular-nums">
                         {metric.sharpeRatio.toFixed(2)}
                       </span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <Link
+                        to={`/strategy/${metric.strategyId}`}
+                        className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-[#2a3ded]/10 text-[#2a3ded] hover:bg-[#2a3ded]/20 transition-colors"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </Link>
                     </td>
                   </tr>
                 ))}

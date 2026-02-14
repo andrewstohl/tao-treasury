@@ -1,6 +1,6 @@
 import { ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { Command, Trophy, Table, ClipboardList, BookOpen } from 'lucide-react'
+import { Command, Trophy, Table, ClipboardList, BookOpen, GitCompare, Wallet } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { supabaseQueries } from '../../services/supabase'
 
@@ -9,8 +9,10 @@ interface LayoutProps {
 }
 
 const navItems = [
+  { path: '/portfolio', label: 'Portfolio', icon: Wallet },
   { path: '/command-center', label: 'Command Center', icon: Command },
   { path: '/tournament', label: 'Tournament', icon: Trophy },
+  { path: '/compare', label: 'Compare', icon: GitCompare },
   { path: '/ledger', label: 'Ledger', icon: Table },
   { path: '/proposals', label: 'Proposals', icon: ClipboardList },
   { path: '/wiki', label: 'Wiki', icon: BookOpen },
@@ -30,7 +32,7 @@ export default function Layout({ children }: LayoutProps) {
   return (
     <div className="min-h-screen flex flex-col bg-[#0d1117]">
       <header className="bg-[#16181d] border-b border-[#2a2f38] px-6 flex items-center h-16 flex-shrink-0">
-        <Link to="/command-center" className="flex items-center gap-2">
+        <Link to="/portfolio" className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-[#2a3ded] flex items-center justify-center">
             <span className="text-white font-bold text-sm">τ</span>
           </div>

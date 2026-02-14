@@ -100,6 +100,21 @@ export interface SubnetProfile {
   updated_at: string
 }
 
+export interface PortfolioPosition {
+  id?: number
+  coldkey: string
+  netuid: number
+  subnet_name: string | null
+  amount_alpha: number | null
+  amount_tao: number | null
+  price_tao: number | null
+  value_tao: number | null
+  daily_return_pct: number | null
+  weekly_return_pct: number | null
+  pct_of_portfolio: number | null
+  updated_at: string
+}
+
 export const supabaseQueries = {
   // Strategy Ledger
   getLatestStrategyLedger: async () => {
@@ -276,5 +291,98 @@ export const supabaseQueries = {
       .single()
     if (error) throw error
     return data as SubnetProfile
+  },
+
+  // Get full ledger for a single strategy (ordered by date)
+  getStrategyDetail: async (strategyId: string) => {
+    const { data, error } = await supabase
+      .from('strategy_ledger')
+      .select('*')
+      .eq('strategy_id', strategyId)
+      .order('date', { ascending: true })
+    if (error) throw error
+    return data as StrategyLedger[]
+  },
+
+  // Get most recent entry with positions for a strategy
+  getLatestStrategyPositions: async (strategyId: string) => {
+    const { data, error } = await supabase
+      .from('strategy_ledger')
+      .select('*')
+      .eq('strategy_id', strategyId)
+      .order('date', { ascending: false })
+      .limit(1)
+      .single()
+    if (error) throw error
+    return data as StrategyLedger
+  },
+
+  // Get portfolio positions (may not exist yet - handle gracefully)
+  getPortfolioPositions: async () => {
+    try {
+      const { data, error } = await supabase
+        .from('portfolio_positions')
+        .select('*')
+        .order('value_tao', { ascending: false })
+      if (error) {
+        // Table might not exist yet
+        console.warn('portfolio_positions table not available:', error.message)
+        return [] as PortfolioPosition[]
+      }
+      return (data || []) as PortfolioPosition[]
+    } catch (err) {
+      console.warn('Failed to fetch portfolio_positions:', err)
+      return [] as PortfolioPosition[]
+    }
+  },
+
+  // Get portfolio summary (total value, P&L, etc.)
+  getPortfolioSummary: async () => {
+    try {
+      const { data, error } = await supabase
+        .from('portfolio_positions')
+        .select('value_tao, daily_return_pct, weekly_return_pct')
+      
+      if (error) {
+        console.warn('portfolio_positions table not available:', error.message)
+        return {
+          total_value_tao: 0,
+          daily_pnl_tao: 0,
+          weekly_pnl_tao: 0,
+          position_count: 0
+        }
+      }
+
+      const positions = data || []
+      const total_value_tao = positions.reduce((sum, p) => sum + (p.value_tao || 0), 0)
+      
+      // Calculate weighted returns
+      const daily_pnl_tao = positions.reduce((sum, p) => {
+        const dailyReturn = p.daily_return_pct || 0
+        const value = p.value_tao || 0
+        return sum + (value * dailyReturn / 100)
+      }, 0)
+      
+      const weekly_pnl_tao = positions.reduce((sum, p) => {
+        const weeklyReturn = p.weekly_return_pct || 0
+        const value = p.value_tao || 0
+        return sum + (value * weeklyReturn / 100)
+      }, 0)
+
+      return {
+        total_value_tao,
+        daily_pnl_tao,
+        weekly_pnl_tao,
+        position_count: positions.length
+      }
+    } catch (err) {
+      console.warn('Failed to fetch portfolio summary:', err)
+      return {
+        total_value_tao: 0,
+        daily_pnl_tao: 0,
+        weekly_pnl_tao: 0,
+        position_count: 0
+      }
+    }
   },
 }
