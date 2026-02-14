@@ -131,19 +131,19 @@ export default function Portfolio() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold text-[#2a3ded] flex items-center gap-2">
-            <Wallet className="w-6 h-6" />
+          <h1 className="text-xl md:text-2xl font-bold text-[#2a3ded] flex items-center gap-2">
+            <Wallet className="w-5 h-5 md:w-6 md:h-6" />
             Portfolio
           </h1>
-          <p className="text-sm text-[#8a8f98] mt-1">
+          <p className="text-xs md:text-sm text-[#8a8f98] mt-1">
             Real-time portfolio positions and allocation breakdown
           </p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 md:gap-4">
           {portfolioData?.fetched_at && (
             <div className="flex items-center gap-2 text-xs text-[#6b7280]">
               <Clock className="w-3 h-3" />
@@ -169,38 +169,38 @@ export default function Portfolio() {
       )}
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4">
         {/* Total Value */}
-        <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <Wallet className="w-4 h-4 text-[#2a3ded]" />
+        <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-3 md:p-4">
+          <div className="flex items-center gap-2 mb-1 md:mb-2">
+            <Wallet className="w-3 h-3 md:w-4 md:h-4 text-[#2a3ded]" />
             <span className="text-xs text-[#6b7280]">Total Value</span>
           </div>
           {isLoading ? (
-            <div className="h-6 bg-[#1e2128] rounded animate-pulse" />
+            <div className="h-5 md:h-6 bg-[#1e2128] rounded animate-pulse" />
           ) : (
-            <div className="text-xl font-bold text-white tabular-nums">
-              {kpis?.totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} τ
+            <div className="text-base md:text-xl font-bold text-white tabular-nums truncate">
+              {kpis?.totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-xs md:text-base">τ</span>
             </div>
           )}
         </div>
 
         {/* 24h P&L */}
-        <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-4">
-          <div className="flex items-center gap-2 mb-2">
+        <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-3 md:p-4">
+          <div className="flex items-center gap-2 mb-1 md:mb-2">
             {kpis && kpis.pnl24h >= 0 ? (
-              <TrendingUp className="w-4 h-4 text-green-400" />
+              <TrendingUp className="w-3 h-3 md:w-4 md:h-4 text-green-400" />
             ) : (
-              <TrendingDown className="w-4 h-4 text-red-400" />
+              <TrendingDown className="w-3 h-3 md:w-4 md:h-4 text-red-400" />
             )}
             <span className="text-xs text-[#6b7280]">24h P&L</span>
           </div>
           {isLoading ? (
-            <div className="h-6 bg-[#1e2128] rounded animate-pulse" />
+            <div className="h-5 md:h-6 bg-[#1e2128] rounded animate-pulse" />
           ) : (
-            <div className="space-y-1">
-              <div className={`text-xl font-bold tabular-nums ${kpis && kpis.pnl24h >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                {kpis && kpis.pnl24h >= 0 ? '+' : ''}{kpis?.pnl24h.toFixed(4)} τ
+            <div className="space-y-0.5 md:space-y-1">
+              <div className={`text-base md:text-xl font-bold tabular-nums truncate ${kpis && kpis.pnl24h >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                {kpis && kpis.pnl24h >= 0 ? '+' : ''}{kpis?.pnl24h.toFixed(2)} <span className="text-xs md:text-base">τ</span>
               </div>
               <div className={`text-xs tabular-nums ${kpis && kpis.pnl24hPercent >= 0 ? 'text-green-400/70' : 'text-red-400/70'}`}>
                 {kpis && kpis.pnl24hPercent >= 0 ? '+' : ''}{kpis?.pnl24hPercent.toFixed(2)}%
@@ -210,80 +210,80 @@ export default function Portfolio() {
         </div>
 
         {/* # Positions */}
-        <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <BarChart3 className="w-4 h-4 text-[#2a3ded]" />
+        <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-3 md:p-4">
+          <div className="flex items-center gap-2 mb-1 md:mb-2">
+            <BarChart3 className="w-3 h-3 md:w-4 md:h-4 text-[#2a3ded]" />
             <span className="text-xs text-[#6b7280]">Positions</span>
           </div>
           {isLoading ? (
-            <div className="h-6 bg-[#1e2128] rounded animate-pulse" />
+            <div className="h-5 md:h-6 bg-[#1e2128] rounded animate-pulse" />
           ) : (
-            <div className="text-xl font-bold text-white tabular-nums">
+            <div className="text-base md:text-xl font-bold text-white tabular-nums">
               {kpis?.positionCount || 0}
             </div>
           )}
         </div>
 
         {/* Largest Position */}
-        <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <PieChart className="w-4 h-4 text-[#2a3ded]" />
-            <span className="text-xs text-[#6b7280]">Largest Position</span>
+        <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-3 md:p-4">
+          <div className="flex items-center gap-2 mb-1 md:mb-2">
+            <PieChart className="w-3 h-3 md:w-4 md:h-4 text-[#2a3ded]" />
+            <span className="text-xs text-[#6b7280]">Largest</span>
           </div>
           {isLoading ? (
-            <div className="h-6 bg-[#1e2128] rounded animate-pulse" />
+            <div className="h-5 md:h-6 bg-[#1e2128] rounded animate-pulse" />
           ) : kpis?.largestPosition ? (
-            <div className="space-y-1">
-              <div className="text-xl font-bold text-white tabular-nums">
+            <div className="space-y-0.5 md:space-y-1">
+              <div className="text-base md:text-xl font-bold text-white tabular-nums">
                 SN{kpis.largestPosition.netuid}
               </div>
               <div className="text-xs text-[#6b7280] tabular-nums">
-                {kpis.largestPosition.pct_of_portfolio.toFixed(1)}% of portfolio
+                {kpis.largestPosition.pct_of_portfolio.toFixed(1)}%
               </div>
             </div>
           ) : (
-            <div className="text-xl font-bold text-white tabular-nums">—</div>
+            <div className="text-base md:text-xl font-bold text-white tabular-nums">—</div>
           )}
         </div>
       </div>
 
       {/* Main Content: Chart + Positions Table */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
         {/* Allocation Chart */}
-        <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-5">
-          <div className="flex items-center justify-between mb-4">
+        <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-4 md:p-5">
+          <div className="flex items-center justify-between mb-3 md:mb-4">
             <div className="flex items-center gap-2">
-              <PieChart className="w-5 h-5 text-[#2a3ded]" />
-              <h3 className="font-semibold text-white">Allocation</h3>
+              <PieChart className="w-4 h-4 md:w-5 md:h-5 text-[#2a3ded]" />
+              <h3 className="font-semibold text-white text-sm md:text-base">Allocation</h3>
             </div>
             <span className="text-xs text-[#6b7280]">By Value</span>
           </div>
 
           {isLoading ? (
-            <div className="h-64 bg-[#1e2128] rounded animate-pulse" />
+            <div className="h-48 md:h-64 bg-[#1e2128] rounded animate-pulse" />
           ) : chartData.length > 0 ? (
-            <div className="h-64">
+            <div className="h-48 md:h-64">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
+                <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 20, left: 35, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#2a2f38" horizontal={false} />
-                  <XAxis 
-                    type="number" 
-                    stroke="#6b7280" 
-                    fontSize={11}
+                  <XAxis
+                    type="number"
+                    stroke="#6b7280"
+                    fontSize={10}
                     tickFormatter={(value) => `${value.toFixed(0)} τ`}
                   />
-                  <YAxis 
-                    type="category" 
-                    dataKey="name" 
-                    stroke="#9ca3af" 
-                    fontSize={12}
-                    width={50}
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    stroke="#9ca3af"
+                    fontSize={11}
+                    width={40}
                   />
                   <Tooltip content={<CustomTooltip />} />
                   <Bar dataKey="value" radius={[0, 4, 4, 0]}>
                     {chartData.map((_entry, index) => (
-                      <Cell 
-                        key={`cell-${index}`} 
+                      <Cell
+                        key={`cell-${index}`}
                         fill={index === 0 ? '#2a3ded' : index === 1 ? '#3b82f6' : index === 2 ? '#06b6d4' : index === 3 ? '#14b8a6' : '#10b981'}
                       />
                     ))}
@@ -292,18 +292,18 @@ export default function Portfolio() {
               </ResponsiveContainer>
             </div>
           ) : (
-            <div className="h-64 flex items-center justify-center text-[#6b7280]">
+            <div className="h-48 md:h-64 flex items-center justify-center text-[#6b7280]">
               <span>No position data available</span>
             </div>
           )}
         </div>
 
         {/* Positions Table */}
-        <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-5">
-          <div className="flex items-center justify-between mb-4">
+        <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-4 md:p-5">
+          <div className="flex items-center justify-between mb-3 md:mb-4">
             <div className="flex items-center gap-2">
-              <BarChart3 className="w-5 h-5 text-[#2a3ded]" />
-              <h3 className="font-semibold text-white">Positions</h3>
+              <BarChart3 className="w-4 h-4 md:w-5 md:h-5 text-[#2a3ded]" />
+              <h3 className="font-semibold text-white text-sm md:text-base">Positions</h3>
             </div>
             <span className="text-xs text-[#6b7280]">Sorted by Value</span>
           </div>
@@ -311,34 +311,34 @@ export default function Portfolio() {
           {isLoading ? (
             <div className="space-y-2">
               {[1, 2, 3, 4, 5].map((i) => (
-                <div key={i} className="h-12 bg-[#1e2128] rounded animate-pulse" />
+                <div key={i} className="h-10 md:h-12 bg-[#1e2128] rounded animate-pulse" />
               ))}
             </div>
           ) : sortedPositions.length > 0 ? (
-            <div className="space-y-2 max-h-[300px] overflow-y-auto">
+            <div className="space-y-2 max-h-[250px] md:max-h-[300px] overflow-y-auto">
               {/* Table Header */}
               <div className="grid grid-cols-12 gap-2 text-xs text-[#6b7280] pb-2 border-b border-[#2a2f38]">
                 <div className="col-span-2">Subnet</div>
-                <div className="col-span-4">Allocation</div>
+                <div className="col-span-5 md:col-span-4">Allocation</div>
                 <div className="col-span-3 text-right">Value</div>
-                <div className="col-span-3 text-right">%</div>
+                <div className="col-span-2 md:col-span-3 text-right">%</div>
               </div>
 
               {/* Table Rows */}
               {sortedPositions.map((position) => (
-                <div 
-                  key={position.netuid} 
+                <div
+                  key={position.netuid}
                   className="grid grid-cols-12 gap-2 py-2 items-center hover:bg-[#1e2128] rounded px-1 transition-colors"
                 >
                   <div className="col-span-2">
-                    <span className="text-sm font-medium text-white">
+                    <span className="text-xs md:text-sm font-medium text-white">
                       SN{position.netuid}
                     </span>
                   </div>
-                  <div className="col-span-4">
+                  <div className="col-span-5 md:col-span-4">
                     <div className="flex items-center gap-2">
-                      <div className="flex-1 h-2 bg-[#1e2128] rounded-full overflow-hidden">
-                        <div 
+                      <div className="flex-1 h-1.5 md:h-2 bg-[#1e2128] rounded-full overflow-hidden">
+                        <div
                           className={`h-full rounded-full ${getAllocationColor(position.pct_of_portfolio)}`}
                           style={{ width: `${Math.min(position.pct_of_portfolio, 100)}%` }}
                         />
@@ -346,13 +346,13 @@ export default function Portfolio() {
                     </div>
                   </div>
                   <div className="col-span-3 text-right">
-                    <span className="text-sm text-white tabular-nums">
+                    <span className="text-xs md:text-sm text-white tabular-nums">
                       {position.value_tao.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
                     </span>
                     <span className="text-xs text-[#6b7280] ml-1">τ</span>
                   </div>
-                  <div className="col-span-3 text-right">
-                    <span className={`text-sm font-medium tabular-nums ${
+                  <div className="col-span-2 md:col-span-3 text-right">
+                    <span className={`text-xs md:text-sm font-medium tabular-nums ${
                       position.pct_of_portfolio >= 50 ? 'text-[#2a3ded]' :
                       position.pct_of_portfolio >= 20 ? 'text-blue-400' :
                       position.pct_of_portfolio >= 10 ? 'text-cyan-400' :

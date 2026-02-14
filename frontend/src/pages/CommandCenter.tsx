@@ -157,15 +157,15 @@ export default function CommandCenter() {
   }, [subnetProfiles])
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold text-[#2a3ded] flex items-center gap-2">
-            <Shield className="w-6 h-6" />
+          <h1 className="text-xl md:text-2xl font-bold text-[#2a3ded] flex items-center gap-2">
+            <Shield className="w-5 h-5 md:w-6 md:h-6" />
             Command Center
           </h1>
-          <p className="text-sm text-[#8a8f98] mt-1">
+          <p className="text-xs md:text-sm text-[#8a8f98] mt-1">
             Fund operations dashboard — real-time health monitoring and NAV tracking
           </p>
         </div>
@@ -176,58 +176,58 @@ export default function CommandCenter() {
       </div>
 
       {/* Quick Stats Row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <BarChart3 className="w-4 h-4 text-[#2a3ded]" />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4">
+        <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-3 md:p-4">
+          <div className="flex items-center gap-2 mb-1 md:mb-2">
+            <BarChart3 className="w-3 h-3 md:w-4 md:h-4 text-[#2a3ded]" />
             <span className="text-xs text-[#6b7280]">Total NAV</span>
           </div>
           {isLoadingNav ? (
-            <div className="h-6 bg-[#1e2128] rounded animate-pulse" />
+            <div className="h-5 md:h-6 bg-[#1e2128] rounded animate-pulse" />
           ) : (
-            <div className="text-xl font-bold text-white tabular-nums">
-              {totalNav.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} τ
+            <div className="text-base md:text-xl font-bold text-white tabular-nums truncate">
+              {totalNav.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-xs md:text-base">τ</span>
             </div>
           )}
         </div>
 
-        <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <Zap className="w-4 h-4 text-[#2a3ded]" />
+        <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-3 md:p-4">
+          <div className="flex items-center gap-2 mb-1 md:mb-2">
+            <Zap className="w-3 h-3 md:w-4 md:h-4 text-[#2a3ded]" />
             <span className="text-xs text-[#6b7280]">Daily P&L</span>
           </div>
           {isLoadingNav ? (
-            <div className="h-6 bg-[#1e2128] rounded animate-pulse" />
+            <div className="h-5 md:h-6 bg-[#1e2128] rounded animate-pulse" />
           ) : (
-            <div className={`text-xl font-bold tabular-nums ${dailyPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-              {dailyPnL >= 0 ? '+' : ''}{dailyPnL.toFixed(4)} τ
+            <div className={`text-base md:text-xl font-bold tabular-nums truncate ${dailyPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {dailyPnL >= 0 ? '+' : ''}{dailyPnL.toFixed(2)} <span className="text-xs md:text-base">τ</span>
             </div>
           )}
         </div>
 
-        <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <Layers className="w-4 h-4 text-[#2a3ded]" />
+        <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-3 md:p-4">
+          <div className="flex items-center gap-2 mb-1 md:mb-2">
+            <Layers className="w-3 h-3 md:w-4 md:h-4 text-[#2a3ded]" />
             <span className="text-xs text-[#6b7280]">Strategies</span>
           </div>
           {isLoadingNav ? (
-            <div className="h-6 bg-[#1e2128] rounded animate-pulse" />
+            <div className="h-5 md:h-6 bg-[#1e2128] rounded animate-pulse" />
           ) : (
-            <div className="text-xl font-bold text-white tabular-nums">
+            <div className="text-base md:text-xl font-bold text-white tabular-nums">
               {latestNavData?.length || 0}
             </div>
           )}
         </div>
 
-        <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <TrendingUp className="w-4 h-4 text-[#2a3ded]" />
+        <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-3 md:p-4">
+          <div className="flex items-center gap-2 mb-1 md:mb-2">
+            <TrendingUp className="w-3 h-3 md:w-4 md:h-4 text-[#2a3ded]" />
             <span className="text-xs text-[#6b7280]">Avg Return</span>
           </div>
           {isLoadingNav ? (
-            <div className="h-6 bg-[#1e2128] rounded animate-pulse" />
+            <div className="h-5 md:h-6 bg-[#1e2128] rounded animate-pulse" />
           ) : (
-            <div className={`text-xl font-bold tabular-nums ${avgDailyReturn >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+            <div className={`text-base md:text-xl font-bold tabular-nums ${avgDailyReturn >= 0 ? 'text-green-400' : 'text-red-400'}`}>
               {avgDailyReturn >= 0 ? '+' : ''}{avgDailyReturn.toFixed(2)}%
             </div>
           )}
@@ -235,9 +235,9 @@ export default function CommandCenter() {
       </div>
 
       {/* Top Row: Portfolio + Agent Health + Data Freshness */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
         {/* Portfolio NAV Card with Subnet Performance */}
-        <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-5">
+        <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-4 md:p-5">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <TrendingUp className="w-5 h-5 text-[#2a3ded]" />
@@ -435,7 +435,7 @@ export default function CommandCenter() {
       </div>
 
       {/* Bottom Row: Recent Escalations + Strategy Scores */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4">
         {/* Recent Escalations */}
         <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-5">
           <div className="flex items-center justify-between mb-4">

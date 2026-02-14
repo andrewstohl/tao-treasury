@@ -194,111 +194,113 @@ export default function Discover() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <div className="flex items-center gap-3">
           <Compass className="w-6 h-6 text-[#2a3ded]" />
-          <h1 className="text-2xl font-bold text-white">Discover</h1>
+          <h1 className="text-xl md:text-2xl font-bold text-white">Discover</h1>
         </div>
-        <div className="text-sm text-[#6f87a0]">
+        <div className="text-xs md:text-sm text-[#6f87a0]">
           {summaryStats.eligible} eligible / {summaryStats.total} subnets
         </div>
       </div>
 
       {/* Summary Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-[#121f2d] rounded-lg p-4 border border-[#1e3a5f]">
-          <div className="text-sm text-[#6f87a0] mb-1">Total Subnets</div>
-          <div className="text-2xl font-bold text-white">{summaryStats.total}</div>
+      <div className="grid grid-cols-3 gap-2 md:gap-4">
+        <div className="bg-[#121f2d] rounded-lg p-3 md:p-4 border border-[#1e3a5f]">
+          <div className="text-xs md:text-sm text-[#6f87a0] mb-1">Total</div>
+          <div className="text-lg md:text-2xl font-bold text-white">{summaryStats.total}</div>
         </div>
-        <div className="bg-[#121f2d] rounded-lg p-4 border border-[#1e3a5f]">
-          <div className="text-sm text-[#6f87a0] mb-1">Eligible</div>
-          <div className="text-2xl font-bold text-green-400">{summaryStats.eligible}</div>
+        <div className="bg-[#121f2d] rounded-lg p-3 md:p-4 border border-[#1e3a5f]">
+          <div className="text-xs md:text-sm text-[#6f87a0] mb-1">Eligible</div>
+          <div className="text-lg md:text-2xl font-bold text-green-400">{summaryStats.eligible}</div>
         </div>
-        <div className="bg-[#121f2d] rounded-lg p-4 border border-[#1e3a5f]">
-          <div className="text-sm text-[#6f87a0] mb-1">Total TAO in Pools</div>
-          <div className="text-2xl font-bold text-white">{formatTao(summaryStats.totalTao)} τ</div>
+        <div className="bg-[#121f2d] rounded-lg p-3 md:p-4 border border-[#1e3a5f]">
+          <div className="text-xs md:text-sm text-[#6f87a0] mb-1">TAO in Pools</div>
+          <div className="text-lg md:text-2xl font-bold text-white truncate">{formatTao(summaryStats.totalTao)} <span className="text-xs md:text-base">τ</span></div>
         </div>
       </div>
 
       {/* Filters Bar */}
-      <div className="flex items-center gap-3 flex-wrap bg-[#121f2d] rounded-lg p-4 border border-[#1e3a5f]">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 flex-wrap bg-[#121f2d] rounded-lg p-3 md:p-4 border border-[#1e3a5f]">
         {/* Text search */}
-        <div className="relative flex-1 min-w-[200px] max-w-xs">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#5a7a94]" />
+        <div className="relative flex-1 min-w-full sm:min-w-[200px] sm:max-w-xs">
+          <Search className="absolute left-3 md:left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#5a7a94]" />
           <input
             type="text"
             placeholder="Search name or netuid..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-[#0d1117] border border-[#1e3a5f] rounded-lg text-sm text-[#a8c4d9] placeholder-gray-500 focus:outline-none focus:border-[#2a3ded]"
+            className="w-full pl-9 md:pl-10 pr-3 md:pr-4 py-2 md:py-2.5 bg-[#0d1117] border border-[#1e3a5f] rounded-lg text-sm text-[#a8c4d9] placeholder-gray-500 focus:outline-none focus:border-[#2a3ded]"
           />
         </div>
 
-        {/* Category filter */}
-        <select
-          value={categoryFilter}
-          onChange={(e) => setCategoryFilter(e.target.value as CategoryFilter)}
-          className="bg-[#0d1117] border border-[#1e3a5f] rounded-lg text-sm text-[#8faabe] px-4 py-2.5 focus:outline-none focus:border-[#2a3ded]"
-        >
-          <option value="all">All Categories</option>
-          <option value="Core">Core</option>
-          <option value="Growth">Growth</option>
-          <option value="Speculative">Speculative</option>
-          <option value="Dead">Dead</option>
-        </select>
-
-        {/* Eligible filter */}
-        <select
-          value={eligibleFilter}
-          onChange={(e) => setEligibleFilter(e.target.value as EligibleFilter)}
-          className="bg-[#0d1117] border border-[#1e3a5f] rounded-lg text-sm text-[#8faabe] px-4 py-2.5 focus:outline-none focus:border-[#2a3ded]"
-        >
-          <option value="all">All Status</option>
-          <option value="eligible">Eligible Only</option>
-          <option value="ineligible">Ineligible Only</option>
-        </select>
-
-        {/* Sort dropdown */}
-        <select
-          value={`${sortKey || ''}-${sortDirection || ''}`}
-          onChange={(e) => {
-            const [key, dir] = e.target.value.split('-')
-            setSortKey(key as SortKey || null)
-            setSortDirection(dir as SortDirection)
-          }}
-          className="bg-[#0d1117] border border-[#1e3a5f] rounded-lg text-sm text-[#8faabe] px-4 py-2.5 focus:outline-none focus:border-[#2a3ded]"
-        >
-          <option value="netuid-asc">SN# (Low to High)</option>
-          <option value="netuid-desc">SN# (High to Low)</option>
-          <option value="alpha_price-desc">Price (High to Low)</option>
-          <option value="alpha_price-asc">Price (Low to High)</option>
-          <option value="market_cap-desc">Market Cap (High to Low)</option>
-          <option value="pool_tao_reserve-desc">Liquidity (High to Low)</option>
-          <option value="taoflow_7d-desc">7d Flow (High to Low)</option>
-        </select>
-
-        {/* Clear filters */}
-        {hasActiveFilters && (
-          <button
-            onClick={() => {
-              setSearchQuery('')
-              setCategoryFilter('all')
-              setEligibleFilter('all')
-              setSortKey('netuid')
-              setSortDirection('asc')
-            }}
-            className="text-xs text-[#6f87a0] hover:text-[#a8c4d9] underline"
+        <div className="flex flex-wrap gap-2 items-center">
+          {/* Category filter */}
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value as CategoryFilter)}
+            className="bg-[#0d1117] border border-[#1e3a5f] rounded-lg text-xs md:text-sm text-[#8faabe] px-2.5 md:px-4 py-2 md:py-2.5 focus:outline-none focus:border-[#2a3ded]"
           >
-            Clear filters
-          </button>
-        )}
+            <option value="all">All Categories</option>
+            <option value="Core">Core</option>
+            <option value="Growth">Growth</option>
+            <option value="Speculative">Speculative</option>
+            <option value="Dead">Dead</option>
+          </select>
 
-        {/* Result count */}
-        <span className="text-xs text-[#5a7a94] ml-auto">
-          {filteredAndSorted.length} shown
-        </span>
+          {/* Eligible filter */}
+          <select
+            value={eligibleFilter}
+            onChange={(e) => setEligibleFilter(e.target.value as EligibleFilter)}
+            className="bg-[#0d1117] border border-[#1e3a5f] rounded-lg text-xs md:text-sm text-[#8faabe] px-2.5 md:px-4 py-2 md:py-2.5 focus:outline-none focus:border-[#2a3ded]"
+          >
+            <option value="all">All Status</option>
+            <option value="eligible">Eligible</option>
+            <option value="ineligible">Ineligible</option>
+          </select>
+
+          {/* Sort dropdown */}
+          <select
+            value={`${sortKey || ''}-${sortDirection || ''}`}
+            onChange={(e) => {
+              const [key, dir] = e.target.value.split('-')
+              setSortKey(key as SortKey || null)
+              setSortDirection(dir as SortDirection)
+            }}
+            className="bg-[#0d1117] border border-[#1e3a5f] rounded-lg text-xs md:text-sm text-[#8faabe] px-2.5 md:px-4 py-2 md:py-2.5 focus:outline-none focus:border-[#2a3ded]"
+          >
+            <option value="netuid-asc">SN# (Low→High)</option>
+            <option value="netuid-desc">SN# (High→Low)</option>
+            <option value="alpha_price-desc">Price (High→Low)</option>
+            <option value="alpha_price-asc">Price (Low→High)</option>
+            <option value="market_cap-desc">Market Cap</option>
+            <option value="pool_tao_reserve-desc">Liquidity</option>
+            <option value="taoflow_7d-desc">7d Flow</option>
+          </select>
+
+          {/* Clear filters */}
+          {hasActiveFilters && (
+            <button
+              onClick={() => {
+                setSearchQuery('')
+                setCategoryFilter('all')
+                setEligibleFilter('all')
+                setSortKey('netuid')
+                setSortDirection('asc')
+              }}
+              className="text-xs text-[#6f87a0] hover:text-[#a8c4d9] underline px-2"
+            >
+              Clear
+            </button>
+          )}
+
+          {/* Result count */}
+          <span className="text-xs text-[#5a7a94] ml-2">
+            {filteredAndSorted.length} shown
+          </span>
+        </div>
       </div>
 
       {/* Table */}
@@ -312,92 +314,97 @@ export default function Discover() {
         </div>
       ) : (
         <div className="bg-[#121f2d] rounded-lg border border-[#1e3a5f] overflow-hidden">
-          <table className="w-full min-w-[900px]">
-            <thead className="bg-[#050d15]/50">
-              <tr className="text-sm text-[#6f87a0]">
-                <th className="w-8 px-2 py-3" />
-                <SortableHeader<SortKey>
-                  label="SN#"
-                  sortKey="netuid"
-                  currentSortKey={sortKey}
-                  currentDirection={sortDirection}
-                  onSort={handleSort}
-                />
-                <SortableHeader<SortKey>
-                  label="Name"
-                  sortKey="subnet_name"
-                  currentSortKey={sortKey}
-                  currentDirection={sortDirection}
-                />
-                <SortableHeader<SortKey>
-                  label="Price"
-                  sortKey="alpha_price"
-                  currentSortKey={sortKey}
-                  currentDirection={sortDirection}
-                  onSort={handleSort}
-                  align="right"
-                />
-                <SortableHeader<SortKey>
-                  label="Market Cap"
-                  sortKey="market_cap"
-                  currentSortKey={sortKey}
-                  currentDirection={sortDirection}
-                  onSort={handleSort}
-                  align="right"
-                />
-                <SortableHeader<SortKey>
-                  label="Liquidity"
-                  sortKey="pool_tao_reserve"
-                  currentSortKey={sortKey}
-                  currentDirection={sortDirection}
-                  onSort={handleSort}
-                  align="right"
-                />
-                <SortableHeader<SortKey>
-                  label="Emission"
-                  sortKey="emission_share"
-                  currentSortKey={sortKey}
-                  currentDirection={sortDirection}
-                  onSort={handleSort}
-                  align="right"
-                />
-                <SortableHeader<SortKey>
-                  label="7d Flow"
-                  sortKey="taoflow_7d"
-                  currentSortKey={sortKey}
-                  currentDirection={sortDirection}
-                  onSort={handleSort}
-                  align="right"
-                />
-                <SortableHeader<SortKey>
-                  label="Category"
-                  sortKey="category"
-                  currentSortKey={sortKey}
-                  currentDirection={sortDirection}
-                  onSort={handleSort}
-                />
-                <th className="px-4 py-3 text-xs font-medium text-[#6f87a0] uppercase tracking-wider text-left">
-                  Eligible
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#1e3a5f]">
-              {filteredAndSorted.map((subnet) => {
-                const isExpanded = expandedNetuid === subnet.netuid
-                return (
-                  <SubnetRow
-                    key={subnet.netuid}
-                    subnet={subnet}
-                    isExpanded={isExpanded}
-                    onToggle={() =>
-                      setExpandedNetuid(isExpanded ? null : subnet.netuid)
-                    }
-                    getCategoryColor={getCategoryColor}
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[700px]">
+              <thead className="bg-[#050d15]/50">
+                <tr className="text-xs md:text-sm text-[#6f87a0]">
+                  <th className="w-8 px-2 py-3" />
+                  <SortableHeader<SortKey>
+                    label="SN#"
+                    sortKey="netuid"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={handleSort}
                   />
-                )
-              })}
-            </tbody>
-          </table>
+                  <SortableHeader<SortKey>
+                    label="Name"
+                    sortKey="subnet_name"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                  />
+                  <SortableHeader<SortKey>
+                    label="Price"
+                    sortKey="alpha_price"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={handleSort}
+                    align="right"
+                  />
+                  <SortableHeader<SortKey>
+                    label="Market Cap"
+                    sortKey="market_cap"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={handleSort}
+                    align="right"
+                    className="hidden md:table-cell"
+                  />
+                  <SortableHeader<SortKey>
+                    label="Liquidity"
+                    sortKey="pool_tao_reserve"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={handleSort}
+                    align="right"
+                  />
+                  <SortableHeader<SortKey>
+                    label="Emission"
+                    sortKey="emission_share"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={handleSort}
+                    align="right"
+                    className="hidden sm:table-cell"
+                  />
+                  <SortableHeader<SortKey>
+                    label="7d Flow"
+                    sortKey="taoflow_7d"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={handleSort}
+                    align="right"
+                  />
+                  <SortableHeader<SortKey>
+                    label="Category"
+                    sortKey="category"
+                    currentSortKey={sortKey}
+                    currentDirection={sortDirection}
+                    onSort={handleSort}
+                    className="hidden sm:table-cell"
+                  />
+                  <th className="px-4 py-3 text-xs font-medium text-[#6f87a0] uppercase tracking-wider text-left hidden md:table-cell">
+                    Eligible
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#1e3a5f]">
+                {filteredAndSorted.map((subnet) => {
+                  const isExpanded = expandedNetuid === subnet.netuid
+                  return (
+                    <SubnetRow
+                      key={subnet.netuid}
+                      subnet={subnet}
+                      isExpanded={isExpanded}
+                      onToggle={() =>
+                        setExpandedNetuid(isExpanded ? null : subnet.netuid)
+                      }
+                      getCategoryColor={getCategoryColor}
+                    />
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
@@ -435,45 +442,45 @@ function SubnetRow({
         </td>
 
         {/* SN# */}
-        <td className="px-4 py-3 text-sm tabular-nums text-[#8faabe]">
+        <td className="px-2 md:px-4 py-3 text-xs md:text-sm tabular-nums text-[#8faabe]">
           {subnet.netuid}
         </td>
 
         {/* Name */}
-        <td className="px-4 py-3">
-          <div className="font-medium text-sm text-white">
+        <td className="px-2 md:px-4 py-3">
+          <div className="font-medium text-xs md:text-sm text-white truncate max-w-[100px] md:max-w-[150px]">
             {subnet.subnet_name || `Subnet ${subnet.netuid}`}
           </div>
         </td>
 
         {/* Price */}
-        <td className="px-4 py-3 text-right tabular-nums text-sm text-[#8faabe]">
+        <td className="px-2 md:px-4 py-3 text-right tabular-nums text-xs md:text-sm text-[#8faabe]">
           {subnet.alpha_price != null
             ? `${subnet.alpha_price.toFixed(6)} τ`
             : '--'}
         </td>
 
-        {/* Market Cap */}
-        <td className="px-4 py-3 text-right tabular-nums text-sm text-[#8faabe]">
+        {/* Market Cap - hidden on mobile */}
+        <td className="hidden md:table-cell px-4 py-3 text-right tabular-nums text-sm text-[#8faabe]">
           {subnet.market_cap != null && subnet.market_cap > 0
             ? `${formatCompact(subnet.market_cap)} τ`
             : '--'}
         </td>
 
         {/* Liquidity */}
-        <td className="px-4 py-3 text-right tabular-nums text-sm text-[#8faabe]">
+        <td className="px-2 md:px-4 py-3 text-right tabular-nums text-xs md:text-sm text-[#8faabe]">
           {subnet.pool_tao_reserve != null
             ? `${formatTao(subnet.pool_tao_reserve)} τ`
             : '--'}
         </td>
 
-        {/* Emission */}
-        <td className="px-4 py-3 text-right tabular-nums text-sm text-[#8faabe]">
+        {/* Emission - hidden on mobile */}
+        <td className="hidden sm:table-cell px-4 py-3 text-right tabular-nums text-sm text-[#8faabe]">
           {emissionPct}%
         </td>
 
         {/* 7d Flow */}
-        <td className="px-4 py-3 text-right tabular-nums text-sm">
+        <td className="px-2 md:px-4 py-3 text-right tabular-nums text-xs md:text-sm">
           {subnet.taoflow_7d != null ? (
             <span className={subnet.taoflow_7d >= 0 ? 'text-green-400' : 'text-red-400'}>
               {subnet.taoflow_7d >= 0 ? '+' : ''}
@@ -484,8 +491,8 @@ function SubnetRow({
           )}
         </td>
 
-        {/* Category */}
-        <td className="px-4 py-3">
+        {/* Category - hidden on mobile */}
+        <td className="hidden sm:table-cell px-4 py-3">
           <span
             className={`inline-flex px-2 py-0.5 rounded text-xs font-medium border ${getCategoryColor(
               subnet.category
@@ -495,8 +502,8 @@ function SubnetRow({
           </span>
         </td>
 
-        {/* Eligible */}
-        <td className="px-4 py-3">
+        {/* Eligible - hidden on mobile */}
+        <td className="hidden md:table-cell px-4 py-3">
           {subnet.eligible ? (
             <span className="inline-flex px-2 py-0.5 rounded text-xs font-medium bg-green-600/20 text-green-400">
               Yes

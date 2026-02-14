@@ -223,24 +223,24 @@ export default function Track() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <div className="flex items-center gap-3">
-          <Activity className="w-7 h-7 text-blue-400" />
-          <h1 className="text-2xl font-bold text-white">Track</h1>
+          <Activity className="w-6 h-6 md:w-7 md:h-7 text-blue-400" />
+          <h1 className="text-xl md:text-2xl font-bold text-white">Track</h1>
         </div>
-        <div className="text-sm text-[#6f87a0]">
+        <div className="text-xs md:text-sm text-[#6f87a0]">
           Real-time portfolio & strategy tracking
         </div>
       </div>
 
       {/* Portfolio Overview Card */}
-      <div className="bg-[#121f2d] rounded-lg p-6 border border-[#1e3a5f]">
-        <div className="flex items-center justify-between mb-4">
+      <div className="bg-[#121f2d] rounded-lg p-4 md:p-6 border border-[#1e3a5f]">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
           <div className="flex items-center gap-2">
             <Wallet className="w-5 h-5 text-blue-400" />
-            <h2 className="text-lg font-semibold text-white">Portfolio Overview</h2>
+            <h2 className="text-base md:text-lg font-semibold text-white">Portfolio Overview</h2>
           </div>
           {portfolioResult?.fetchedAt && (
             <div className="text-xs text-[#6f87a0]">
@@ -249,29 +249,29 @@ export default function Track() {
           )}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-[#0d1117] rounded-lg p-4 border border-[#1e3a5f]/50">
-            <div className="text-sm text-[#6f87a0] mb-1">Total TAO</div>
-            <div className="text-3xl font-bold text-white tabular-nums">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
+          <div className="bg-[#0d1117] rounded-lg p-3 md:p-4 border border-[#1e3a5f]/50">
+            <div className="text-xs md:text-sm text-[#6f87a0] mb-1">Total TAO</div>
+            <div className="text-2xl md:text-3xl font-bold text-white tabular-nums">
               {formatTao(totalTao)}
             </div>
-            <div className="text-sm text-[#5a7a94]">τ</div>
+            <div className="text-xs md:text-sm text-[#5a7a94]">τ</div>
           </div>
 
-          <div className="bg-[#0d1117] rounded-lg p-4 border border-[#1e3a5f]/50">
-            <div className="text-sm text-[#6f87a0] mb-1">Positions</div>
-            <div className="text-3xl font-bold text-white tabular-nums">
+          <div className="bg-[#0d1117] rounded-lg p-3 md:p-4 border border-[#1e3a5f]/50">
+            <div className="text-xs md:text-sm text-[#6f87a0] mb-1">Positions</div>
+            <div className="text-2xl md:text-3xl font-bold text-white tabular-nums">
               {positionCount}
             </div>
-            <div className="text-sm text-[#5a7a94]">active subnets</div>
+            <div className="text-xs md:text-sm text-[#5a7a94]">active subnets</div>
           </div>
 
-          <div className="bg-[#0d1117] rounded-lg p-4 border border-[#1e3a5f]/50">
-            <div className="text-sm text-[#6f87a0] mb-1">24h P&L</div>
-            <div className={`text-3xl font-bold tabular-nums ${dailyPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+          <div className="bg-[#0d1117] rounded-lg p-3 md:p-4 border border-[#1e3a5f]/50">
+            <div className="text-xs md:text-sm text-[#6f87a0] mb-1">24h P&L</div>
+            <div className={`text-2xl md:text-3xl font-bold tabular-nums ${dailyPnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
               {dailyPnl >= 0 ? '+' : ''}{formatTao(dailyPnl)}
             </div>
-            <div className={`text-sm ${dailyPnlPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+            <div className={`text-xs md:text-sm ${dailyPnlPct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
               {formatPercent(dailyPnlPct)}
             </div>
           </div>
@@ -279,13 +279,13 @@ export default function Track() {
       </div>
 
       {/* Current Positions Table */}
-      <div className="bg-[#121f2d] rounded-lg p-6 border border-[#1e3a5f]">
-        <div className="flex items-center justify-between mb-4">
+      <div className="bg-[#121f2d] rounded-lg p-4 md:p-6 border border-[#1e3a5f]">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
           <div className="flex items-center gap-2">
             <BarChart3 className="w-5 h-5 text-blue-400" />
-            <h2 className="text-lg font-semibold text-white">Current Positions</h2>
+            <h2 className="text-base md:text-lg font-semibold text-white">Current Positions</h2>
           </div>
-          <span className="text-sm text-[#6f87a0]">{enrichedPositions.length} positions</span>
+          <span className="text-xs md:text-sm text-[#6f87a0]">{enrichedPositions.length} positions</span>
         </div>
 
         {enrichedPositions.length === 0 ? (
@@ -293,14 +293,14 @@ export default function Track() {
             No positions found in portfolio data
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
+          <div className="overflow-x-auto -mx-4 md:mx-0 px-4 md:px-0">
+            <table className="w-full min-w-[500px]">
               <thead>
-                <tr className="text-left text-sm text-[#6f87a0] border-b border-[#1e3a5f]">
+                <tr className="text-left text-xs md:text-sm text-[#6f87a0] border-b border-[#1e3a5f]">
                   <th className="pb-3 font-medium">SN#</th>
                   <th className="pb-3 font-medium">Name</th>
                   <th className="pb-3 font-medium text-right">TAO Staked</th>
-                  <th className="pb-3 font-medium text-right">% of Portfolio</th>
+                  <th className="pb-3 font-medium text-right hidden sm:table-cell">% of Portfolio</th>
                   <th className="pb-3 font-medium text-right">24h Change</th>
                 </tr>
               </thead>
@@ -308,35 +308,35 @@ export default function Track() {
                 {enrichedPositions.map((pos) => {
                   const pctOfPortfolio = totalTao > 0 ? ((pos.value_tao || 0) / totalTao) * 100 : 0
                   const dailyChange = pos.daily_change_pct || 0
-                  
+
                   return (
                     <tr key={pos.netuid} className="border-b border-[#1e3a5f]/50 last:border-0">
                       <td className="py-3">
-                        <span className="inline-flex items-center justify-center w-8 h-8 rounded bg-[#1a2d42] text-[#8faabe] text-sm font-medium">
+                        <span className="inline-flex items-center justify-center w-7 h-7 md:w-8 md:h-8 rounded bg-[#1a2d42] text-[#8faabe] text-xs md:text-sm font-medium">
                           {pos.netuid}
                         </span>
                       </td>
                       <td className="py-3">
-                        <div className="font-medium text-[#a8c4d9]">{pos.name}</div>
+                        <div className="font-medium text-[#a8c4d9] text-sm md:text-base truncate max-w-[120px] md:max-w-none">{pos.name}</div>
                         <div className="text-xs text-[#5a7a94]">{pos.token_symbol || 'SN' + pos.netuid}</div>
                       </td>
                       <td className="py-3 text-right">
-                        <div className="font-medium text-white tabular-nums">{formatTao(pos.value_tao || pos.stake || 0)}</div>
+                        <div className="font-medium text-white tabular-nums text-sm md:text-base">{formatTao(pos.value_tao || pos.stake || 0)}</div>
                         <div className="text-xs text-[#5a7a94]">τ</div>
                       </td>
-                      <td className="py-3 text-right">
-                        <div className="font-medium text-[#8faabe] tabular-nums">{pctOfPortfolio.toFixed(1)}%</div>
-                        <div className="w-16 h-1 bg-[#1a2d42] rounded-full mt-1 ml-auto">
-                          <div 
-                            className="h-1 bg-blue-500 rounded-full" 
+                      <td className="py-3 text-right hidden sm:table-cell">
+                        <div className="font-medium text-[#8faabe] tabular-nums text-sm md:text-base">{pctOfPortfolio.toFixed(1)}%</div>
+                        <div className="w-12 md:w-16 h-1 bg-[#1a2d42] rounded-full mt-1 ml-auto">
+                          <div
+                            className="h-1 bg-blue-500 rounded-full"
                             style={{ width: `${Math.min(pctOfPortfolio, 100)}%` }}
                           />
                         </div>
                       </td>
                       <td className="py-3 text-right">
                         <div className={`flex items-center justify-end gap-1 ${dailyChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                          {dailyChange >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-                          <span className="tabular-nums font-medium">{formatPercent(dailyChange)}</span>
+                          {dailyChange >= 0 ? <TrendingUp className="w-3 h-3 md:w-4 md:h-4" /> : <TrendingDown className="w-3 h-3 md:w-4 md:h-4" />}
+                          <span className="tabular-nums font-medium text-sm md:text-base">{formatPercent(dailyChange)}</span>
                         </div>
                       </td>
                     </tr>
@@ -349,13 +349,13 @@ export default function Track() {
       </div>
 
       {/* Strategy Performance Cards */}
-      <div className="bg-[#121f2d] rounded-lg p-6 border border-[#1e3a5f]">
+      <div className="bg-[#121f2d] rounded-lg p-4 md:p-6 border border-[#1e3a5f]">
         <div className="flex items-center gap-2 mb-4">
           <TrendingUp className="w-5 h-5 text-blue-400" />
-          <h2 className="text-lg font-semibold text-white">Strategy Performance</h2>
+          <h2 className="text-base md:text-lg font-semibold text-white">Strategy Performance</h2>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
           {strategies?.map((strategy) => {
             const config = strategyConfig[strategy.strategy_id] || {
               name: strategy.strategy_id.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
@@ -435,13 +435,13 @@ export default function Track() {
       </div>
 
       {/* Data Freshness Section */}
-      <div className="bg-[#121f2d] rounded-lg p-6 border border-[#1e3a5f]">
+      <div className="bg-[#121f2d] rounded-lg p-4 md:p-6 border border-[#1e3a5f]">
         <div className="flex items-center gap-2 mb-4">
           <Database className="w-5 h-5 text-blue-400" />
-          <h2 className="text-lg font-semibold text-white">Data Freshness</h2>
+          <h2 className="text-base md:text-lg font-semibold text-white">Data Freshness</h2>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {freshnessData?.map((source) => {
             const lastUpdated = new Date(source.last_updated)
             const now = new Date()
@@ -493,17 +493,17 @@ export default function Track() {
         )}
 
         {/* Legend */}
-        <div className="flex flex-wrap gap-4 mt-4 pt-4 border-t border-[#1e3a5f]/50">
+        <div className="flex flex-wrap gap-3 md:gap-4 mt-4 pt-4 border-t border-[#1e3a5f]/50">
           <div className="flex items-center gap-2 text-xs text-[#6f87a0]">
-            <div className="w-3 h-3 rounded-full bg-green-600"></div>
+            <div className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full bg-green-600"></div>
             <span>&lt; 1 hour</span>
           </div>
           <div className="flex items-center gap-2 text-xs text-[#6f87a0]">
-            <div className="w-3 h-3 rounded-full bg-yellow-600"></div>
+            <div className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full bg-yellow-600"></div>
             <span>1-4 hours</span>
           </div>
           <div className="flex items-center gap-2 text-xs text-[#6f87a0]">
-            <div className="w-3 h-3 rounded-full bg-red-600"></div>
+            <div className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full bg-red-600"></div>
             <span>&gt; 4 hours</span>
           </div>
         </div>
