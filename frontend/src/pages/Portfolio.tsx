@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Wallet, TrendingUp, TrendingDown, Clock, PieChart, BarChart3, ArrowUpRight, ArrowDownRight } from 'lucide-react'
-import { format } from 'date-fns'
+import { Wallet, TrendingUp, TrendingDown, Clock, PieChart, BarChart3 } from 'lucide-react'
+import { format } from 'date-fns/format'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import { supabaseQueries } from '../services/supabase'
 
@@ -53,14 +53,9 @@ function getAllocationColor(pct: number): string {
   return 'bg-emerald-500'
 }
 
-// Format subnet name
-function formatSubnetName(netuid: number): string {
-  return `SN${netuid}`
-}
-
 export default function Portfolio() {
   // Fetch portfolio data with auto-refresh every 60 seconds
-  const { data: portfolioData, isLoading, error, dataUpdatedAt } = useQuery({
+  const { data: portfolioData, isLoading, error } = useQuery({
     queryKey: ['portfolio-data'],
     queryFn: supabaseQueries.getPortfolioData,
     refetchInterval: 60000, // Auto-refresh every 60 seconds
@@ -286,7 +281,7 @@ export default function Portfolio() {
                   />
                   <Tooltip content={<CustomTooltip />} />
                   <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                    {chartData.map((entry, index) => (
+                    {chartData.map((_entry, index) => (
                       <Cell 
                         key={`cell-${index}`} 
                         fill={index === 0 ? '#2a3ded' : index === 1 ? '#3b82f6' : index === 2 ? '#06b6d4' : index === 3 ? '#14b8a6' : '#10b981'}
@@ -330,7 +325,7 @@ export default function Portfolio() {
               </div>
 
               {/* Table Rows */}
-              {sortedPositions.map((position, index) => (
+              {sortedPositions.map((position) => (
                 <div 
                   key={position.netuid} 
                   className="grid grid-cols-12 gap-2 py-2 items-center hover:bg-[#1e2128] rounded px-1 transition-colors"

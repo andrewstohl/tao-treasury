@@ -10,7 +10,8 @@ import {
   Search,
   BookOpen,
 } from 'lucide-react'
-import { format, parseISO } from 'date-fns'
+import { format } from 'date-fns/format'
+import { parseISO } from 'date-fns/parseISO'
 import { supabaseQueries, type StrategyLedger } from '../services/supabase'
 
 // Format percentage (values already in percentage form, e.g., 0.43 means 0.43%)

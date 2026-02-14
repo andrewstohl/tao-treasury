@@ -14,10 +14,10 @@ import {
   RefreshCw,
   ChevronRight,
   ChevronDown,
-  ExternalLink,
 } from 'lucide-react'
-import { format, parseISO } from 'date-fns'
-import { supabaseQueries, type TradeProposal } from '../services/supabase'
+import { format } from 'date-fns/format'
+import { parseISO } from 'date-fns/parseISO'
+import { supabaseQueries } from '../services/supabase'
 
 // Status badge styles
 function getStatusStyles(status: string): { bg: string; text: string; border: string; icon: React.ReactNode } {

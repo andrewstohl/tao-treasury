@@ -22,8 +22,10 @@ import {
   ChevronRight,
   ExternalLink,
 } from 'lucide-react'
-import { format, parseISO, subDays } from 'date-fns'
-import { supabaseQueries, type StrategyLedger } from '../services/supabase'
+import { format } from 'date-fns/format'
+import { parseISO } from 'date-fns/parseISO'
+import { subDays } from 'date-fns/subDays'
+import { supabaseQueries } from '../services/supabase'
 
 // Color palette for strategies
 const STRATEGY_COLORS = [
@@ -91,7 +93,7 @@ export default function Tournament() {
   })
 
   // Fetch latest comparison data
-  const { data: comparisonData, isLoading: isLoadingComparison } = useQuery({
+  const { isLoading: isLoadingComparison } = useQuery({
     queryKey: ['supabase-strategy-comparison'],
     queryFn: supabaseQueries.getStrategyComparison,
     refetchInterval: 60000,
@@ -130,7 +132,7 @@ export default function Tournament() {
     const firstValues = byDate.get(firstDate) || {}
 
     return dates.map((date) => {
-      const values: Record<string, number | null> = { date }
+      const values: Record<string, number | string | null> = { date }
       
       strategyIds.forEach((strategyId) => {
         const nav = byDate.get(date)?.[strategyId]
@@ -341,7 +343,7 @@ export default function Tournament() {
                   iconType="line"
                   wrapperStyle={{ color: '#9ca3af' }}
                 />
-                {selectedStrategies.map((strategyId, index) => {
+                {selectedStrategies.map((strategyId) => {
                   const colorIndex = strategyIds.indexOf(strategyId)
                   return (
                     <Line

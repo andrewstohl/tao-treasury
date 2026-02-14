@@ -1,6 +1,6 @@
 import { ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { Command, Trophy, Table, ClipboardList, BookOpen, GitCompare, Wallet } from 'lucide-react'
+import { Command, Trophy, Table, ClipboardList, BookOpen, GitCompare, Wallet, Activity, Compass } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { supabaseQueries } from '../../services/supabase'
 
@@ -10,6 +10,8 @@ interface LayoutProps {
 
 const navItems = [
   { path: '/portfolio', label: 'Portfolio', icon: Wallet },
+  { path: '/track', label: 'Track', icon: Activity },
+  { path: '/discover', label: 'Discover', icon: Compass },
   { path: '/command-center', label: 'Command Center', icon: Command },
   { path: '/tournament', label: 'Tournament', icon: Trophy },
   { path: '/compare', label: 'Compare', icon: GitCompare },

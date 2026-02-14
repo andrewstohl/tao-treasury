@@ -24,8 +24,9 @@ import {
   BarChart3,
   ChevronRight,
 } from 'lucide-react'
-import { format, parseISO } from 'date-fns'
-import { supabaseQueries, type StrategyLedger } from '../services/supabase'
+import { format } from 'date-fns/format'
+import { parseISO } from 'date-fns/parseISO'
+import { supabaseQueries } from '../services/supabase'
 
 // Strategy display names
 const STRATEGY_DISPLAY_NAMES: Record<string, string> = {
@@ -406,7 +407,7 @@ export default function StrategyDetail() {
       {/* SN88 Score Components */}
       {sn88Data.length > 0 && (
         <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-5">
-          <div class="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <BarChart3 className="w-5 h-5 text-[#2a3ded]" />
               <h3 className="font-semibold text-white">SN88 Score Components</h3>

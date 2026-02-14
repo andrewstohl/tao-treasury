@@ -4,20 +4,18 @@ import {
   Activity,
   AlertTriangle,
   TrendingUp,
-  TrendingDown,
   Database,
   Server,
   Clock,
   Shield,
-  ChevronRight,
   Zap,
   BarChart3,
   Layers,
   ArrowUpRight,
   ArrowDownRight,
 } from 'lucide-react'
-import { format } from 'date-fns'
-import { supabaseQueries, type StrategyLedger, type AgentHeartbeat, type DataFreshness, type Escalation, type SubnetProfile } from '../services/supabase'
+import { format } from 'date-fns/format'
+import { supabaseQueries } from '../services/supabase'
 
 // Format relative time
 function formatRelativeTime(dateString: string | null): string {
@@ -142,13 +140,6 @@ export default function CommandCenter() {
       return sum + weight * (item.daily_return_pct || 0)
     }, 0)
     return (weightedReturn / 100) * totalNav // Convert % to absolute τ
-  }, [latestNavData])
-
-  // Count positions (from latest ledger entries with notes containing positions)
-  const positionsCount = useMemo(() => {
-    // This would ideally come from strategy_ledger with position data
-    // For now, we'll estimate based on subnet profiles or return 0
-    return 0
   }, [latestNavData])
 
   // Best and worst performing subnets today

@@ -8,7 +8,7 @@ interface PositionKPICardsProps {
   taoPrice: number
 }
 
-export default function PositionKPICards({ position, enriched, taoPrice }: PositionKPICardsProps) {
+export default function PositionKPICards({ position, enriched: _enriched, taoPrice }: PositionKPICardsProps) {
   const { currency } = useCurrency()
 
   // Core values from position

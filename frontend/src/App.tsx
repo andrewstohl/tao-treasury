@@ -8,6 +8,8 @@ import Ledger from './pages/Ledger'
 import ProposalQueue from './pages/ProposalQueue'
 import Wiki from './pages/Wiki'
 import Portfolio from './pages/Portfolio'
+import Discover from './pages/Discover'
+import Track from './pages/Track'
 
 function App() {
   return (
@@ -15,6 +17,7 @@ function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/portfolio" replace />} />
         <Route path="/portfolio" element={<Portfolio />} />
+        <Route path="/track" element={<Track />} />
         <Route path="/command-center" element={<CommandCenter />} />
         <Route path="/tournament" element={<Tournament />} />
         <Route path="/strategy/:strategyId" element={<StrategyDetail />} />
@@ -22,6 +25,7 @@ function App() {
         <Route path="/ledger" element={<Ledger />} />
         <Route path="/proposals" element={<ProposalQueue />} />
         <Route path="/wiki" element={<Wiki />} />
+        <Route path="/discover" element={<Discover />} />
         <Route path="*" element={<Navigate to="/portfolio" replace />} />
       </Routes>
     </Layout>

@@ -6,18 +6,16 @@ import {
   Tag,
   Clock,
   User,
-  FileText,
   Lightbulb,
   TrendingUp,
   Globe,
-  Filter,
   ChevronRight,
   X,
-  ExternalLink,
   Calendar,
   Edit3,
 } from 'lucide-react'
-import { format, parseISO } from 'date-fns'
+import { format } from 'date-fns/format'
+import { parseISO } from 'date-fns/parseISO'
 import { supabaseQueries, type WikiEntry } from '../services/supabase'
 
 // Category configurations

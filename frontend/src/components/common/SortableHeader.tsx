@@ -7,7 +7,7 @@ interface SortableHeaderProps<K extends string> {
   sortKey: K
   currentSortKey: K | null
   currentDirection: SortDirection
-  onSort: (key: K) => void
+  onSort?: (key: K) => void
   align?: 'left' | 'right'
 }
 
@@ -26,7 +26,7 @@ export default function SortableHeader<K extends string>({
       className={`px-4 py-3 text-xs font-medium text-[#6f87a0] uppercase tracking-wider cursor-pointer hover:bg-[#1a2d42]/50 select-none ${
         align === 'right' ? 'text-right' : 'text-left'
       }`}
-      onClick={() => onSort(sortKey)}
+      onClick={() => onSort?.(sortKey)}
     >
       <div className={`flex items-center gap-1 ${align === 'right' ? 'justify-end' : ''}`}>
         <span>{label}</span>
