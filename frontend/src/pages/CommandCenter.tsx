@@ -52,8 +52,8 @@ function formatStaleness(minutes: number): { text: string; color: string } {
 }
 
 // Get status color
-function getStatusColor(status: string): string {
-  switch (status.toLowerCase()) {
+function getStatusColor(status: string | null | undefined): string {
+  switch ((status || '').toLowerCase()) {
     case 'healthy':
       return 'bg-green-500'
     case 'degraded':
@@ -75,8 +75,8 @@ const STRATEGY_DISPLAY_NAMES: Record<string, string> = {
 }
 
 // Get severity styles
-function getSeverityStyles(severity: string): { bg: string; text: string; border: string } {
-  switch (severity.toLowerCase()) {
+function getSeverityStyles(severity: string | null | undefined): { bg: string; text: string; border: string } {
+  switch ((severity || '').toLowerCase()) {
     case 'critical':
       return { bg: 'bg-red-900/30', text: 'text-red-400', border: 'border-red-700' }
     case 'high':

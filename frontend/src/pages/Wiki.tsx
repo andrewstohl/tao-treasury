@@ -29,8 +29,8 @@ const CATEGORIES = {
 }
 
 // Get category style
-function getCategoryStyle(category: string): { bg: string; text: string; border: string } {
-  switch (category.toLowerCase()) {
+function getCategoryStyle(category: string | null | undefined): { bg: string; text: string; border: string } {
+  switch ((category || '').toLowerCase()) {
     case 'strategy_research':
       return {
         bg: 'bg-emerald-500/10',
@@ -59,8 +59,8 @@ function getCategoryStyle(category: string): { bg: string; text: string; border:
 }
 
 // Format category label
-function formatCategoryLabel(category: string): string {
-  return category
+function formatCategoryLabel(category: string | null | undefined): string {
+  return (category || 'unknown')
     .split('_')
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ')
