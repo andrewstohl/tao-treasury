@@ -1,6 +1,6 @@
-import { ReactNode, useState, useRef, useEffect } from 'react'
+import { ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { Command, Trophy, Table } from 'lucide-react'
+import { Command, Trophy, Table, ClipboardList, BookOpen } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { supabaseQueries } from '../../services/supabase'
 
@@ -12,6 +12,8 @@ const navItems = [
   { path: '/command-center', label: 'Command Center', icon: Command },
   { path: '/tournament', label: 'Tournament', icon: Trophy },
   { path: '/ledger', label: 'Ledger', icon: Table },
+  { path: '/proposals', label: 'Proposals', icon: ClipboardList },
+  { path: '/wiki', label: 'Wiki', icon: BookOpen },
 ]
 
 export default function Layout({ children }: LayoutProps) {

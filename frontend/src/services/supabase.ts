@@ -56,6 +56,50 @@ export interface Escalation {
   created_at: string
 }
 
+export interface TradeProposal {
+  id?: number
+  proposal_id: string
+  strategy_id: string
+  action: 'buy' | 'sell' | 'rebalance' | string
+  status: 'pending' | 'approved' | 'executed' | 'rejected' | string
+  subnets_involved: number[] | null
+  amounts: number[] | null
+  total_amount_tao: number | null
+  rationale: string | null
+  proposed_at: string
+  executed_at: string | null
+  created_at: string
+}
+
+export interface WikiEntry {
+  id?: number
+  entry_id: string
+  title: string
+  category: 'strategy_research' | 'subnet_analysis' | 'market_regime' | string
+  content: string
+  tags: string[] | null
+  author: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface SubnetProfile {
+  id?: number
+  netuid: number
+  subnet_name: string | null
+  description: string | null
+  token_symbol: string | null
+  market_cap: number | null
+  price: number | null
+  daily_return_pct: number | null
+  volatility: number | null
+  sharpe_ratio: number | null
+  sn88_score: number | null
+  fundamentals: any | null
+  created_at: string
+  updated_at: string
+}
+
 export const supabaseQueries = {
   // Strategy Ledger
   getLatestStrategyLedger: async () => {
@@ -165,5 +209,72 @@ export const supabaseQueries = {
     if (error) throw error
     const uniqueIds = [...new Set(data?.map((d) => d.strategy_id))]
     return uniqueIds as string[]
+  },
+
+  // Trade Proposals
+  getTradeProposals: async (status?: string) => {
+    let query = supabase
+      .from('trade_proposals')
+      .select('*')
+      .order('proposed_at', { ascending: false })
+    
+    if (status) query = query.eq('status', status)
+    
+    const { data, error } = await query
+    if (error) throw error
+    return data as TradeProposal[]
+  },
+
+  updateTradeProposalStatus: async (proposalId: string, status: string) => {
+    const { data, error } = await supabase
+      .from('trade_proposals')
+      .update({ status, executed_at: status === 'executed' ? new Date().toISOString() : null })
+      .eq('proposal_id', proposalId)
+    if (error) throw error
+    return data
+  },
+
+  // Wiki Entries
+  getWikiEntries: async (category?: string) => {
+    let query = supabase
+      .from('wiki_entries')
+      .select('*')
+      .order('updated_at', { ascending: false })
+    
+    if (category) query = query.eq('category', category)
+    
+    const { data, error } = await query
+    if (error) throw error
+    return data as WikiEntry[]
+  },
+
+  searchWikiEntries: async (searchTerm: string) => {
+    const { data, error } = await supabase
+      .from('wiki_entries')
+      .select('*')
+      .or(`title.ilike.%${searchTerm}%,content.ilike.%${searchTerm}%`)
+      .order('updated_at', { ascending: false })
+    if (error) throw error
+    return data as WikiEntry[]
+  },
+
+  // Subnet Profiles
+  getSubnetProfiles: async () => {
+    const { data, error } = await supabase
+      .from('subnet_profiles')
+      .select('*')
+      .order('netuid', { ascending: true })
+    if (error) throw error
+    return data as SubnetProfile[]
+  },
+
+  getSubnetProfileByNetuid: async (netuid: number) => {
+    const { data, error } = await supabase
+      .from('subnet_profiles')
+      .select('*')
+      .eq('netuid', netuid)
+      .single()
+    if (error) throw error
+    return data as SubnetProfile
   },
 }

@@ -23,10 +23,24 @@ class Settings(BaseSettings):
     wallet_address: Optional[str] = Field(default=None, description="Deprecated: Use UI to add wallets instead")
     coingecko_api_key: Optional[str] = Field(default=None, description="CoinGecko API key")
 
-    # Database
+    # Supabase Configuration
+    supabase_url: str = Field(
+        default="https://lmwoptvosjfiecygztqk.supabase.co",
+        description="Supabase project URL"
+    )
+    supabase_key: str = Field(
+        default="",
+        description="Supabase API key (anon or service_role)"
+    )
+    supabase_db_password: str = Field(
+        default="",
+        description="Supabase database password for direct Postgres connection"
+    )
+
+    # Database - Supabase Postgres Pooler (port 6543 for connection pooling)
     database_url: str = Field(
-        default="postgresql+asyncpg://tao_user:tao_password@localhost:5435/tao_treasury",
-        description="PostgreSQL connection URL"
+        default="postgresql+asyncpg://postgres.lmwoptvosjfiecygztqk:password@aws-0-us-east-1.pooler.supabase.com:6543/postgres",
+        description="PostgreSQL connection URL (Supabase pooler)"
     )
 
     # Redis
@@ -447,6 +461,20 @@ class Settings(BaseSettings):
     def database_url_sync(self) -> str:
         """Get synchronous database URL for Alembic migrations."""
         return self.database_url.replace("postgresql+asyncpg://", "postgresql://")
+
+    @property
+    def supabase_database_url(self) -> str:
+        """Construct Supabase database URL from components.
+        
+        Useful when SUPABASE_DB_PASSWORD is provided separately.
+        Format: postgresql+asyncpg://postgres.{project_ref}:{password}@aws-0-us-east-1.pooler.supabase.com:6543/postgres
+        """
+        if self.supabase_db_password:
+            # Extract project ref from supabase_url
+            # URL format: https://{project_ref}.supabase.co
+            project_ref = self.supabase_url.replace("https://", "").replace(".supabase.co", "")
+            return f"postgresql+asyncpg://postgres.{project_ref}:{self.supabase_db_password}@aws-0-us-east-1.pooler.supabase.com:6543/postgres"
+        return self.database_url
 
 
 @lru_cache()

@@ -4,14 +4,20 @@ import {
   Activity,
   AlertTriangle,
   TrendingUp,
+  TrendingDown,
   Database,
   Server,
   Clock,
   Shield,
   ChevronRight,
+  Zap,
+  BarChart3,
+  Layers,
+  ArrowUpRight,
+  ArrowDownRight,
 } from 'lucide-react'
 import { format } from 'date-fns'
-import { supabaseQueries, type StrategyLedger, type AgentHeartbeat, type DataFreshness, type Escalation } from '../services/supabase'
+import { supabaseQueries, type StrategyLedger, type AgentHeartbeat, type DataFreshness, type Escalation, type SubnetProfile } from '../services/supabase'
 
 // Format relative time
 function formatRelativeTime(dateString: string | null): string {
@@ -108,6 +114,12 @@ export default function CommandCenter() {
     refetchInterval: 30000,
   })
 
+  const { data: subnetProfiles, isLoading: isLoadingSubnets } = useQuery({
+    queryKey: ['supabase-subnet-profiles'],
+    queryFn: supabaseQueries.getSubnetProfiles,
+    refetchInterval: 60000,
+  })
+
   // Calculate total NAV
   const totalNav = useMemo(() => {
     if (!latestNavData) return 0
@@ -120,6 +132,38 @@ export default function CommandCenter() {
     const sum = latestNavData.reduce((acc, item) => acc + (item.daily_return_pct || 0), 0)
     return sum / latestNavData.length
   }, [latestNavData])
+
+  // Calculate daily P&L
+  const dailyPnL = useMemo(() => {
+    if (!latestNavData || latestNavData.length === 0) return 0
+    const totalNav = latestNavData.reduce((sum, item) => sum + (item.nav || 0), 0)
+    const weightedReturn = latestNavData.reduce((sum, item) => {
+      const weight = totalNav > 0 ? (item.nav || 0) / totalNav : 0
+      return sum + weight * (item.daily_return_pct || 0)
+    }, 0)
+    return (weightedReturn / 100) * totalNav // Convert % to absolute τ
+  }, [latestNavData])
+
+  // Count positions (from latest ledger entries with notes containing positions)
+  const positionsCount = useMemo(() => {
+    // This would ideally come from strategy_ledger with position data
+    // For now, we'll estimate based on subnet profiles or return 0
+    return 0
+  }, [latestNavData])
+
+  // Best and worst performing subnets today
+  const subnetPerformance = useMemo(() => {
+    if (!subnetProfiles || subnetProfiles.length === 0) return { best: null, worst: null }
+    
+    const sorted = [...subnetProfiles]
+      .filter(s => s.daily_return_pct !== null)
+      .sort((a, b) => (b.daily_return_pct || 0) - (a.daily_return_pct || 0))
+    
+    return {
+      best: sorted[0] || null,
+      worst: sorted[sorted.length - 1] || null,
+    }
+  }, [subnetProfiles])
 
   return (
     <div className="space-y-6">
@@ -140,21 +184,80 @@ export default function CommandCenter() {
         </div>
       </div>
 
-      {/* Top Row: NAV Card + Strategy Scores */}
+      {/* Quick Stats Row */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <BarChart3 className="w-4 h-4 text-[#2a3ded]" />
+            <span className="text-xs text-[#6b7280]">Total NAV</span>
+          </div>
+          {isLoadingNav ? (
+            <div className="h-6 bg-[#1e2128] rounded animate-pulse" />
+          ) : (
+            <div className="text-xl font-bold text-white tabular-nums">
+              {totalNav.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} τ
+            </div>
+          )}
+        </div>
+
+        <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Zap className="w-4 h-4 text-[#2a3ded]" />
+            <span className="text-xs text-[#6b7280]">Daily P&L</span>
+          </div>
+          {isLoadingNav ? (
+            <div className="h-6 bg-[#1e2128] rounded animate-pulse" />
+          ) : (
+            <div className={`text-xl font-bold tabular-nums ${dailyPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {dailyPnL >= 0 ? '+' : ''}{dailyPnL.toFixed(4)} τ
+            </div>
+          )}
+        </div>
+
+        <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Layers className="w-4 h-4 text-[#2a3ded]" />
+            <span className="text-xs text-[#6b7280]">Strategies</span>
+          </div>
+          {isLoadingNav ? (
+            <div className="h-6 bg-[#1e2128] rounded animate-pulse" />
+          ) : (
+            <div className="text-xl font-bold text-white tabular-nums">
+              {latestNavData?.length || 0}
+            </div>
+          )}
+        </div>
+
+        <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <TrendingUp className="w-4 h-4 text-[#2a3ded]" />
+            <span className="text-xs text-[#6b7280]">Avg Return</span>
+          </div>
+          {isLoadingNav ? (
+            <div className="h-6 bg-[#1e2128] rounded animate-pulse" />
+          ) : (
+            <div className={`text-xl font-bold tabular-nums ${avgDailyReturn >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {avgDailyReturn >= 0 ? '+' : ''}{avgDailyReturn.toFixed(2)}%
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Top Row: Portfolio + Agent Health + Data Freshness */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Portfolio NAV Card */}
+        {/* Portfolio NAV Card with Subnet Performance */}
         <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-5">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <TrendingUp className="w-5 h-5 text-[#2a3ded]" />
-              <h3 className="font-semibold text-white">Portfolio NAV</h3>
+              <h3 className="font-semibold text-white">Portfolio</h3>
             </div>
-            <span className="text-xs text-[#6b7280]">Across all strategies</span>
+            <span className="text-xs text-[#6b7280]">Real-time</span>
           </div>
           
           {isLoadingNav ? (
-            <div className="animate-pulse">
-              <div className="h-10 bg-[#1e2128] rounded w-32 mb-2" />
+            <div className="animate-pulse space-y-2">
+              <div className="h-10 bg-[#1e2128] rounded w-32" />
               <div className="h-4 bg-[#1e2128] rounded w-24" />
             </div>
           ) : (
@@ -162,14 +265,68 @@ export default function CommandCenter() {
               <div className="text-3xl font-bold text-white tabular-nums">
                 {totalNav.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} τ
               </div>
-              <div className="flex items-center gap-2 mt-2">
+              <div className="flex items-center gap-2 mt-1">
                 <span className={`text-sm ${avgDailyReturn >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                   {avgDailyReturn >= 0 ? '+' : ''}{avgDailyReturn.toFixed(2)}%
                 </span>
-                <span className="text-xs text-[#6b7280]">avg daily return</span>
+                <span className="text-xs text-[#6b7280]">24h</span>
               </div>
             </>
           )}
+
+          {/* Best/Worst Subnets */}
+          <div className="mt-4 pt-4 border-t border-[#2a2f38]">
+            <div className="text-xs text-[#6b7280] mb-3">Subnet Performance Today</div>
+            
+            {isLoadingSubnets ? (
+              <div className="space-y-2">
+                <div className="h-8 bg-[#1e2128] rounded animate-pulse" />
+                <div className="h-8 bg-[#1e2128] rounded animate-pulse" />
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {/* Best Performer */}
+                {subnetPerformance.best && (
+                  <div className="flex items-center justify-between p-2 bg-green-500/10 rounded border border-green-500/20">
+                    <div className="flex items-center gap-2">
+                      <ArrowUpRight className="w-4 h-4 text-green-400" />
+                      <div>
+                        <span className="text-sm text-white">SN{subnetPerformance.best.netuid}</span>
+                        <span className="text-xs text-[#6b7280] ml-2">
+                          {subnetPerformance.best.subnet_name || 'Unknown'}
+                        </span>
+                      </div>
+                    </div>
+                    <span className="text-sm font-medium text-green-400 tabular-nums">
+                      +{(subnetPerformance.best.daily_return_pct || 0).toFixed(2)}%
+                    </span>
+                  </div>
+                )}
+                
+                {/* Worst Performer */}
+                {subnetPerformance.worst && (
+                  <div className="flex items-center justify-between p-2 bg-red-500/10 rounded border border-red-500/20">
+                    <div className="flex items-center gap-2">
+                      <ArrowDownRight className="w-4 h-4 text-red-400" />
+                      <div>
+                        <span className="text-sm text-white">SN{subnetPerformance.worst.netuid}</span>
+                        <span className="text-xs text-[#6b7280] ml-2">
+                          {subnetPerformance.worst.subnet_name || 'Unknown'}
+                        </span>
+                      </div>
+                    </div>
+                    <span className="text-sm font-medium text-red-400 tabular-nums">
+                      {(subnetPerformance.worst.daily_return_pct || 0).toFixed(2)}%
+                    </span>
+                  </div>
+                )}
+                
+                {!subnetPerformance.best && !subnetPerformance.worst && (
+                  <span className="text-xs text-[#6b7280]">No subnet data available</span>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* Strategy breakdown */}
           <div className="mt-4 pt-4 border-t border-[#2a2f38]">
