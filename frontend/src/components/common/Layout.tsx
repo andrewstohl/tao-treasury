@@ -9,6 +9,9 @@ import {
   ArrowRightLeft,
   BookOpen,
   FlaskConical,
+  Command,
+  Trophy,
+  Table,
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../services/api'
@@ -46,11 +49,20 @@ const analyzeItems = [
   { path: '/examples', label: 'Examples', icon: BookOpen },
 ]
 
+// Operations dropdown items
+const operationsItems = [
+  { path: '/command-center', label: 'Command Center', icon: Command },
+  { path: '/tournament', label: 'Tournament', icon: Trophy },
+  { path: '/ledger', label: 'Ledger', icon: Table },
+]
+
 export default function Layout({ children }: LayoutProps) {
   const location = useLocation()
   const queryClient = useQueryClient()
   const [analyzeOpen, setAnalyzeOpen] = useState(false)
+  const [operationsOpen, setOperationsOpen] = useState(false)
   const analyzeRef = useRef<HTMLDivElement>(null)
+  const operationsRef = useRef<HTMLDivElement>(null)
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -58,12 +70,15 @@ export default function Layout({ children }: LayoutProps) {
       if (analyzeRef.current && !analyzeRef.current.contains(e.target as Node)) {
         setAnalyzeOpen(false)
       }
+      if (operationsRef.current && !operationsRef.current.contains(e.target as Node)) {
+        setOperationsOpen(false)
+      }
     }
-    if (analyzeOpen) {
+    if (analyzeOpen || operationsOpen) {
       document.addEventListener('mousedown', handleClickOutside)
       return () => document.removeEventListener('mousedown', handleClickOutside)
     }
-  }, [analyzeOpen])
+  }, [analyzeOpen, operationsOpen])
 
   const { data: health } = useQuery<HealthResponse>({
     queryKey: ['health'],
@@ -96,6 +111,11 @@ export default function Layout({ children }: LayoutProps) {
     item.path === '/examples'
       ? location.pathname.startsWith(item.path)
       : location.pathname === item.path
+  )
+
+  // Check if any operations path is active
+  const isOperationsActive = operationsItems.some(item =>
+    location.pathname === item.path
   )
 
   return (
@@ -163,6 +183,45 @@ export default function Layout({ children }: LayoutProps) {
                       key={item.path}
                       to={item.path}
                       onClick={() => setAnalyzeOpen(false)}
+                      className={`flex items-center gap-2 px-4 py-2 text-sm transition-colors ${
+                        isActive
+                          ? 'bg-[#2a3ded]/20 text-[#2a3ded]'
+                          : 'text-[#9ca3af] hover:bg-[#2a3ded]/10 hover:text-[#2a3ded]'
+                      }`}
+                    >
+                      <Icon className="w-4 h-4" />
+                      {item.label}
+                    </Link>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Operations (Dropdown) */}
+          <div className="relative" ref={operationsRef}>
+            <button
+              onClick={() => setOperationsOpen(!operationsOpen)}
+              className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                isOperationsActive
+                  ? 'bg-[#2a3ded]/20 text-[#2a3ded]'
+                  : 'text-[#9ca3af] hover:bg-[#2a3ded]/10 hover:text-[#2a3ded]'
+              }`}
+            >
+              Operations
+              <ChevronDown className={`w-4 h-4 transition-transform ${operationsOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {operationsOpen && (
+              <div className="absolute top-full left-0 mt-1 bg-[#1e2128] border border-[#2a2f38] rounded-lg shadow-xl z-50 py-1 min-w-[160px]">
+                {operationsItems.map((item) => {
+                  const Icon = item.icon
+                  const isActive = location.pathname === item.path
+                  return (
+                    <Link
+                      key={item.path}
+                      to={item.path}
+                      onClick={() => setOperationsOpen(false)}
                       className={`flex items-center gap-2 px-4 py-2 text-sm transition-colors ${
                         isActive
                           ? 'bg-[#2a3ded]/20 text-[#2a3ded]'

@@ -9,6 +9,9 @@ import Strategy from './pages/Strategy'
 import Settings from './pages/Settings'
 import Examples from './pages/Examples'
 import Backtest from './pages/Backtest'
+import CommandCenter from './pages/CommandCenter'
+import Tournament from './pages/Tournament'
+import Ledger from './pages/Ledger'
 
 function App() {
   return (
@@ -23,6 +26,9 @@ function App() {
         <Route path="/settings" element={<Settings />} />
         <Route path="/examples/*" element={<Examples />} />
         <Route path="/backtest" element={<Backtest />} />
+        <Route path="/command-center" element={<CommandCenter />} />
+        <Route path="/tournament" element={<Tournament />} />
+        <Route path="/ledger" element={<Ledger />} />
       </Routes>
     </Layout>
   )
