@@ -412,16 +412,16 @@ export default function CommandCenter() {
           ) : (
             <div className="space-y-2 max-h-[200px] overflow-y-auto">
               {dataFreshness?.map((source) => {
-                const minutesAgo = Math.floor((Date.now() - new Date(source.last_updated).getTime()) / 60000)
+                const minutesAgo = source.last_updated ? Math.floor((Date.now() - new Date(source.last_updated).getTime()) / 60000) : 99999
                 const staleness = formatStaleness(minutesAgo)
-                const isStale = minutesAgo > source.threshold_minutes
+                const isStale = source.threshold_minutes ? minutesAgo > source.threshold_minutes : false
                 
                 return (
                   <div key={source.source} className="flex items-center justify-between p-2 bg-[#0d0f12] rounded">
                     <div>
                       <span className="text-sm text-[#9ca3af]">{source.source}</span>
                       <div className="text-xs text-[#6b7280]">
-                        {source.record_count.toLocaleString()} records
+                        {(source.record_count ?? 0).toLocaleString()} records
                       </div>
                     </div>
                     <div className="text-right">
