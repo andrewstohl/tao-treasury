@@ -1,382 +1,372 @@
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useState, useMemo } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  BookOpen,
-  Search,
-  Tag,
-  Clock,
-  User,
-  Lightbulb,
-  TrendingUp,
-  Globe,
-  ChevronRight,
-  X,
-  Calendar,
-  Edit3,
+  BookOpen, Search, FolderOpen, FileText, Download, MessageSquare, ChevronRight, ChevronDown,
+  Plus, Clock, User, Tag, X, Send, Trash2, Edit3, Eye
 } from 'lucide-react'
 import { format } from 'date-fns/format'
 import { parseISO } from 'date-fns/parseISO'
-import { supabaseQueries, type WikiEntry } from '../services/supabase'
+import { supabase } from '../services/supabase'
 
-// Category configurations
-const CATEGORIES = {
-  all: { label: 'All Entries', icon: BookOpen, color: '#2a3ded' },
-  strategy_research: { label: 'Strategy Research', icon: Lightbulb, color: '#10b981' },
-  subnet_analysis: { label: 'Subnet Analysis', icon: Globe, color: '#f59e0b' },
-  market_regime: { label: 'Market Regime', icon: TrendingUp, color: '#ef4444' },
+// ─── Types ───
+interface WikiEntry {
+  id: number
+  entry_type: string
+  title: string
+  content: string
+  tags: string[]
+  summary: string
+  supersedes_id: number | null
+  created_at: string
+  updated_at: string
 }
 
-// Get category style
-function getCategoryStyle(category: string | null | undefined): { bg: string; text: string; border: string } {
-  switch ((category || '').toLowerCase()) {
-    case 'strategy_research':
-      return {
-        bg: 'bg-emerald-500/10',
-        text: 'text-emerald-400',
-        border: 'border-emerald-500/30',
-      }
-    case 'subnet_analysis':
-      return {
-        bg: 'bg-amber-500/10',
-        text: 'text-amber-400',
-        border: 'border-amber-500/30',
-      }
-    case 'market_regime':
-      return {
-        bg: 'bg-red-500/10',
-        text: 'text-red-400',
-        border: 'border-red-500/30',
-      }
-    default:
-      return {
-        bg: 'bg-blue-500/10',
-        text: 'text-blue-400',
-        border: 'border-blue-500/30',
-      }
-  }
+interface DocComment {
+  id: string
+  doc_id: number
+  author: string
+  text: string
+  created_at: string
+  parent_id: string | null
 }
 
-// Format category label
-function formatCategoryLabel(category: string | null | undefined): string {
-  return (category || 'unknown')
-    .split('_')
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ')
+// ─── Folder Structure ───
+const FOLDERS: Record<string, { label: string; icon: typeof BookOpen; types: string[] }> = {
+  strategies: { label: 'Strategy Research', icon: FileText, types: ['strategy_research', 'playbook'] },
+  subnets: { label: 'Subnet Analysis', icon: FolderOpen, types: ['subnet_analysis'] },
+  market: { label: 'Market & Regime', icon: BookOpen, types: ['market_regime'] },
+  operations: { label: 'Operations', icon: FolderOpen, types: ['operations', 'agent_report'] },
+  reviews: { label: 'Performance Reviews', icon: User, types: ['performance_review'] },
+}
+
+// ─── Helpers ───
+function downloadDoc(title: string, content: string) {
+  const blob = new Blob([content], { type: 'text/markdown' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${title.replace(/\s+/g, '-').toLowerCase()}.md`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function renderMarkdown(md: string) {
+  // Simple markdown rendering — headers, bold, lists, code
+  return md.split('\n').map((line, i) => {
+    if (line.startsWith('### ')) return <h3 key={i} className="text-lg font-bold mt-4 mb-1 text-white">{line.slice(4)}</h3>
+    if (line.startsWith('## ')) return <h2 key={i} className="text-xl font-bold mt-5 mb-2 text-white">{line.slice(3)}</h2>
+    if (line.startsWith('# ')) return <h1 key={i} className="text-2xl font-bold mt-6 mb-3 text-white">{line.slice(2)}</h1>
+    if (line.startsWith('- ')) return <li key={i} className="ml-4 text-gray-300">{line.slice(2)}</li>
+    if (line.startsWith('```')) return <div key={i} className="bg-gray-900 rounded px-3 py-1 my-1 font-mono text-sm text-green-400">{line.slice(3)}</div>
+    if (line.trim() === '') return <br key={i} />
+    const formatted = line
+      .replace(/\*\*(.*?)\*\*/g, '<strong class="text-white">$1</strong>')
+      .replace(/`(.*?)`/g, '<code class="bg-gray-800 px-1 rounded text-green-400">$1</code>')
+    return <p key={i} className="text-gray-300 leading-relaxed" dangerouslySetInnerHTML={{ __html: formatted }} />
+  })
 }
 
 export default function Wiki() {
-  const [selectedCategory, setSelectedCategory] = useState<string>('all')
+  const queryClient = useQueryClient()
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null)
+  const [selectedDoc, setSelectedDoc] = useState<WikiEntry | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [selectedEntry, setSelectedEntry] = useState<WikiEntry | null>(null)
-  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [viewMode, setViewMode] = useState<'browse' | 'view'>('browse')
+  const [commentText, setCommentText] = useState('')
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['strategies']))
 
   // Fetch wiki entries
-  const { data: wikiEntries, isLoading } = useQuery({
-    queryKey: ['supabase-wiki-entries', selectedCategory],
-    queryFn: () =>
-      supabaseQueries.getWikiEntries(selectedCategory === 'all' ? undefined : selectedCategory),
-    refetchInterval: 60000,
+  const { data: entries = [] } = useQuery({
+    queryKey: ['wiki-entries'],
+    queryFn: async () => {
+      const { data } = await supabase.from('wiki_entries').select('*').order('updated_at', { ascending: false })
+      return (data || []) as WikiEntry[]
+    }
   })
 
-  // Search wiki entries
-  const { data: searchResults, isLoading: isSearching } = useQuery({
-    queryKey: ['supabase-wiki-search', searchQuery],
-    queryFn: () => supabaseQueries.searchWikiEntries(searchQuery),
-    enabled: searchQuery.length > 2,
+  // Fetch comments for selected doc
+  const { data: comments = [] } = useQuery({
+    queryKey: ['doc-comments', selectedDoc?.id],
+    queryFn: async () => {
+      if (!selectedDoc) return []
+      const { data } = await supabase
+        .from('raw_api_data')
+        .select('*')
+        .eq('endpoint', 'doc_comment')
+        .eq('notes', String(selectedDoc.id))
+        .order('fetched_at', { ascending: true })
+      return (data || []).map(r => ({
+        id: r.source,
+        doc_id: selectedDoc.id,
+        author: r.response?.author || 'Unknown',
+        text: r.response?.text || '',
+        created_at: r.fetched_at,
+        parent_id: r.response?.parent_id || null
+      })) as DocComment[]
+    },
+    enabled: !!selectedDoc
   })
 
-  // Determine which data to display
-  const displayEntries = searchQuery.length > 2 ? searchResults : wikiEntries
+  // Add comment mutation
+  const addComment = useMutation({
+    mutationFn: async (text: string) => {
+      if (!selectedDoc) return
+      const id = `comment_${selectedDoc.id}_${Date.now()}`
+      await supabase.from('raw_api_data').insert({
+        source: id,
+        endpoint: 'doc_comment',
+        response: { author: 'Drew', text, parent_id: null },
+        fetched_at: new Date().toISOString(),
+        api_status: 200,
+        notes: String(selectedDoc.id)
+      })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['doc-comments', selectedDoc?.id] })
+      setCommentText('')
+    }
+  })
 
-  // Open entry modal
-  const openEntry = (entry: WikiEntry) => {
-    setSelectedEntry(entry)
-    setIsModalOpen(true)
+  // Filter entries
+  const filteredEntries = useMemo(() => {
+    let result = entries
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase()
+      result = result.filter(e =>
+        e.title.toLowerCase().includes(q) ||
+        e.content.toLowerCase().includes(q) ||
+        e.tags?.some(t => t.toLowerCase().includes(q))
+      )
+    }
+    return result
+  }, [entries, searchQuery])
+
+  // Group by folder
+  const entriesByFolder = useMemo(() => {
+    const grouped: Record<string, WikiEntry[]> = {}
+    for (const [key, folder] of Object.entries(FOLDERS)) {
+      grouped[key] = filteredEntries.filter(e => folder.types.includes(e.entry_type))
+    }
+    // "Other" for uncategorized
+    const allTypes = Object.values(FOLDERS).flatMap(f => f.types)
+    const other = filteredEntries.filter(e => !allTypes.includes(e.entry_type))
+    if (other.length > 0) grouped['other'] = other
+    return grouped
+  }, [filteredEntries])
+
+  const toggleFolder = (key: string) => {
+    const next = new Set(expandedFolders)
+    next.has(key) ? next.delete(key) : next.add(key)
+    setExpandedFolders(next)
   }
 
-  // Close modal
-  const closeModal = () => {
-    setIsModalOpen(false)
-    setSelectedEntry(null)
+  const openDoc = (entry: WikiEntry) => {
+    setSelectedDoc(entry)
+    setViewMode('view')
   }
 
-  // Get all unique tags
-  const allTags = wikiEntries
-    ? [...new Set(wikiEntries.flatMap((e) => e.tags || []))]
-    : []
-
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-[#2a3ded] flex items-center gap-2">
-            <BookOpen className="w-6 h-6" />
-            Research Wiki
-          </h1>
-          <p className="text-sm text-[#8a8f98] mt-1">
-            Strategy research, subnet analysis, and market regime notes
-          </p>
+  // ─── Browse View ───
+  if (viewMode === 'browse') {
+    return (
+      <div className="p-6 max-w-6xl mx-auto">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+              <BookOpen size={24} /> Document Library
+            </h1>
+            <p className="text-gray-400 text-sm mt-1">{entries.length} documents · Browse, search, download</p>
+          </div>
         </div>
-      </div>
 
-      {/* Category Filter */}
-      <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-4">
-        <div className="flex flex-wrap gap-2">
-          {Object.entries(CATEGORIES).map(([key, config]) => {
-            const Icon = config.icon
-            const isActive = selectedCategory === key
-            return (
-              <button
-                key={key}
-                onClick={() => setSelectedCategory(key)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                  isActive
-                    ? 'bg-[#2a3ded] text-white'
-                    : 'bg-[#0d0f12] text-[#9ca3af] hover:bg-[#1e2128] hover:text-white'
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                {config.label}
-              </button>
-            )
-          })}
+        {/* Search */}
+        <div className="relative mb-6">
+          <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+          <input
+            type="text"
+            placeholder="Search documents..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-10 pr-4 py-2.5 text-gray-200 placeholder-gray-500 focus:border-blue-500 focus:outline-none"
+          />
+          {searchQuery && (
+            <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white">
+              <X size={16} />
+            </button>
+          )}
         </div>
-      </div>
 
-      {/* Search Bar */}
-      <div className="relative">
-        <Search className="absolute left-4 top-3.5 w-5 h-5 text-[#6b7280]" />
-        <input
-          type="text"
-          placeholder="Search wiki entries..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full bg-[#16181d] border border-[#2a2f38] rounded-lg pl-12 pr-10 py-3 text-[#8faabe] placeholder-gray-500 focus:outline-none focus:border-[#2a3ded] transition-colors"
-        />
-        {searchQuery && (
-          <button
-            onClick={() => setSearchQuery('')}
-            className="absolute right-4 top-3.5 text-[#6b7280] hover:text-white"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        )}
-      </div>
-
-      {/* Stats */}
-      <div className="flex items-center gap-4 text-sm text-[#6b7280]">
-        <span>{displayEntries?.length || 0} entries</span>
-        {allTags.length > 0 && (
-          <>
-            <span>•</span>
-            <span>{allTags.length} tags</span>
-          </>
-        )}
-        {searchQuery.length > 2 && (
-          <>
-            <span>•</span>
-            <span className="text-[#2a3ded]">Search results for "{searchQuery}"</span>
-          </>
-        )}
-      </div>
-
-      {/* Wiki Entries Grid */}
-      {isLoading || isSearching ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <div
-              key={i}
-              className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-5 h-48 animate-pulse"
-            >
-              <div className="h-4 bg-[#1e2128] rounded w-20 mb-3" />
-              <div className="h-6 bg-[#1e2128] rounded w-3/4 mb-2" />
-              <div className="h-4 bg-[#1e2128] rounded w-full mb-1" />
-              <div className="h-4 bg-[#1e2128] rounded w-2/3" />
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {displayEntries?.map((entry) => {
-            const categoryStyle = getCategoryStyle(entry.category)
+        {/* Folder Tree */}
+        <div className="space-y-1">
+          {Object.entries(FOLDERS).map(([key, folder]) => {
+            const docs = entriesByFolder[key] || []
+            const isExpanded = expandedFolders.has(key)
+            const Icon = folder.icon
 
             return (
-              <div
-                key={entry.entry_id}
-                onClick={() => openEntry(entry)}
-                className="bg-[#16181d] rounded-lg border border-[#2a2f38] p-5 cursor-pointer hover:border-[#2a3ded] hover:bg-[#1e2128] transition-all group"
-              >
-                {/* Category Badge */}
-                <div className="flex items-center justify-between mb-3">
-                  <span
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${categoryStyle.bg} ${categoryStyle.text} ${categoryStyle.border}`}
-                  >
-                    {formatCategoryLabel(entry.category)}
-                  </span>
-                  <ChevronRight className="w-4 h-4 text-[#6b7280] opacity-0 group-hover:opacity-100 transition-opacity" />
-                </div>
+              <div key={key}>
+                <button
+                  onClick={() => toggleFolder(key)}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-800 text-left"
+                >
+                  {isExpanded ? <ChevronDown size={16} className="text-gray-500" /> : <ChevronRight size={16} className="text-gray-500" />}
+                  <Icon size={18} className="text-blue-400" />
+                  <span className="text-gray-200 font-medium">{folder.label}</span>
+                  <span className="text-gray-500 text-sm ml-auto">{docs.length}</span>
+                </button>
 
-                {/* Title */}
-                <h3 className="text-lg font-semibold text-white mb-2 line-clamp-2">
-                  {entry.title}
-                </h3>
-
-                {/* Preview */}
-                <p className="text-sm text-[#9ca3af] line-clamp-3 mb-4">
-                  {entry.content.slice(0, 150)}
-                  {entry.content.length > 150 ? '...' : ''}
-                </p>
-
-                {/* Tags */}
-                {entry.tags && entry.tags.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mb-4">
-                    {entry.tags.slice(0, 3).map((tag) => (
-                      <span
-                        key={tag}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 bg-[#0d0f12] rounded text-xs text-[#6b7280]"
+                {isExpanded && docs.length > 0 && (
+                  <div className="ml-8 space-y-0.5">
+                    {docs.map(doc => (
+                      <div
+                        key={doc.id}
+                        onClick={() => openDoc(doc)}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-800/60 cursor-pointer group"
                       >
-                        <Tag className="w-3 h-3" />
-                        {tag}
-                      </span>
+                        <FileText size={14} className="text-gray-500" />
+                        <span className="text-gray-300 text-sm flex-1 truncate">{doc.title}</span>
+                        <span className="text-gray-600 text-xs">{format(parseISO(doc.updated_at), 'MMM d')}</span>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); downloadDoc(doc.title, doc.content) }}
+                          className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400"
+                        >
+                          <Download size={14} />
+                        </button>
+                      </div>
                     ))}
-                    {entry.tags.length > 3 && (
-                      <span className="text-xs text-[#6b7280]">
-                        +{entry.tags.length - 3}
-                      </span>
-                    )}
                   </div>
                 )}
 
-                {/* Footer */}
-                <div className="flex items-center justify-between text-xs text-[#6b7280] pt-3 border-t border-[#2a2f38]">
-                  <div className="flex items-center gap-1">
-                    <User className="w-3 h-3" />
-                    {entry.author || 'System'}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Clock className="w-3 h-3" />
-                    {format(parseISO(entry.updated_at), 'MMM d, yyyy')}
-                  </div>
-                </div>
+                {isExpanded && docs.length === 0 && (
+                  <p className="ml-12 text-gray-600 text-sm py-1">No documents</p>
+                )}
               </div>
             )
           })}
-        </div>
-      )}
 
-      {/* Empty State */}
-      {displayEntries?.length === 0 && !isLoading && (
-        <div className="text-center py-16 text-[#6b7280]">
-          <BookOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
-          <p className="text-lg font-medium text-white mb-1">No entries found</p>
-          <p className="text-sm">
-            {searchQuery
-              ? 'Try adjusting your search terms'
-              : 'Entries will appear when research is added to the wiki'}
-          </p>
-        </div>
-      )}
-
-      {/* Entry Modal */}
-      {isModalOpen && selectedEntry && (
-        <div
-          className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50"
-          onClick={closeModal}
-        >
-          <div
-            className="bg-[#16181d] rounded-xl border border-[#2a2f38] max-w-3xl w-full max-h-[90vh] overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-[#2a2f38] flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${
-                    getCategoryStyle(selectedEntry.category).bg
-                  } ${getCategoryStyle(selectedEntry.category).text} ${
-                    getCategoryStyle(selectedEntry.category).border
-                  }`}
-                >
-                  {formatCategoryLabel(selectedEntry.category)}
-                </span>
-                <span className="text-xs text-[#6b7280]">
-                  ID: {selectedEntry.entry_id}
-                </span>
-              </div>
+          {/* Other / Uncategorized */}
+          {(entriesByFolder['other'] || []).length > 0 && (
+            <div>
               <button
-                onClick={closeModal}
-                className="p-2 hover:bg-[#2a2f38] rounded-lg transition-colors"
+                onClick={() => toggleFolder('other')}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-800 text-left"
               >
-                <X className="w-5 h-5 text-[#6b7280]" />
+                {expandedFolders.has('other') ? <ChevronDown size={16} className="text-gray-500" /> : <ChevronRight size={16} className="text-gray-500" />}
+                <FolderOpen size={18} className="text-gray-400" />
+                <span className="text-gray-200 font-medium">Other</span>
+                <span className="text-gray-500 text-sm ml-auto">{entriesByFolder['other'].length}</span>
               </button>
-            </div>
-
-            {/* Modal Content */}
-            <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
-              <h2 className="text-2xl font-bold text-white mb-4">
-                {selectedEntry.title}
-              </h2>
-
-              {/* Metadata */}
-              <div className="flex flex-wrap items-center gap-4 text-sm text-[#6b7280] mb-6">
-                <div className="flex items-center gap-1">
-                  <User className="w-4 h-4" />
-                  {selectedEntry.author || 'System'}
-                </div>
-                <div className="flex items-center gap-1">
-                  <Calendar className="w-4 h-4" />
-                  Created: {format(parseISO(selectedEntry.created_at), 'MMM d, yyyy')}
-                </div>
-                <div className="flex items-center gap-1">
-                  <Edit3 className="w-4 h-4" />
-                  Updated: {format(parseISO(selectedEntry.updated_at), 'MMM d, yyyy')}
-                </div>
-              </div>
-
-              {/* Content */}
-              <div className="prose prose-invert max-w-none">
-                <div className="text-[#9ca3af] whitespace-pre-wrap leading-relaxed">
-                  {selectedEntry.content}
-                </div>
-              </div>
-
-              {/* Tags */}
-              {selectedEntry.tags && selectedEntry.tags.length > 0 && (
-                <div className="mt-6 pt-6 border-t border-[#2a2f38]">
-                  <div className="text-xs text-[#6b7280] mb-2 uppercase tracking-wider">
-                    Tags
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {selectedEntry.tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#0d0f12] rounded-lg text-sm text-[#9ca3af]"
+              {expandedFolders.has('other') && (
+                <div className="ml-8 space-y-0.5">
+                  {entriesByFolder['other'].map(doc => (
+                    <div
+                      key={doc.id}
+                      onClick={() => openDoc(doc)}
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-800/60 cursor-pointer group"
+                    >
+                      <FileText size={14} className="text-gray-500" />
+                      <span className="text-gray-300 text-sm flex-1 truncate">{doc.title}</span>
+                      <span className="text-gray-600 text-xs">{format(parseISO(doc.updated_at), 'MMM d')}</span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); downloadDoc(doc.title, doc.content) }}
+                        className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-400"
                       >
-                        <Tag className="w-3 h-3" />
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
+                        <Download size={14} />
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
+          )}
+        </div>
+      </div>
+    )
+  }
 
-            {/* Modal Footer */}
-            <div className="px-6 py-4 border-t border-[#2a2f38] flex items-center justify-between">
-              <span className="text-xs text-[#6b7280]">
-                Entry ID: {selectedEntry.entry_id}
-              </span>
+  // ─── Document View ───
+  return (
+    <div className="p-6 max-w-6xl mx-auto">
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-6">
+        <button onClick={() => { setViewMode('browse'); setSelectedDoc(null) }} className="text-gray-400 hover:text-white">
+          <ChevronRight size={20} className="rotate-180" />
+        </button>
+        <div className="flex-1">
+          <h1 className="text-xl font-bold text-white">{selectedDoc?.title}</h1>
+          <div className="flex items-center gap-4 text-sm text-gray-500 mt-1">
+            <span className="flex items-center gap-1"><Clock size={12} /> {selectedDoc && format(parseISO(selectedDoc.updated_at), 'MMM d, yyyy h:mm a')}</span>
+            <span className="flex items-center gap-1"><Tag size={12} /> {selectedDoc?.entry_type}</span>
+          </div>
+        </div>
+        <button
+          onClick={() => selectedDoc && downloadDoc(selectedDoc.title, selectedDoc.content)}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm text-gray-300"
+        >
+          <Download size={14} /> Download
+        </button>
+      </div>
+
+      {/* Tags */}
+      {selectedDoc?.tags && selectedDoc.tags.length > 0 && (
+        <div className="flex gap-2 mb-4">
+          {selectedDoc.tags.map(tag => (
+            <span key={tag} className="px-2 py-0.5 bg-blue-500/10 text-blue-400 rounded text-xs">{tag}</span>
+          ))}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Document Content */}
+        <div className="lg:col-span-2 bg-gray-800/50 rounded-xl p-6 border border-gray-700/50">
+          {selectedDoc && renderMarkdown(selectedDoc.content)}
+        </div>
+
+        {/* Comments Panel */}
+        <div className="bg-gray-800/50 rounded-xl border border-gray-700/50 flex flex-col" style={{ maxHeight: '80vh' }}>
+          <div className="px-4 py-3 border-b border-gray-700/50 flex items-center gap-2">
+            <MessageSquare size={16} className="text-blue-400" />
+            <span className="text-sm font-medium text-gray-200">Comments ({comments.length})</span>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {comments.length === 0 && (
+              <p className="text-gray-500 text-sm text-center py-4">No comments yet. Start a discussion.</p>
+            )}
+            {comments.map(comment => (
+              <div key={comment.id} className="bg-gray-900/50 rounded-lg p-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`text-xs font-medium ${comment.author === 'Drew' ? 'text-blue-400' : 'text-green-400'}`}>
+                    {comment.author}
+                  </span>
+                  <span className="text-gray-600 text-xs">{format(parseISO(comment.created_at), 'MMM d, h:mm a')}</span>
+                </div>
+                <p className="text-gray-300 text-sm">{comment.text}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Comment Input */}
+          <div className="p-3 border-t border-gray-700/50">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Add a comment..."
+                value={commentText}
+                onChange={(e) => setCommentText(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && commentText.trim()) addComment.mutate(commentText.trim()) }}
+                className="flex-1 bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200 placeholder-gray-600 focus:border-blue-500 focus:outline-none"
+              />
               <button
-                onClick={closeModal}
-                className="px-4 py-2 bg-[#2a3ded] hover:bg-[#3a4dff] rounded-lg text-sm font-medium text-white transition-colors"
+                onClick={() => commentText.trim() && addComment.mutate(commentText.trim())}
+                disabled={!commentText.trim()}
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 rounded text-sm text-white"
               >
-                Close
+                <Send size={14} />
               </button>
             </div>
           </div>
         </div>
-      )}
+      </div>
     </div>
   )
 }

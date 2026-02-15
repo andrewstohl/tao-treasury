@@ -1,6 +1,6 @@
 import { ReactNode, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { BarChart3, Activity, Compass, BookOpen, Menu, X } from 'lucide-react'
+import { BarChart3, Activity, Compass, BookOpen, Menu, X, Layout as LayoutIcon } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { supabaseQueries } from '../../services/supabase'
 
@@ -12,7 +12,8 @@ const navItems = [
   { path: '/track', label: 'Track', icon: Activity },
   { path: '/discover', label: 'Discover', icon: Compass },
   { path: '/trading', label: 'Trading', icon: BarChart3 },
-  { path: '/wiki', label: 'Wiki', icon: BookOpen },
+  { path: '/wiki', label: 'Docs', icon: BookOpen },
+  { path: '/kanban', label: 'Board', icon: LayoutIcon },
 ]
 
 export default function Layout({ children }: LayoutProps) {
