@@ -13,6 +13,7 @@ export interface PnLSummary {
 }
 
 export interface PositionSummary {
+  wallet_address?: string
   netuid: number
   subnet_name: string
   tao_value_mid: string
@@ -36,6 +37,8 @@ export interface PositionSummary {
   exit_slippage_50pct: string
   exit_slippage_100pct: string
   validator_hotkey: string | null
+  validator_name: string | null
+  validator_image_url: string | null
   recommended_action: string | null
   action_reason: string | null
   flow_regime: string | null
@@ -80,6 +83,7 @@ export interface Portfolio {
 }
 
 export interface ClosedPosition {
+  wallet_address?: string
   netuid: number
   subnet_name: string
   total_staked_tao: string

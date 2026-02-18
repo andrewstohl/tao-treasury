@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Activity,
@@ -7,11 +7,14 @@ import {
   Search,
   X,
   Loader2,
+  Columns3,
 } from 'lucide-react'
 import { api } from '../services/api'
 import type { Dashboard as DashboardType, EnrichedSubnetListResponse, EnrichedSubnet, VolatilePoolData, PositionSummary, ClosedPosition } from '../types'
 import { formatTao, safeFloat } from '../utils/format'
+import SortableHeader, { useSortToggle, type SortDirection } from '../components/common/SortableHeader'
 import SparklineCell from '../components/common/cells/SparklineCell'
+import PriceChangeCell from '../components/common/cells/PriceChangeCell'
 import RegimeBadge from '../components/common/cells/RegimeBadge'
 import ViabilityBadge from '../components/common/cells/ViabilityBadge'
 import PortfolioOverviewCards from '../components/dashboard/PortfolioOverviewCards'
@@ -24,7 +27,53 @@ import {
 } from '../components/dashboard/position-detail'
 
 type PositionTab = 'open' | 'closed' | 'all'
-type SortOption = 'value' | 'tao' | 'yield' | 'alpha' | 'pnl' | 'apy'
+
+type SortKey = 'value' | 'tao' | 'yield' | 'alpha' | 'pnl' | 'apy' | 'change' | 'weight'
+
+// --- Column visibility for active positions table ---
+type ColumnKey = 'validator' | 'sparkline' | 'change' | 'value' | 'weight' | 'tao' | 'yield' | 'alpha' | 'pnl' | 'apy' | 'viability' | 'regime'
+
+const ALL_COLUMNS: { key: ColumnKey; label: string }[] = [
+  { key: 'sparkline', label: '7d Chart' },
+  { key: 'change', label: '24h / 7d' },
+  { key: 'value', label: 'Value (USD)' },
+  { key: 'weight', label: '% of Stake' },
+  { key: 'tao', label: 'TAO' },
+  { key: 'yield', label: 'Yield' },
+  { key: 'alpha', label: 'Alpha' },
+  { key: 'pnl', label: 'P&L' },
+  { key: 'apy', label: 'APY' },
+  { key: 'viability', label: 'Viability' },
+  { key: 'regime', label: 'Regime' },
+  { key: 'validator', label: 'Validator' },
+]
+
+const COLUMNS_STORAGE_KEY = 'tao-positions-columns'
+const ALL_COLUMN_KEYS = ALL_COLUMNS.map((c) => c.key)
+
+function loadVisibleColumns(): Set<ColumnKey> {
+  const allKeys = new Set(ALL_COLUMN_KEYS)
+  try {
+    const stored = localStorage.getItem(COLUMNS_STORAGE_KEY)
+    if (stored) {
+      const parsed: string[] = JSON.parse(stored)
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const valid = new Set(parsed.filter((k) => allKeys.has(k as ColumnKey)) as ColumnKey[])
+        for (const key of ALL_COLUMN_KEYS) {
+          if (!valid.has(key)) valid.add(key)
+        }
+        return valid
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return new Set(ALL_COLUMN_KEYS)
+}
+
+function saveVisibleColumns(cols: Set<ColumnKey>) {
+  localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify([...cols]))
+}
 
 // Three-tier fallback logo component:
 // 1. Try subnet's own logo
@@ -85,25 +134,85 @@ export default function Dashboard() {
   const [expandedNetuid, setExpandedNetuid] = useState<number | null>(null)
   const [positionTab, setPositionTab] = useState<PositionTab>('open')
   const [searchQuery, setSearchQuery] = useState('')
-  const [sortOption, setSortOption] = useState<SortOption>('value')
+  const [sortKey, setSortKey] = useState<SortKey | null>('value')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [newWalletAddress, setNewWalletAddress] = useState('')
+  const [selectedWallet, setSelectedWallet] = useState<string>('all')
+
+  // Column visibility
+  const [visibleColumns, setVisibleColumns] = useState<Set<ColumnKey>>(loadVisibleColumns)
+  const [showColumnMenu, setShowColumnMenu] = useState(false)
+  const columnMenuRef = useRef<HTMLDivElement>(null)
+
+  const handleSort = useSortToggle(sortKey, sortDirection, setSortKey, setSortDirection)
+
+  const toggleColumn = useCallback((key: ColumnKey) => {
+    setVisibleColumns((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      saveVisibleColumns(next)
+      return next
+    })
+  }, [])
+
+  const isColVisible = useCallback(
+    (key: ColumnKey) => visibleColumns.has(key),
+    [visibleColumns],
+  )
+
+  // Close column menu on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (columnMenuRef.current && !columnMenuRef.current.contains(e.target as Node)) {
+        setShowColumnMenu(false)
+      }
+    }
+    if (showColumnMenu) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showColumnMenu])
 
   const queryClient = useQueryClient()
 
   const { data, isLoading, error } = useQuery<DashboardType>({
-    queryKey: ['dashboard'],
-    queryFn: api.getDashboard,
+    queryKey: ['dashboard', selectedWallet],
+    queryFn: () => api.getDashboard(selectedWallet === 'all' ? undefined : selectedWallet),
     refetchInterval: 120000,  // 2 min - reduced to avoid rate limits
   })
 
   const [walletError, setWalletError] = useState<string | null>(null)
+  const [backgroundSyncing, setBackgroundSyncing] = useState(false)
 
   const addWalletMutation = useMutation({
-    mutationFn: (address: string) => api.addWallet(address),
+    mutationFn: async (address: string) => {
+      // 1. Add wallet to DB (fast — returns immediately)
+      const wallet = await api.addWallet(address)
+      // 2. Quick refresh: positions appear in ~3s with interim cost basis.
+      //    Decomposition handles unindexed buys correctly (zero P&L contribution).
+      await api.triggerRefresh('refresh')
+      return wallet
+    },
     onSuccess: () => {
+      // 3. Positions visible immediately — invalidate to show them
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      queryClient.invalidateQueries({ queryKey: ['portfolio-overview'] })
       setNewWalletAddress('')
       setWalletError(null)
+
+      // 4. Full sync in background — authoritative FIFO, entry dates, yield.
+      //    Takes ~60s but doesn't block the UI. Data silently updates when done.
+      setBackgroundSyncing(true)
+      api.triggerRefresh('full')
+        .then(() => {
+          queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+          queryClient.invalidateQueries({ queryKey: ['portfolio-overview'] })
+        })
+        .finally(() => setBackgroundSyncing(false))
     },
     onError: (error: unknown) => {
       // Extract error message from axios response
@@ -123,7 +232,11 @@ export default function Dashboard() {
   const deleteWalletMutation = useMutation({
     mutationFn: (address: string) => api.deleteWallet(address),
     onSuccess: () => {
+      // Reset wallet filter to "all" since the selected wallet may have been deleted
+      setSelectedWallet('all')
+      // Invalidate all portfolio-related queries so positions and KPIs refresh
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      queryClient.invalidateQueries({ queryKey: ['portfolio-overview'] })
     },
   })
 
@@ -151,30 +264,58 @@ export default function Dashboard() {
     return map
   }, [enrichedData?.subnets])
 
-  // Sort open positions based on selected sort option
+  // Sort open positions based on selected sort key/direction
   const openPositions = useMemo(() => {
     const positions = data?.top_positions || []
+    if (!sortKey || !sortDirection) {
+      return [...positions].sort((a, b) => safeFloat(b.tao_value_mid) - safeFloat(a.tao_value_mid))
+    }
+
     return [...positions].sort((a, b) => {
-      switch (sortOption) {
+      let aVal: number
+      let bVal: number
+
+      switch (sortKey) {
         case 'value':
         case 'tao':
-          // Both sort by TAO value (USD value is proportional)
-          return safeFloat(b.tao_value_mid) - safeFloat(a.tao_value_mid)
+          aVal = safeFloat(a.tao_value_mid)
+          bVal = safeFloat(b.tao_value_mid)
+          break
+        case 'weight':
+          aVal = safeFloat(a.weight_pct)
+          bVal = safeFloat(b.weight_pct)
+          break
         case 'yield':
-          // Use pre-computed yield from backend (single source of truth)
-          return safeFloat(b.unrealized_yield_tao) - safeFloat(a.unrealized_yield_tao)
+          aVal = safeFloat(a.unrealized_yield_tao)
+          bVal = safeFloat(b.unrealized_yield_tao)
+          break
         case 'alpha':
-          // Use pre-computed alpha P&L from backend (single source of truth)
-          return safeFloat(b.unrealized_alpha_pnl_tao) - safeFloat(a.unrealized_alpha_pnl_tao)
+          aVal = safeFloat(a.unrealized_alpha_pnl_tao)
+          bVal = safeFloat(b.unrealized_alpha_pnl_tao)
+          break
         case 'pnl':
-          return safeFloat(b.unrealized_pnl_tao) - safeFloat(a.unrealized_pnl_tao)
+          aVal = safeFloat(a.unrealized_pnl_tao)
+          bVal = safeFloat(b.unrealized_pnl_tao)
+          break
         case 'apy':
-          return safeFloat(b.current_apy) - safeFloat(a.current_apy)
+          aVal = safeFloat(a.current_apy)
+          bVal = safeFloat(b.current_apy)
+          break
+        case 'change': {
+          const aEnr = enrichedLookup.get(a.netuid)
+          const bEnr = enrichedLookup.get(b.netuid)
+          aVal = aEnr?.volatile?.price_change_24h ?? 0
+          bVal = bEnr?.volatile?.price_change_24h ?? 0
+          break
+        }
         default:
-          return safeFloat(b.tao_value_mid) - safeFloat(a.tao_value_mid)
+          aVal = safeFloat(a.tao_value_mid)
+          bVal = safeFloat(b.tao_value_mid)
       }
+
+      return sortDirection === 'asc' ? aVal - bVal : bVal - aVal
     })
-  }, [data?.top_positions, sortOption])
+  }, [data?.top_positions, sortKey, sortDirection, enrichedLookup])
 
   // Filtered positions
   const filteredOpen = useMemo(() => {
@@ -195,6 +336,9 @@ export default function Dashboard() {
       String(p.netuid).includes(q)
     )
   }, [data?.closed_positions, searchQuery])
+
+  // colSpan for expanded detail row: expand(1) + position(1) + visible columns
+  const colSpan = 2 + visibleColumns.size
 
   if (isLoading) {
     return (
@@ -242,7 +386,7 @@ export default function Dashboard() {
               placeholder="Add wallet address (SS58 format)"
               value={newWalletAddress}
               onChange={(e) => setNewWalletAddress(e.target.value)}
-              className="flex-1 bg-transparent text-sm text-[#8faabe] placeholder-gray-500 outline-none"
+              className="flex-1 bg-transparent text-sm text-white placeholder-gray-500 outline-none"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   handleAddWallet()
@@ -253,14 +397,20 @@ export default function Dashboard() {
           <button
             onClick={handleAddWallet}
             disabled={addWalletMutation.isPending || newWalletAddress.trim().length < 46}
-            className="px-5 py-2.5 bg-[#2a3ded] hover:bg-[#3a4dff] disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm font-medium text-white transition-colors flex items-center gap-2"
+            className="px-4 py-2.5 bg-[#2a3ded] disabled:cursor-not-allowed rounded-lg text-sm font-medium text-white transition-colors flex items-center gap-2"
           >
             {addWalletMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-            Add
+            {addWalletMutation.isPending ? 'Adding...' : 'Add'}
           </button>
         </div>
         {walletError && (
           <p className="text-sm text-red-400">{walletError}</p>
+        )}
+        {backgroundSyncing && (
+          <p className="text-xs text-[#8a8f98] flex items-center gap-1.5">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            Syncing full history...
+          </p>
         )}
         {walletAddresses.length > 0 && (
           <div className="flex flex-wrap gap-2">
@@ -329,7 +479,7 @@ export default function Dashboard() {
       <div className="h-5" />
 
       {/* Portfolio Overview Cards */}
-      <PortfolioOverviewCards />
+      <PortfolioOverviewCards wallet={selectedWallet === 'all' ? undefined : selectedWallet} />
 
       {/* Spacer: KPI cards to positions */}
       <div className="h-20" />
@@ -354,7 +504,7 @@ export default function Dashboard() {
           ))}
         </div>
 
-        {/* Filters */}
+        {/* Filters + Column Toggle */}
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 bg-[#16181d] border border-[#2a2f38] rounded-lg px-4 py-2.5 w-64">
             <Search className="w-4 h-4 text-[#8a8f98] flex-shrink-0" />
@@ -371,53 +521,216 @@ export default function Dashboard() {
               </button>
             )}
           </div>
-          <select className="bg-[#16181d] border border-[#2a2f38] rounded-lg px-4 py-2.5 text-sm text-[#8faabe]">
+          <select
+            value={selectedWallet}
+            onChange={(e) => setSelectedWallet(e.target.value)}
+            className="bg-[#16181d] border border-[#2a2f38] rounded-lg px-4 py-2.5 text-sm text-[#8faabe]"
+          >
             <option value="all">Wallet: All</option>
             {walletAddresses.map(addr => (
               <option key={addr} value={addr}>{truncateAddress(addr)}</option>
             ))}
           </select>
-          <select
-            value={sortOption}
-            onChange={(e) => setSortOption(e.target.value as SortOption)}
-            className="bg-[#16181d] border border-[#2a2f38] rounded-lg px-4 py-2.5 text-sm text-[#8faabe]"
-          >
-            <option value="value">Sort: Value</option>
-            <option value="tao">Sort: TAO</option>
-            <option value="yield">Sort: Yield</option>
-            <option value="alpha">Sort: Alpha</option>
-            <option value="pnl">Sort: P&L</option>
-            <option value="apy">Sort: APY</option>
-          </select>
-        </div>
 
-        {/* Open Position Cards */}
-        {(positionTab === 'open' || positionTab === 'all') && filteredOpen.length > 0 && (
-          <div className="space-y-3">
-            {positionTab === 'all' && (
-              <div className="text-xs text-[#8a8f98] uppercase tracking-wider font-medium">
-                Open Positions ({filteredOpen.length})
+          {/* Column visibility toggle */}
+          <div className="relative" ref={columnMenuRef}>
+            <button
+              onClick={() => setShowColumnMenu((prev) => !prev)}
+              className={`flex items-center gap-1.5 px-4 py-2.5 rounded-lg border text-sm ${
+                showColumnMenu
+                  ? 'bg-[#1e2128] border-[#2a3ded] text-[#2a3ded]'
+                  : 'bg-[#16181d] border-[#2a2f38] text-[#8a8f98] hover:border-[#3a3f48]'
+              }`}
+            >
+              <Columns3 className="w-4 h-4" />
+              Columns
+            </button>
+            {showColumnMenu && (
+              <div className="absolute right-0 top-full mt-1 bg-[#16181d] border border-[#2a2f38] rounded-lg shadow-xl z-20 py-1 w-48">
+                {ALL_COLUMNS.map((col) => (
+                  <label
+                    key={col.key}
+                    className="flex items-center gap-2 px-3 py-1.5 hover:bg-[#1e2128] cursor-pointer text-sm text-[#8faabe]"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={visibleColumns.has(col.key)}
+                      onChange={() => toggleColumn(col.key)}
+                      className="rounded bg-[#2a2f38] border-[#3a3f48]"
+                    />
+                    {col.label}
+                  </label>
+                ))}
+                <div className="border-t border-[#2a2f38] mt-1 pt-1 px-3 pb-1">
+                  <button
+                    onClick={() => {
+                      const all = new Set(ALL_COLUMN_KEYS)
+                      setVisibleColumns(all)
+                      saveVisibleColumns(all)
+                    }}
+                    className="text-xs text-[#2a3ded] hover:text-[#3a4dff]"
+                  >
+                    Show All
+                  </button>
+                </div>
               </div>
             )}
-            {filteredOpen.map((position) => {
-              const enriched = enrichedLookup.get(position.netuid)
-              const rootEnriched = enrichedLookup.get(0)
-              const v = enriched?.volatile ?? null
-              const isExpanded = expandedNetuid === position.netuid
-              return (
-                <PositionCard
-                  key={position.netuid}
-                  position={position}
-                  enriched={enriched ?? null}
-                  rootLogoUrl={rootEnriched?.identity?.logo_url}
-                  v={v}
-                  taoPrice={taoPrice}
-                  isExpanded={isExpanded}
-                  onToggle={() => setExpandedNetuid(isExpanded ? null : position.netuid)}
-                />
-              )
-            })}
           </div>
+
+          {/* Result count */}
+          <span className="text-xs text-[#6b7280] ml-auto">
+            {positionTab === 'open' ? filteredOpen.length :
+             positionTab === 'closed' ? filteredClosed.length :
+             filteredOpen.length + filteredClosed.length} positions
+          </span>
+        </div>
+
+        {/* Active Positions Table */}
+        {(positionTab === 'open' || positionTab === 'all') && filteredOpen.length > 0 && (
+          <>
+            {positionTab === 'all' && (
+              <div className="text-xs text-[#8a8f98] uppercase tracking-wider font-medium">
+                Active Positions ({filteredOpen.length})
+              </div>
+            )}
+            <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] overflow-x-auto">
+              <table className="w-full min-w-[800px]">
+                <thead className="bg-[#0d0f12]/60">
+                  <tr>
+                    {/* Expand toggle - always visible */}
+                    <th className="w-8 px-2 py-3" />
+                    {/* Subnet name - always visible */}
+                    <th className="px-4 py-3 text-xs font-medium text-white uppercase tracking-wider text-left">
+                      Subnet
+                    </th>
+                    {isColVisible('sparkline') && (
+                      <th className="px-4 py-3 text-xs font-medium text-white uppercase tracking-wider text-center">
+                        7d Chart
+                      </th>
+                    )}
+                    {isColVisible('change') && (
+                      <SortableHeader<SortKey>
+                        label="24h / 7d"
+                        sortKey="change"
+                        currentSortKey={sortKey}
+                        currentDirection={sortDirection}
+                        onSort={handleSort}
+                        align="center"
+                      />
+                    )}
+                    {isColVisible('value') && (
+                      <SortableHeader<SortKey>
+                        label="Value"
+                        sortKey="value"
+                        currentSortKey={sortKey}
+                        currentDirection={sortDirection}
+                        onSort={handleSort}
+                        align="center"
+                      />
+                    )}
+                    {isColVisible('weight') && (
+                      <SortableHeader<SortKey>
+                        label="% of Stake"
+                        sortKey="weight"
+                        currentSortKey={sortKey}
+                        currentDirection={sortDirection}
+                        onSort={handleSort}
+                        align="center"
+                      />
+                    )}
+                    {isColVisible('tao') && (
+                      <SortableHeader<SortKey>
+                        label="TAO"
+                        sortKey="tao"
+                        currentSortKey={sortKey}
+                        currentDirection={sortDirection}
+                        onSort={handleSort}
+                        align="center"
+                      />
+                    )}
+                    {isColVisible('yield') && (
+                      <SortableHeader<SortKey>
+                        label="Yield"
+                        sortKey="yield"
+                        currentSortKey={sortKey}
+                        currentDirection={sortDirection}
+                        onSort={handleSort}
+                        align="center"
+                      />
+                    )}
+                    {isColVisible('alpha') && (
+                      <SortableHeader<SortKey>
+                        label="Alpha"
+                        sortKey="alpha"
+                        currentSortKey={sortKey}
+                        currentDirection={sortDirection}
+                        onSort={handleSort}
+                        align="center"
+                      />
+                    )}
+                    {isColVisible('pnl') && (
+                      <SortableHeader<SortKey>
+                        label="P&L"
+                        sortKey="pnl"
+                        currentSortKey={sortKey}
+                        currentDirection={sortDirection}
+                        onSort={handleSort}
+                        align="center"
+                      />
+                    )}
+                    {isColVisible('apy') && (
+                      <SortableHeader<SortKey>
+                        label="APY"
+                        sortKey="apy"
+                        currentSortKey={sortKey}
+                        currentDirection={sortDirection}
+                        onSort={handleSort}
+                        align="center"
+                      />
+                    )}
+                    {isColVisible('viability') && (
+                      <th className="px-4 py-3 text-xs font-medium text-white uppercase tracking-wider text-center">
+                        Viability
+                      </th>
+                    )}
+                    {isColVisible('regime') && (
+                      <th className="px-4 py-3 text-xs font-medium text-white uppercase tracking-wider text-center">
+                        Regime
+                      </th>
+                    )}
+                    {isColVisible('validator') && (
+                      <th className="px-4 py-3 text-xs font-medium text-white uppercase tracking-wider text-center">
+                        Validator
+                      </th>
+                    )}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#2a2f38]/50">
+                  {filteredOpen.map((position) => {
+                    const enriched = enrichedLookup.get(position.netuid)
+                    const rootEnriched = enrichedLookup.get(0)
+                    const v = enriched?.volatile ?? null
+                    const isExpanded = expandedNetuid === position.netuid
+                    return (
+                      <PositionRow
+                        key={`${position.wallet_address || ''}-${position.netuid}`}
+                        position={position}
+                        enriched={enriched ?? null}
+                        rootLogoUrl={rootEnriched?.identity?.logo_url}
+                        v={v}
+                        taoPrice={taoPrice}
+                        isExpanded={isExpanded}
+                        onToggle={() => setExpandedNetuid(isExpanded ? null : position.netuid)}
+                        isColVisible={isColVisible}
+                        colSpan={colSpan}
+                        showWalletBadge={selectedWallet === 'all' && walletAddresses.length > 1}
+                      />
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
 
         {/* Free TAO balance */}
@@ -434,27 +747,55 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Closed Position Cards */}
+        {/* Closed Positions Table */}
         {(positionTab === 'closed' || positionTab === 'all') && filteredClosed.length > 0 && (
-          <div className="space-y-3">
+          <>
             {positionTab === 'all' && (
               <div className="text-xs text-[#8a8f98] uppercase tracking-wider font-medium pt-2">
-                Closed Positions ({filteredClosed.length})
+                Inactive Positions ({filteredClosed.length})
               </div>
             )}
-            {filteredClosed.map((position) => {
-              const enriched = enrichedLookup.get(position.netuid)
-              const rootEnriched = enrichedLookup.get(0)
-              return (
-                <ClosedPositionCard
-                  key={position.netuid}
-                  position={position}
-                  enriched={enriched ?? null}
-                  rootLogoUrl={rootEnriched?.identity?.logo_url}
-                />
-              )
-            })}
-          </div>
+            <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] overflow-x-auto opacity-70">
+              <table className="w-full">
+                <thead className="bg-[#0d0f12]/60">
+                  <tr>
+                    <th className="px-4 py-3 text-xs font-medium text-white uppercase tracking-wider text-center">
+                      Position
+                    </th>
+                    <th className="px-4 py-3 text-xs font-medium text-white uppercase tracking-wider text-center">
+                      Staked
+                    </th>
+                    <th className="px-4 py-3 text-xs font-medium text-white uppercase tracking-wider text-center">
+                      Returned
+                    </th>
+                    <th className="px-4 py-3 text-xs font-medium text-white uppercase tracking-wider text-center">
+                      P&L
+                    </th>
+                    <th className="px-4 py-3 text-xs font-medium text-white uppercase tracking-wider text-center">
+                      Opened
+                    </th>
+                    <th className="px-4 py-3 text-xs font-medium text-white uppercase tracking-wider text-center">
+                      Closed
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#2a2f38]/50">
+                  {filteredClosed.map((position) => {
+                    const enriched = enrichedLookup.get(position.netuid)
+                    const rootEnriched = enrichedLookup.get(0)
+                    return (
+                      <ClosedPositionRow
+                        key={position.netuid}
+                        position={position}
+                        enriched={enriched ?? null}
+                        rootLogoUrl={rootEnriched?.identity?.logo_url}
+                      />
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
 
         {/* Empty state */}
@@ -470,7 +811,7 @@ export default function Dashboard() {
   )
 }
 
-function PositionCard({
+function PositionRow({
   position,
   enriched,
   rootLogoUrl,
@@ -478,6 +819,9 @@ function PositionCard({
   taoPrice,
   isExpanded,
   onToggle,
+  isColVisible,
+  colSpan,
+  showWalletBadge,
 }: {
   position: PositionSummary
   enriched: EnrichedSubnet | null
@@ -486,6 +830,9 @@ function PositionCard({
   taoPrice: number
   isExpanded: boolean
   onToggle: () => void
+  isColVisible: (key: ColumnKey) => boolean
+  colSpan: number
+  showWalletBadge?: boolean
 }) {
   const taoValue = safeFloat(position.tao_value_mid)
 
@@ -500,104 +847,149 @@ function PositionCard({
   const pnlColor = (val: number) => val >= 0 ? 'text-green-400' : 'text-red-400'
 
   return (
-    <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] overflow-hidden">
-      {/* Single row layout */}
-      <div
-        className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-[#1e2128]/30 transition-colors"
+    <>
+      <tr
+        className="cursor-pointer hover:bg-[#1e2128]/30 transition-colors"
         onClick={onToggle}
       >
         {/* Expand chevron */}
-        <div className="text-[#8a8f98] flex-shrink-0">
-          {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-        </div>
+        <td className="px-2 py-2.5 text-center text-[#8a8f98]">
+          {isExpanded ? <ChevronDown className="w-4 h-4 inline" /> : <ChevronRight className="w-4 h-4 inline" />}
+        </td>
 
-        {/* Logo */}
-        <SubnetLogo
-          logoUrl={enriched?.identity?.logo_url}
-          rootLogoUrl={rootLogoUrl}
-          netuid={position.netuid}
-        />
-
-        {/* Name + SN */}
-        <div className="w-28 flex-shrink-0">
-          <div className="font-medium text-sm text-white truncate">{position.subnet_name || `SN${position.netuid}`}</div>
-          <div className="text-xs text-[#8a8f98]">SN{position.netuid}</div>
-        </div>
-
-        {/* 7D Performance Sparkline - moved to front and wider */}
-        <div className="w-44 flex-shrink-0">
-          <SparklineCell data={v?.sparkline_7d} />
-        </div>
-
-        {/* Data columns - evenly spaced grid, all centered */}
-        <div className="flex-1 grid grid-cols-8 gap-2">
-          {/* Current Value */}
-          <div className="text-center">
-            <div className="text-xs text-[#8a8f98]">Value</div>
-            <div className="text-sm tabular-nums text-white">${currentValueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-          </div>
-
-          {/* TAO Value */}
-          <div className="text-center">
-            <div className="text-xs text-[#8a8f98]">TAO</div>
-            <div className="text-sm tabular-nums text-white">{taoValue.toFixed(2)} τ</div>
-          </div>
-
-          {/* Yield */}
-          <div className="text-center">
-            <div className="text-xs text-[#8a8f98]">Yield</div>
-            <div className={`text-sm tabular-nums ${pnlColor(yieldTao)}`}>
-              {yieldTao >= 0 ? '+' : ''}{yieldTao.toFixed(2)} τ
+        {/* Logo + Name */}
+        <td className="px-4 py-2.5">
+          <div className="flex items-center gap-2.5">
+            <SubnetLogo
+              logoUrl={enriched?.identity?.logo_url}
+              rootLogoUrl={rootLogoUrl}
+              netuid={position.netuid}
+            />
+            <div>
+              <div className="font-medium text-sm text-white truncate max-w-[140px]">{position.subnet_name || `SN${position.netuid}`}</div>
+              <div className="text-xs text-[#8a8f98]">
+                SN{position.netuid}
+                {showWalletBadge && position.wallet_address && (
+                  <span className="ml-1.5 text-[10px] text-[#6b7280]" title={position.wallet_address}>
+                    {`${position.wallet_address.slice(0, 6)}…${position.wallet_address.slice(-5)}`}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
+        </td>
 
-          {/* Alpha */}
-          <div className="text-center">
-            <div className="text-xs text-[#8a8f98]">Alpha</div>
-            <div className={`text-sm tabular-nums ${pnlColor(alphaPnlTao)}`}>
-              {alphaPnlTao >= 0 ? '+' : ''}{alphaPnlTao.toFixed(2)} τ
+        {/* Sparkline */}
+        {isColVisible('sparkline') && (
+          <td className="px-4 py-2.5 text-center">
+            <div className="w-36 mx-auto">
+              <SparklineCell data={v?.sparkline_7d} />
             </div>
-          </div>
+          </td>
+        )}
 
-          {/* Profit/Loss */}
-          <div className="text-center">
-            <div className="text-xs text-[#8a8f98]">P&L</div>
+        {/* 24h / 7d Change */}
+        {isColVisible('change') && (
+          <td className="px-4 py-2.5 text-center">
+            <PriceChangeCell
+              change24h={v?.price_change_24h}
+              change7d={v?.price_change_7d}
+            />
+          </td>
+        )}
+
+        {/* Value (USD) */}
+        {isColVisible('value') && (
+          <td className="px-4 py-2.5 text-center">
+            <div className="text-sm tabular-nums text-[#8a8f98]">${currentValueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+          </td>
+        )}
+
+        {/* % of Stake */}
+        {isColVisible('weight') && (
+          <td className="px-4 py-2.5 text-center">
+            <div className="text-sm tabular-nums text-[#8a8f98]">{safeFloat(position.weight_pct).toFixed(1)}%</div>
+          </td>
+        )}
+
+        {/* TAO */}
+        {isColVisible('tao') && (
+          <td className="px-4 py-2.5 text-center">
+            <div className="text-sm tabular-nums text-[#8a8f98]">{taoValue.toFixed(2)} τ</div>
+          </td>
+        )}
+
+        {/* Yield */}
+        {isColVisible('yield') && (
+          <td className="px-4 py-2.5 text-center">
+            <div className="text-sm tabular-nums text-[#8a8f98]">
+              {yieldTao.toFixed(2)} τ
+            </div>
+          </td>
+        )}
+
+        {/* Alpha */}
+        {isColVisible('alpha') && (
+          <td className="px-4 py-2.5 text-center">
+            <div className="text-sm tabular-nums text-[#8a8f98]">
+              {alphaPnlTao.toFixed(2)} τ
+            </div>
+          </td>
+        )}
+
+        {/* P&L */}
+        {isColVisible('pnl') && (
+          <td className="px-4 py-2.5 text-center">
             <div className={`text-sm tabular-nums ${pnlColor(unrealizedPnl)}`}>
-              {unrealizedPnl >= 0 ? '+' : ''}{unrealizedPnl.toFixed(2)} τ
+              {unrealizedPnl.toFixed(2)} τ
             </div>
-          </div>
+          </td>
+        )}
 
-          {/* APY */}
-          <div className="text-center">
-            <div className="text-xs text-[#8a8f98]">APY</div>
-            <div className="text-sm tabular-nums text-white">{apy > 0 ? `${apy.toFixed(2)}%` : '--'}</div>
-          </div>
+        {/* APY */}
+        {isColVisible('apy') && (
+          <td className="px-4 py-2.5 text-center">
+            <div className="text-sm tabular-nums text-[#8a8f98]">{apy > 0 ? `${apy.toFixed(2)}%` : '--'}</div>
+          </td>
+        )}
 
-          {/* Viability */}
-          <div className="text-center">
-            <div className="text-xs text-[#8a8f98]">Viability</div>
+        {/* Viability */}
+        {isColVisible('viability') && (
+          <td className="px-4 py-2.5 text-center">
             <ViabilityBadge tier={enriched?.viability_tier} score={enriched?.viability_score} />
-          </div>
+          </td>
+        )}
 
-          {/* Regime */}
-          <div className="text-center">
-            <div className="text-xs text-[#8a8f98]">Regime</div>
+        {/* Regime */}
+        {isColVisible('regime') && (
+          <td className="px-4 py-2.5 text-center">
             <RegimeBadge regime={position.flow_regime} />
-          </div>
-        </div>
-      </div>
+          </td>
+        )}
+
+        {/* Validator */}
+        {isColVisible('validator') && (
+          <td className="px-4 py-2.5 text-center">
+            <span className="text-sm text-[#8a8f98] truncate max-w-[140px] inline-block">
+              {position.validator_name || (position.validator_hotkey ? `${position.validator_hotkey.slice(0, 8)}...` : '--')}
+            </span>
+          </td>
+        )}
+      </tr>
 
       {/* Expanded detail */}
       {isExpanded && (
-        <div className="border-t border-[#2a2f38]">
-          <DashboardPositionDetail position={position} enriched={enriched} taoPrice={taoPrice} />
-        </div>
+        <tr>
+          <td colSpan={colSpan} className="p-0 border-t border-[#2a2f38]">
+            <DashboardPositionDetail position={position} enriched={enriched} taoPrice={taoPrice} />
+          </td>
+        </tr>
       )}
-    </div>
+    </>
   )
 }
 
-function ClosedPositionCard({
+function ClosedPositionRow({
   position,
   enriched,
   rootLogoUrl,
@@ -611,79 +1003,57 @@ function ClosedPositionCard({
   const pnlColor = pnl >= 0 ? 'text-green-400' : 'text-red-400'
 
   return (
-    <div className="bg-[#16181d] rounded-lg border border-[#2a2f38] overflow-hidden opacity-70">
-      {/* Single row layout */}
-      <div className="flex items-center gap-3 px-4 py-2.5">
-        {/* Spacer for alignment with open positions */}
-        <div className="w-4 flex-shrink-0" />
-
-        {/* Logo */}
-        <SubnetLogo
-          logoUrl={enriched?.identity?.logo_url}
-          rootLogoUrl={rootLogoUrl}
-          netuid={position.netuid}
-          dimmed
-        />
-
-        {/* Name + SN + Closed badge */}
-        <div className="w-28 flex-shrink-0">
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-sm text-white truncate">{position.subnet_name || `SN${position.netuid}`}</span>
-          </div>
-          <div className="text-xs text-[#6b7280] flex items-center gap-1.5">
-            SN{position.netuid}
-            <span className="px-1.5 py-0.5 rounded bg-[#1e2128] text-[#8a8f98]">Closed</span>
+    <tr>
+      {/* Logo + Name */}
+      <td className="px-4 py-2.5">
+        <div className="flex items-center gap-2.5">
+          <SubnetLogo
+            logoUrl={enriched?.identity?.logo_url}
+            rootLogoUrl={rootLogoUrl}
+            netuid={position.netuid}
+            dimmed
+          />
+          <div>
+            <div className="font-medium text-sm text-white truncate max-w-[140px]">{position.subnet_name || `SN${position.netuid}`}</div>
+            <div className="text-xs text-[#6b7280] flex items-center gap-1.5">
+              SN{position.netuid}
+              <span className="px-1.5 py-0.5 rounded bg-[#1e2128] text-[#8a8f98] text-[10px]">Closed</span>
+            </div>
           </div>
         </div>
+      </td>
 
-        {/* Spacer to align with sparkline column */}
-        <div className="w-44 flex-shrink-0" />
+      {/* Staked */}
+      <td className="px-4 py-2.5 text-center">
+        <div className="text-sm tabular-nums text-[#8a8f98]">{staked.toFixed(2)} τ</div>
+      </td>
 
-        {/* Data columns - evenly spaced grid (matching open positions), all centered */}
-        <div className="flex-1 grid grid-cols-8 gap-2">
-          {/* Total Staked */}
-          <div className="text-center">
-            <div className="text-xs text-[#8a8f98]">Staked</div>
-            <div className="text-sm tabular-nums text-white">{staked.toFixed(2)} τ</div>
-          </div>
+      {/* Returned */}
+      <td className="px-4 py-2.5 text-center">
+        <div className="text-sm tabular-nums text-[#8a8f98]">{safeFloat(position.total_unstaked_tao).toFixed(2)} τ</div>
+      </td>
 
-          {/* Total Returned */}
-          <div className="text-center">
-            <div className="text-xs text-[#8a8f98]">Returned</div>
-            <div className="text-sm tabular-nums text-white">{safeFloat(position.total_unstaked_tao).toFixed(2)} τ</div>
-          </div>
-
-          {/* Realized P&L */}
-          <div className="text-center">
-            <div className="text-xs text-[#8a8f98]">P&L</div>
-            <div className={`text-sm tabular-nums ${pnlColor}`}>
-              {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)} τ
-            </div>
-          </div>
-
-          {/* Opened Date */}
-          <div className="text-center">
-            <div className="text-xs text-[#8a8f98]">Opened</div>
-            <div className="text-sm tabular-nums text-white">
-              {position.first_entry ? new Date(position.first_entry).toLocaleDateString() : '--'}
-            </div>
-          </div>
-
-          {/* Closed Date */}
-          <div className="text-center">
-            <div className="text-xs text-[#8a8f98]">Closed</div>
-            <div className="text-sm tabular-nums text-white">
-              {position.last_trade ? new Date(position.last_trade).toLocaleDateString() : '--'}
-            </div>
-          </div>
-
-          {/* Empty columns to match open position grid */}
-          <div />
-          <div />
-          <div />
+      {/* P&L */}
+      <td className="px-4 py-2.5 text-center">
+        <div className={`text-sm tabular-nums ${pnlColor}`}>
+          {pnl.toFixed(2)} τ
         </div>
-      </div>
-    </div>
+      </td>
+
+      {/* Opened */}
+      <td className="px-4 py-2.5 text-center">
+        <div className="text-sm tabular-nums text-[#8a8f98]">
+          {position.first_entry ? new Date(position.first_entry).toLocaleDateString() : '--'}
+        </div>
+      </td>
+
+      {/* Closed */}
+      <td className="px-4 py-2.5 text-center">
+        <div className="text-sm tabular-nums text-[#8a8f98]">
+          {position.last_trade ? new Date(position.last_trade).toLocaleDateString() : '--'}
+        </div>
+      </td>
+    </tr>
   )
 }
 

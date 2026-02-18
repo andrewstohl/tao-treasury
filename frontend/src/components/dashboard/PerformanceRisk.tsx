@@ -21,7 +21,7 @@ export default function PerformanceRisk() {
 
   const { data: overview } = useQuery<PortfolioOverview>({
     queryKey: ['portfolio-overview'],
-    queryFn: api.getPortfolioOverview,
+    queryFn: () => api.getPortfolioOverview(),
     refetchInterval: 120000,  // 2 min - reduced to avoid rate limits
   })
 

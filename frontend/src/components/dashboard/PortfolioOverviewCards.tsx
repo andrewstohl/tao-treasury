@@ -46,12 +46,12 @@ function DualValue({
   )
 }
 
-export default function PortfolioOverviewCards() {
+export default function PortfolioOverviewCards({ wallet }: { wallet?: string }) {
   const { currency, toggleCurrency } = useCurrency()
 
   const { data: overview, isLoading } = useQuery<PortfolioOverview>({
-    queryKey: ['portfolio-overview'],
-    queryFn: api.getPortfolioOverview,
+    queryKey: ['portfolio-overview', wallet],
+    queryFn: () => api.getPortfolioOverview(wallet),
     refetchInterval: 120000,  // 2 min - reduced to avoid rate limits
   })
 
@@ -144,7 +144,7 @@ export default function PortfolioOverviewCards() {
           <div className="mt-2.5 pt-2.5 border-t border-[#2a2f38] flex justify-between">
             <div>
               <div className="text-xs text-[#8a8f98]">Realized</div>
-              <div className={`tabular-nums text-sm ${pnlColor(safeFloat(overview.yield_income.realized_yield.tao))}`}>
+              <div className="tabular-nums text-sm text-white">
                 {currency === 'tao'
                   ? `${formatTaoShort(overview.yield_income.realized_yield.tao)}τ`
                   : formatUsd(overview.yield_income.realized_yield.usd)}
@@ -152,7 +152,7 @@ export default function PortfolioOverviewCards() {
             </div>
             <div>
               <div className="text-xs text-[#8a8f98]">Unrealized</div>
-              <div className={`tabular-nums text-sm ${pnlColor(safeFloat(overview.yield_income.unrealized_yield.tao))}`}>
+              <div className="tabular-nums text-sm text-white">
                 {currency === 'tao'
                   ? `${formatTaoShort(overview.yield_income.unrealized_yield.tao)}τ`
                   : formatUsd(overview.yield_income.unrealized_yield.usd)}
@@ -177,13 +177,13 @@ export default function PortfolioOverviewCards() {
           <div className="mt-2.5 pt-2.5 border-t border-[#2a2f38] flex justify-between">
             <div>
               <div className="text-xs text-[#8a8f98]">Realized</div>
-              <div className={`tabular-nums text-sm ${pnlColor(realizedAlphaTao)}`}>
+              <div className="tabular-nums text-sm text-white">
                 {currency === 'tao' ? `${formatTaoShort(realizedAlphaTao)}τ` : formatUsd(realizedAlphaUsd)}
               </div>
             </div>
             <div>
               <div className="text-xs text-[#8a8f98]">Unrealized</div>
-              <div className={`tabular-nums text-sm ${pnlColor(unrealizedAlphaTao)}`}>
+              <div className="tabular-nums text-sm text-white">
                 {currency === 'tao' ? `${formatTaoShort(unrealizedAlphaTao)}τ` : formatUsd(unrealizedAlphaUsd)}
               </div>
             </div>
@@ -207,13 +207,13 @@ export default function PortfolioOverviewCards() {
           <div className="mt-2.5 pt-2.5 border-t border-[#2a2f38] flex justify-between">
             <div>
               <div className="text-xs text-[#8a8f98]">7d Proj.</div>
-              <div className="tabular-nums text-sm text-green-400">
+              <div className="tabular-nums text-sm text-white">
                 {formatTaoShort(overview.yield_income.weekly.tao)}τ
               </div>
             </div>
             <div>
               <div className="text-xs text-[#8a8f98]">30d Proj.</div>
-              <div className="tabular-nums text-sm text-green-400">
+              <div className="tabular-nums text-sm text-white">
                 {formatTaoShort(overview.yield_income.monthly.tao)}τ
               </div>
             </div>
@@ -240,7 +240,6 @@ export default function PortfolioOverviewCards() {
                 {formatUsd(overview.conversion_exposure.total_pnl_usd)}
               </div>
               <div className="text-xs text-[#8a8f98] tabular-nums">
-                {safeFloat(overview.conversion_exposure.total_pnl_pct) >= 0 ? '+' : ''}
                 {safeFloat(overview.conversion_exposure.total_pnl_pct).toFixed(1)}%
               </div>
             </div>

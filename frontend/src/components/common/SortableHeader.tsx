@@ -8,7 +8,7 @@ interface SortableHeaderProps<K extends string> {
   currentSortKey: K | null
   currentDirection: SortDirection
   onSort: (key: K) => void
-  align?: 'left' | 'right'
+  align?: 'left' | 'center' | 'right'
 }
 
 export default function SortableHeader<K extends string>({
@@ -23,12 +23,12 @@ export default function SortableHeader<K extends string>({
 
   return (
     <th
-      className={`px-4 py-3 text-xs font-medium text-[#6f87a0] uppercase tracking-wider cursor-pointer hover:bg-[#1a2d42]/50 select-none ${
-        align === 'right' ? 'text-right' : 'text-left'
+      className={`px-4 py-3 text-xs font-medium text-white uppercase tracking-wider cursor-pointer hover:bg-[#1a2d42]/50 select-none ${
+        align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : 'text-left'
       }`}
       onClick={() => onSort(sortKey)}
     >
-      <div className={`flex items-center gap-1 ${align === 'right' ? 'justify-end' : ''}`}>
+      <div className={`flex items-center gap-1 ${align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : ''}`}>
         <span>{label}</span>
         <span className="text-[#5a7a94]">
           {isActive ? (

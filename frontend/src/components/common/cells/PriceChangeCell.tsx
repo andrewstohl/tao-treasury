@@ -5,7 +5,7 @@ interface PriceChangeCellProps {
 
 function formatChange(val: number | null | undefined): string {
   if (val == null || isNaN(val)) return '--'
-  return `${val >= 0 ? '+' : ''}${val.toFixed(2)}%`
+  return `${val.toFixed(2)}%`
 }
 
 function changeColor(val: number | null | undefined): string {
@@ -15,10 +15,10 @@ function changeColor(val: number | null | undefined): string {
 
 export default function PriceChangeCell({ change24h, change7d }: PriceChangeCellProps) {
   return (
-    <div className="text-right text-sm tabular-nums leading-tight">
+    <div className="text-center text-sm tabular-nums leading-tight">
       <div className={changeColor(change24h)}>{formatChange(change24h)}</div>
       {change7d !== undefined && (
-        <div className={`text-xs ${changeColor(change7d)}`}>{formatChange(change7d)}</div>
+        <div className={`text-sm ${changeColor(change7d)}`}>{formatChange(change7d)}</div>
       )}
     </div>
   )

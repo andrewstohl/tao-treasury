@@ -24,6 +24,10 @@ export default function PositionKPICards({ position, enriched, taoPrice }: Posit
   const alphaPnlTao = safeFloat(position.unrealized_alpha_pnl_tao)
   const realizedAlphaPnlTao = safeFloat(position.realized_alpha_pnl_tao)
 
+  // Totals (matching portfolio-level cards: headline = realized + unrealized)
+  const totalYieldTao = realizedYieldTao + yieldValueTao
+  const totalAlphaPnlTao = realizedAlphaPnlTao + alphaPnlTao
+
   // USD conversions
   const taoValueUsd = taoValue * taoPrice
   const unrealizedPnlUsd = unrealizedPnl * taoPrice
@@ -32,6 +36,8 @@ export default function PositionKPICards({ position, enriched, taoPrice }: Posit
   const alphaPnlUsd = alphaPnlTao * taoPrice
   const realizedYieldUsd = realizedYieldTao * taoPrice
   const realizedAlphaPnlUsd = realizedAlphaPnlTao * taoPrice
+  const totalYieldUsd = totalYieldTao * taoPrice
+  const totalAlphaPnlUsd = totalAlphaPnlTao * taoPrice
 
   // Projections
   const weeklyYield = dailyYield * 7
@@ -45,7 +51,7 @@ export default function PositionKPICards({ position, enriched, taoPrice }: Posit
   return (
     <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
       {/* Card 1: Current Value */}
-      <div className="bg-[#16181d] rounded-lg p-4 border border-[#2a2f38]">
+      <div className="bg-[#1e2128] rounded-lg p-4">
         <div className="flex items-start justify-between">
           <div className="text-sm font-medium text-white">Current Value</div>
           <div className="text-right">
@@ -81,15 +87,15 @@ export default function PositionKPICards({ position, enriched, taoPrice }: Posit
       </div>
 
       {/* Card 2: Yield */}
-      <div className="bg-[#16181d] rounded-lg p-4 border border-[#2a2f38]">
+      <div className="bg-[#1e2128] rounded-lg p-4">
         <div className="flex items-start justify-between">
           <div className="text-sm font-medium text-white">Yield</div>
           <div className="text-right">
             <div className="text-sm font-bold text-white">
-              {currency === 'tao' ? `${formatTaoShort(yieldValueTao)}τ` : formatUsd(yieldValueUsd)}
+              {currency === 'tao' ? `${formatTaoShort(totalYieldTao)}τ` : formatUsd(totalYieldUsd)}
             </div>
             <div className="text-xs text-[#8a8f98]">
-              {currency === 'tao' ? formatUsd(yieldValueUsd) : `${formatTaoShort(yieldValueTao)}τ`}
+              {currency === 'tao' ? formatUsd(totalYieldUsd) : `${formatTaoShort(totalYieldTao)}τ`}
             </div>
           </div>
         </div>
@@ -97,13 +103,13 @@ export default function PositionKPICards({ position, enriched, taoPrice }: Posit
         <div className="mt-2.5 pt-2.5 border-t border-[#2a2f38] flex justify-between">
           <div>
             <div className="text-xs text-[#8a8f98]">Realized</div>
-            <div className={`tabular-nums text-sm ${pnlColor(realizedYieldTao)}`}>
+            <div className="tabular-nums text-sm text-white">
               {formatPrimary(realizedYieldTao, realizedYieldUsd)}
             </div>
           </div>
           <div>
             <div className="text-xs text-[#8a8f98]">Unrealized</div>
-            <div className={`tabular-nums text-sm ${pnlColor(yieldValueTao)}`}>
+            <div className="tabular-nums text-sm text-white">
               {formatPrimary(yieldValueTao, yieldValueUsd)}
             </div>
           </div>
@@ -111,15 +117,15 @@ export default function PositionKPICards({ position, enriched, taoPrice }: Posit
       </div>
 
       {/* Card 3: Alpha (Price) */}
-      <div className="bg-[#16181d] rounded-lg p-4 border border-[#2a2f38]">
+      <div className="bg-[#1e2128] rounded-lg p-4">
         <div className="flex items-start justify-between">
           <div className="text-sm font-medium text-white">Alpha</div>
           <div className="text-right">
             <div className="text-sm font-bold text-white">
-              {currency === 'tao' ? `${formatTaoShort(alphaPnlTao)}τ` : formatUsd(alphaPnlUsd)}
+              {currency === 'tao' ? `${formatTaoShort(totalAlphaPnlTao)}τ` : formatUsd(totalAlphaPnlUsd)}
             </div>
             <div className="text-xs text-[#8a8f98]">
-              {currency === 'tao' ? formatUsd(alphaPnlUsd) : `${formatTaoShort(alphaPnlTao)}τ`}
+              {currency === 'tao' ? formatUsd(totalAlphaPnlUsd) : `${formatTaoShort(totalAlphaPnlTao)}τ`}
             </div>
           </div>
         </div>
@@ -127,13 +133,13 @@ export default function PositionKPICards({ position, enriched, taoPrice }: Posit
         <div className="mt-2.5 pt-2.5 border-t border-[#2a2f38] flex justify-between">
           <div>
             <div className="text-xs text-[#8a8f98]">Realized</div>
-            <div className={`tabular-nums text-sm ${pnlColor(realizedAlphaPnlTao)}`}>
+            <div className="tabular-nums text-sm text-white">
               {formatPrimary(realizedAlphaPnlTao, realizedAlphaPnlUsd)}
             </div>
           </div>
           <div>
             <div className="text-xs text-[#8a8f98]">Unrealized</div>
-            <div className={`tabular-nums text-sm ${pnlColor(alphaPnlTao)}`}>
+            <div className="tabular-nums text-sm text-white">
               {formatPrimary(alphaPnlTao, alphaPnlUsd)}
             </div>
           </div>
@@ -141,7 +147,7 @@ export default function PositionKPICards({ position, enriched, taoPrice }: Posit
       </div>
 
       {/* Card 4: APY */}
-      <div className="bg-[#16181d] rounded-lg p-4 border border-[#2a2f38]">
+      <div className="bg-[#1e2128] rounded-lg p-4">
         <div className="flex items-start justify-between">
           <div className="text-sm font-medium text-white">APY</div>
           <div className="text-right">
@@ -171,7 +177,7 @@ export default function PositionKPICards({ position, enriched, taoPrice }: Posit
       </div>
 
       {/* Card 5: Position Details */}
-      <div className="bg-[#16181d] rounded-lg p-4 border border-[#2a2f38]">
+      <div className="bg-[#1e2128] rounded-lg p-4">
         <div className="flex items-start justify-between">
           <div className="text-sm font-medium text-white">Position</div>
           <div className="text-right">

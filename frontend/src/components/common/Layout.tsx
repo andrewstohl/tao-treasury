@@ -73,7 +73,7 @@ export default function Layout({ children }: LayoutProps) {
 
   const { data: overview } = useQuery<PortfolioOverview>({
     queryKey: ['portfolio-overview'],
-    queryFn: api.getPortfolioOverview,
+    queryFn: () => api.getPortfolioOverview(),
     refetchInterval: 120000,  // 2 min - reduced to avoid rate limits
   })
 
@@ -118,7 +118,7 @@ export default function Layout({ children }: LayoutProps) {
             to="/"
             className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
               location.pathname === '/'
-                ? 'bg-[#2a3ded]/20 text-[#2a3ded]'
+                ? 'bg-[#2a3ded] text-white'
                 : 'text-[#9ca3af] hover:bg-[#2a3ded]/10 hover:text-[#2a3ded]'
             }`}
           >
@@ -130,7 +130,7 @@ export default function Layout({ children }: LayoutProps) {
             to="/subnets"
             className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
               location.pathname === '/subnets' || location.pathname.startsWith('/subnets/')
-                ? 'bg-[#2a3ded]/20 text-[#2a3ded]'
+                ? 'bg-[#2a3ded] text-white'
                 : 'text-[#9ca3af] hover:bg-[#2a3ded]/10 hover:text-[#2a3ded]'
             }`}
           >
@@ -143,7 +143,7 @@ export default function Layout({ children }: LayoutProps) {
               onClick={() => setAnalyzeOpen(!analyzeOpen)}
               className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
                 isAnalyzeActive
-                  ? 'bg-[#2a3ded]/20 text-[#2a3ded]'
+                  ? 'bg-[#2a3ded] text-white'
                   : 'text-[#9ca3af] hover:bg-[#2a3ded]/10 hover:text-[#2a3ded]'
               }`}
             >
@@ -165,7 +165,7 @@ export default function Layout({ children }: LayoutProps) {
                       onClick={() => setAnalyzeOpen(false)}
                       className={`flex items-center gap-2 px-4 py-2 text-sm transition-colors ${
                         isActive
-                          ? 'bg-[#2a3ded]/20 text-[#2a3ded]'
+                          ? 'bg-[#2a3ded] text-white'
                           : 'text-[#9ca3af] hover:bg-[#2a3ded]/10 hover:text-[#2a3ded]'
                       }`}
                     >
@@ -183,7 +183,7 @@ export default function Layout({ children }: LayoutProps) {
             to="/settings"
             className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
               location.pathname === '/settings'
-                ? 'bg-[#2a3ded]/20 text-[#2a3ded]'
+                ? 'bg-[#2a3ded] text-white'
                 : 'text-[#9ca3af] hover:bg-[#2a3ded]/10 hover:text-[#2a3ded]'
             }`}
           >

@@ -42,13 +42,15 @@ export const api = {
     return data
   },
 
-  getDashboard: async () => {
-    const { data } = await client.get('/api/v1/portfolio/dashboard')
+  getDashboard: async (wallet?: string) => {
+    const params = wallet ? `?wallet=${encodeURIComponent(wallet)}` : ''
+    const { data } = await client.get(`/api/v1/portfolio/dashboard${params}`)
     return data
   },
 
-  getPortfolioOverview: async () => {
-    const { data } = await client.get('/api/v1/portfolio/overview')
+  getPortfolioOverview: async (wallet?: string) => {
+    const params = wallet ? `?wallet=${encodeURIComponent(wallet)}` : ''
+    const { data } = await client.get(`/api/v1/portfolio/overview${params}`)
     return data
   },
 
