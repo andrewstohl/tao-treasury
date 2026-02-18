@@ -22,7 +22,6 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
 from app.core.database import get_db_context
 from app.models.position import Position
 from app.services.data.taostats_client import taostats_client, TaoStatsError
@@ -31,17 +30,15 @@ logger = structlog.get_logger()
 
 
 def compute_unrealized_decomposition(position) -> None:
-    """Pure math: compute unrealized PnL decomposition from Position fields.
+    """Compute unrealized PnL decomposition from Position fields.
 
-    No API calls. Enforces ledger identity by construction:
-        unrealized_pnl = tao_value_mid - effective_cost_basis
-        unrealized_alpha_pnl = effective_alpha_purchased * (current_price - entry_price)
-        unrealized_yield = unrealized_pnl - unrealized_alpha_pnl  (residual)
+    Uses net-invested cost basis (matches TaoStats):
+        unrealized_pnl = tao_value_mid - cost_basis_tao
 
-    Stale-FIFO handling: When the accounting API hasn't indexed a recent unstake,
-    alpha_purchased > alpha_balance (FIFO still has lots for sold alpha). We use
-    LOCAL effective values for decomposition only — FIFO-owned DB fields are NEVER
-    modified here. When the FIFO catches up, it overwrites with authoritative values.
+    Yield decomposition:
+        emission_remaining = min(total_yield_alpha, alpha_balance)
+        unrealized_yield = emission_remaining * current_price
+        unrealized_alpha_pnl = unrealized_pnl - unrealized_yield  (residual)
 
     For inactive positions (alpha_balance <= 0), all unrealized fields are zeroed.
     """
@@ -54,8 +51,6 @@ def compute_unrealized_decomposition(position) -> None:
         return
 
     cost_basis = position.cost_basis_tao or Decimal("0")
-    alpha_purchased = position.alpha_purchased or Decimal("0")
-    entry_price = position.entry_price_tao or Decimal("0")
     alpha_balance = position.alpha_balance
     current_alpha_price = (
         position.tao_value_mid / alpha_balance
@@ -63,42 +58,17 @@ def compute_unrealized_decomposition(position) -> None:
         else Decimal("0")
     )
 
-    # Stale-FIFO detection: FIFO thinks more purchased alpha remains than
-    # actual balance (unstake not yet indexed by accounting API).
-    # Use effective local values for decomposition only — do NOT write back
-    # to cost_basis_tao or alpha_purchased.
-    if alpha_purchased > alpha_balance and alpha_purchased > 0:
-        # Stale FIFO: recent unstake not indexed. Estimate purchased alpha
-        # by subtracting emission alpha held from total balance.
-        # total_yield_alpha (sum of daily_income from API) is the total
-        # emission earned. It's an upper bound for emission currently held
-        # (some may have been sold in past unstakes). This is conservative:
-        # overestimating emission → less alpha_pnl → more yield.
-        total_yield = getattr(position, 'total_yield_alpha', None) or Decimal("0")
-        emission_held_estimate = min(total_yield, alpha_balance)
-        effective_purchased = max(alpha_balance - emission_held_estimate, Decimal("0"))
-        # Scale cost proportionally to the fraction of purchased alpha remaining
-        effective_cost = cost_basis * (effective_purchased / alpha_purchased)
-    else:
-        # Normal case: FIFO is current. alpha_purchased <= alpha_balance.
-        effective_purchased = alpha_purchased
-        effective_cost = cost_basis
+    # Unrealized P&L = current value - net invested
+    pnl = position.tao_value_mid - cost_basis if cost_basis > 0 else Decimal("0")
+    pnl_pct = (pnl / cost_basis * 100) if cost_basis > 0 else Decimal("0")
 
-    pnl = position.tao_value_mid - effective_cost if effective_cost > 0 else Decimal("0")
-    pnl_pct = (pnl / effective_cost * 100) if effective_cost > 0 else Decimal("0")
-    alpha_pnl = (
-        effective_purchased * (current_alpha_price - entry_price)
-        if effective_purchased > 0 and entry_price > 0
-        else Decimal("0")
-    )
+    # Yield: emission alpha still held * current price
+    total_yield = getattr(position, 'total_yield_alpha', None) or Decimal("0")
+    emission_remaining = min(total_yield, alpha_balance)
+    unrealized_yield = emission_remaining * current_alpha_price
 
-    # Yield is the residual: pnl - alpha_pnl. Floor at 0 because yield
-    # (emission income) cannot be negative. In rare edge cases the emission
-    # estimate may be slightly off, so clamping prevents impossible negatives.
-    unrealized_yield = pnl - alpha_pnl
-    if unrealized_yield < 0:
-        unrealized_yield = Decimal("0")
-        alpha_pnl = pnl  # preserve identity: pnl = alpha_pnl + yield
+    # Alpha P&L is the residual (can be negative if alpha price dropped)
+    alpha_pnl = pnl - unrealized_yield
 
     position.unrealized_pnl_tao = pnl
     position.unrealized_pnl_pct = pnl_pct
@@ -117,22 +87,32 @@ class YieldTrackerService:
     """
 
     def __init__(self):
-        self._wallet_address = None
+        pass
 
-    @property
-    def wallet_address(self):
-        if self._wallet_address is None:
-            settings = get_settings()
-            self._wallet_address = settings.wallet_address
-        return self._wallet_address
+    async def _get_active_wallets(self) -> List[str]:
+        """Get list of active wallet addresses from database."""
+        from app.models.wallet import Wallet
+        async with get_db_context() as db:
+            stmt = select(Wallet.address).where(Wallet.is_active == True)  # noqa: E712
+            result = await db.execute(stmt)
+            return [row[0] for row in result.fetchall()]
 
-    async def compute_all_position_yields(self) -> Dict[str, Any]:
+    async def compute_all_position_yields(self, wallet_address: Optional[str] = None) -> Dict[str, Any]:
         """Compute yield for all open positions using accounting/tax API.
+
+        Args:
+            wallet_address: Specific wallet to process. If None, processes all active wallets.
 
         Returns:
             Dict with processing results
         """
-        logger.info("Computing yields from accounting/tax API")
+        # Resolve wallets to process
+        if wallet_address:
+            wallets = [wallet_address]
+        else:
+            wallets = await self._get_active_wallets()
+
+        logger.info("Computing yields from accounting/tax API", wallets=wallets)
 
         results = {
             "positions_processed": 0,
@@ -141,52 +121,53 @@ class YieldTrackerService:
             "errors": [],
         }
 
-        try:
-            async with get_db_context() as db:
-                # Get all open positions
-                stmt = select(Position).where(
-                    Position.wallet_address == self.wallet_address
-                )
-                result = await db.execute(stmt)
-                positions = result.scalars().all()
+        for wallet in wallets:
+            try:
+                async with get_db_context() as db:
+                    # Get all open positions
+                    stmt = select(Position).where(
+                        Position.wallet_address == wallet
+                    )
+                    result = await db.execute(stmt)
+                    positions = result.scalars().all()
 
-                for position in positions:
-                    try:
-                        yield_data = await self._compute_position_yield(
-                            db, position
-                        )
-                        if yield_data:
-                            results["positions_processed"] += 1
-                            results["total_yield_alpha"] += yield_data.get(
-                                "total_yield_alpha", Decimal("0")
+                    for position in positions:
+                        try:
+                            yield_data = await self._compute_position_yield(
+                                db, position, wallet
                             )
-                            results["total_yield_tao"] += yield_data.get(
-                                "unrealized_yield_tao", Decimal("0")
+                            if yield_data:
+                                results["positions_processed"] += 1
+                                results["total_yield_alpha"] += yield_data.get(
+                                    "total_yield_alpha", Decimal("0")
+                                )
+                                results["total_yield_tao"] += yield_data.get(
+                                    "unrealized_yield_tao", Decimal("0")
+                                )
+                        except Exception as e:
+                            logger.error(
+                                "Failed to compute yield for position",
+                                netuid=position.netuid,
+                                error=str(e),
                             )
-                    except Exception as e:
-                        logger.error(
-                            "Failed to compute yield for position",
-                            netuid=position.netuid,
-                            error=str(e),
-                        )
-                        results["errors"].append(f"SN{position.netuid}: {str(e)}")
+                            results["errors"].append(f"SN{position.netuid}: {str(e)}")
 
-                await db.commit()
+                    await db.commit()
 
-            logger.info(
-                "Yield computation completed",
-                positions=results["positions_processed"],
-                total_yield_tao=results["total_yield_tao"],
-            )
+            except Exception as e:
+                logger.error("Yield computation failed", wallet=wallet, error=str(e))
+                results["errors"].append(str(e))
 
-        except Exception as e:
-            logger.error("Yield computation failed", error=str(e))
-            results["errors"].append(str(e))
+        logger.info(
+            "Yield computation completed",
+            positions=results["positions_processed"],
+            total_yield_tao=results["total_yield_tao"],
+        )
 
         return results
 
     async def _compute_position_yield(
-        self, db: AsyncSession, position: Position
+        self, db: AsyncSession, position: Position, wallet_address: str
     ) -> Optional[Dict[str, Any]]:
         """Compute yield for a single position from accounting/tax API.
 
@@ -205,7 +186,7 @@ class YieldTrackerService:
 
         # Fetch accounting data for this alpha token
         # Handle 12-month API limit by fetching from position entry date
-        records = await self._fetch_accounting_records(token, position.entry_date)
+        records = await self._fetch_accounting_records(wallet_address, token, position.entry_date)
 
         # Extract total_yield_alpha from daily_income (authoritative from TaoStats).
         total_yield_alpha = Decimal("0")
@@ -215,11 +196,12 @@ class YieldTrackerService:
                 if daily_income > 0:
                     total_yield_alpha += daily_income
 
+        # Write total_yield_alpha BEFORE decomposition so it uses the fresh value
+        # (decomposition reads position.total_yield_alpha for unindexed buy detection)
+        position.total_yield_alpha = total_yield_alpha
+
         # Compute unrealized decomposition (pure math, no API)
         compute_unrealized_decomposition(position)
-
-        # Write total_yield_alpha from API (the only API-dependent field)
-        position.total_yield_alpha = total_yield_alpha
 
         logger.debug(
             "Computed yield with ledger identity",
@@ -239,13 +221,14 @@ class YieldTrackerService:
         }
 
     async def _fetch_accounting_records(
-        self, token: str, entry_date: Optional[datetime] = None
+        self, wallet_address: str, token: str, entry_date: Optional[datetime] = None
     ) -> List[Dict[str, Any]]:
         """Fetch accounting/tax records for a token.
 
         Handles the 12-month date range limit by chunking requests.
 
         Args:
+            wallet_address: Wallet coldkey to query
             token: Token name (e.g., "SN64")
             entry_date: Position entry date (for historical range)
 
@@ -279,7 +262,7 @@ class YieldTrackerService:
 
             try:
                 records = await taostats_client.get_all_accounting_tax(
-                    coldkey=self.wallet_address,
+                    coldkey=wallet_address,
                     token=token,
                     date_start=current_start.strftime("%Y-%m-%d"),
                     date_end=current_end.strftime("%Y-%m-%d"),

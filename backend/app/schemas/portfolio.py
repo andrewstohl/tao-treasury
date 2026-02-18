@@ -102,6 +102,7 @@ class PositionSummary(BaseModel):
     """Position summary for API responses."""
     netuid: int
     subnet_name: str
+    wallet_address: Optional[str] = None
     tao_value_mid: Decimal = Field(default=Decimal("0"))
     tao_value_exec_50pct: Decimal = Field(default=Decimal("0"))
     tao_value_exec_100pct: Decimal = Field(default=Decimal("0"))
@@ -128,6 +129,8 @@ class PositionSummary(BaseModel):
     exit_slippage_100pct: Decimal = Field(default=Decimal("0"))
     # Status & recommendation
     validator_hotkey: Optional[str] = None
+    validator_name: Optional[str] = None
+    validator_image_url: Optional[str] = None
     recommended_action: Optional[str] = None
     action_reason: Optional[str] = None
     # Subnet context
@@ -142,6 +145,7 @@ class ClosedPositionSummary(BaseModel):
     """Summary of a closed (fully exited) position."""
     netuid: int
     subnet_name: str
+    wallet_address: Optional[str] = None
     total_staked_tao: Decimal = Field(default=Decimal("0"))
     total_unstaked_tao: Decimal = Field(default=Decimal("0"))
     realized_pnl_tao: Decimal = Field(default=Decimal("0"))

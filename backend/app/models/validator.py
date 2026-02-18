@@ -31,6 +31,7 @@ class Validator(Base):
     # Validator identity
     name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     coldkey: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    image_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
 
     # Performance metrics
     vtrust: Mapped[Decimal] = mapped_column(Numeric(10, 6), default=Decimal("0"))

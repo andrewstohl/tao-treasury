@@ -144,22 +144,32 @@ class DataSyncService:
             # Targeted FIFO recomputation for positions with alpha decrease.
             # Runs in ALL tiers so position changes are processed immediately.
             # Adds 1 API call per changed position to the accounting/tax endpoint.
-            decreased_netuids = getattr(self, '_decreased_netuids', set())
-            if decreased_netuids:
+            decreased_positions = getattr(self, '_decreased_positions', set())
+            if decreased_positions:
                 try:
                     from app.services.analysis.cost_basis import cost_basis_service
                     from app.services.analysis.position_metrics import position_metrics_service
 
                     logger.info(
                         "Triggering targeted FIFO for decreased positions",
-                        netuids=list(decreased_netuids),
+                        positions=list(decreased_positions),
                     )
-                    await cost_basis_service.compute_cost_basis_from_accounting(
-                        netuids=list(decreased_netuids)
-                    )
-                    # Copy realized values from PositionCostBasis → Position
-                    await position_metrics_service._compute_realized_metrics()
-                    results["targeted_fifo_netuids"] = list(decreased_netuids)
+                    # Group by wallet so each call gets wallet-specific netuids
+                    wallet_netuids: Dict[str, List[int]] = {}
+                    for wallet, netuid in decreased_positions:
+                        wallet_netuids.setdefault(wallet, []).append(netuid)
+
+                    for wallet, netuids in wallet_netuids.items():
+                        await cost_basis_service.compute_cost_basis_from_accounting(
+                            netuids=netuids, wallet_address=wallet
+                        )
+                        # Copy realized values from PositionCostBasis → Position
+                        await position_metrics_service._compute_realized_metrics(
+                            wallet_address=wallet
+                        )
+                    results["targeted_fifo_positions"] = [
+                        {"wallet": w, "netuids": n} for w, n in wallet_netuids.items()
+                    ]
                 except Exception as e:
                     logger.error("Targeted FIFO recomputation failed", error=str(e))
                     results["errors"].append(f"Targeted FIFO: {str(e)}")
@@ -585,34 +595,34 @@ class DataSyncService:
         Partial failure protection: Validates response before updating.
         Note: Empty positions list may be valid (wallet has no stakes).
 
-        Side effect: populates self._decreased_netuids with netuids where
-        alpha_balance decreased >0.5% or was zeroed out, for targeted FIFO.
+        Side effect: populates self._decreased_positions with (wallet_address, netuid)
+        tuples where alpha_balance decreased >0.5% or was zeroed out, for targeted FIFO.
         """
         wallets = await self.get_active_wallets()
         if not wallets:
             logger.info("No active wallets - skipping position sync")
-            self._decreased_netuids: set[int] = set()
+            self._decreased_positions: set[tuple[str, int]] = set()
             return 0
 
         total_count = 0
-        all_decreased: set[int] = set()
+        all_decreased: set[tuple[str, int]] = set()
         for wallet_address in wallets:
             count, decreased = await self._sync_positions_for_wallet(wallet_address)
             total_count += count
             all_decreased.update(decreased)
 
-        self._decreased_netuids = all_decreased
+        self._decreased_positions = all_decreased
         if all_decreased:
-            logger.info("Positions with alpha decrease detected", netuids=list(all_decreased))
+            logger.info("Positions with alpha decrease detected", positions=list(all_decreased))
 
         _record_sync_status("positions", True, total_count)
         return total_count
 
-    async def _sync_positions_for_wallet(self, wallet_address: str) -> tuple[int, set[int]]:
+    async def _sync_positions_for_wallet(self, wallet_address: str) -> tuple[int, set[tuple[str, int]]]:
         """Sync positions for a single wallet.
 
-        Returns (count, decreased_netuids) where decreased_netuids is the set
-        of netuids where alpha_balance decreased >0.5% or was zeroed out.
+        Returns (count, decreased_positions) where decreased_positions is the set
+        of (wallet_address, netuid) tuples where alpha_balance decreased >0.5% or was zeroed out.
         """
         logger.info("Syncing positions", wallet=wallet_address)
 
@@ -641,7 +651,7 @@ class DataSyncService:
 
             async with get_db_context() as db:
                 count = 0
-                decreased_netuids: set[int] = set()
+                decreased_positions: set[tuple[str, int]] = set()
 
                 # Get current netuids from API
                 api_netuids = set(stakes_by_netuid.keys())
@@ -656,7 +666,7 @@ class DataSyncService:
                     )
                     zeroed_result = await db.execute(zeroed_stmt)
                     zeroed_netuids = {row[0] for row in zeroed_result.fetchall()}
-                    decreased_netuids.update(zeroed_netuids)
+                    decreased_positions.update((wallet_address, n) for n in zeroed_netuids)
 
                     # Zero out positions no longer in the API (inactive).
                     # Positions are NEVER deleted — realized values are preserved.
@@ -689,13 +699,13 @@ class DataSyncService:
                 for netuid, stake_data in stakes_by_netuid.items():
                     position, alpha_decreased = await self._upsert_position(db, wallet_address, stake_data)
                     if alpha_decreased:
-                        decreased_netuids.add(netuid)
+                        decreased_positions.add((wallet_address, netuid))
                     await self._create_position_snapshot(db, wallet_address, stake_data)
                     count += 1
 
                 await db.commit()
-                logger.info("Positions synced", wallet=wallet_address, count=count, decreased_netuids=list(decreased_netuids))
-                return count, decreased_netuids
+                logger.info("Positions synced", wallet=wallet_address, count=count, decreased_positions=list(decreased_positions))
+                return count, decreased_positions
 
         except Exception as e:
             logger.error("Failed to sync positions", wallet=wallet_address, error=str(e))
@@ -761,17 +771,15 @@ class DataSyncService:
         # ============================================================
         # Cost basis handling for position changes
         #
-        # FIFO is the sole authority on cost_basis_tao, alpha_purchased,
-        # entry_price_tao, and all realized P&L fields.
+        # The accounting API (cost_basis_service) is the authority on
+        # cost_basis_tao, alpha_purchased, entry_price_tao, and realized P&L.
+        # cost_basis_tao = net_invested = total_staked - total_unstaked.
         #
         # On UNSTAKES: Do NOT modify cost_basis fields. The caller triggers
-        # a targeted FIFO recomputation instead. If the accounting API hasn't
-        # indexed the transaction yet, the FIFO returns the same stale values
-        # (matching TaoStats), and the decomposition handles it with effective
-        # local values.
+        # a targeted recomputation from the accounting API instead.
         #
-        # On NEW STAKES: Set interim values because the FIFO can't fill the
-        # gap until the API indexes the buy.
+        # On NEW STAKES: Set interim values (add delta_tao to cost_basis)
+        # until the accounting API indexes the buy.
         #
         # Thresholds:
         #   Decrease >0.5%  → unstake (emissions never decrease alpha)
@@ -783,8 +791,8 @@ class DataSyncService:
             change_pct = (alpha_balance - old_alpha) / old_alpha
 
             if change_pct < Decimal("-0.005"):
-                # UNSTAKE: do NOT adjust cost_basis — FIFO is the authority.
-                # Signal the caller to trigger targeted FIFO recomputation.
+                # UNSTAKE: do NOT adjust cost_basis — accounting API recomputes.
+                # Signal the caller to trigger targeted recomputation.
                 alpha_decreased = True
                 logger.info(
                     "Position alpha decreased (unstake detected)",
@@ -905,13 +913,78 @@ class DataSyncService:
 
                 await db.commit()
                 logger.info("Validators synced", count=total_count)
-                _record_sync_status("validators", True, total_count)
-                return total_count
+
+            # Fetch on-chain identity images for validators
+            await self._sync_validator_images()
+
+            _record_sync_status("validators", True, total_count)
+            return total_count
 
         except Exception as e:
             logger.error("Failed to sync validators", error=str(e))
             _record_sync_status("validators", False, 0)
             raise
+
+    async def _sync_validator_images(self) -> None:
+        """Fetch validator images from on-chain identity API and bittensor-delegates registry."""
+        import httpx
+
+        hotkey_image: Dict[str, str] = {}
+
+        # Source 1: TaoStats on-chain identity (has high-quality profile images)
+        try:
+            response = await taostats_client._request(
+                "GET",
+                "/api/identity/latest/v1",
+                params={"limit": 200},
+                cache_key="identity:all",
+                cache_ttl=timedelta(hours=6),
+            )
+            for ident in response.get("data", []):
+                image = ident.get("image")
+                if not image:
+                    continue
+                hk = ident.get("validator_hotkey")
+                if isinstance(hk, dict):
+                    hk = hk.get("ss58")
+                if hk:
+                    hotkey_image[hk] = image
+        except Exception as e:
+            logger.warning("Failed to fetch identity images", error=str(e))
+
+        # Source 2: bittensor-delegates registry (has validator URLs → derive logo)
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(
+                    "https://raw.githubusercontent.com/opentensor/bittensor-delegates/main/public/delegates.json"
+                )
+                if resp.status_code == 200:
+                    delegates = resp.json()
+                    for hk, info in delegates.items():
+                        if hk in hotkey_image:
+                            continue  # identity image takes priority
+                        url = (info.get("url") or "").rstrip("/")
+                        if url:
+                            # Use apple-touch-icon (commonly available, good quality)
+                            hotkey_image[hk] = f"{url}/apple-touch-icon.png"
+        except Exception as e:
+            logger.warning("Failed to fetch delegates.json", error=str(e))
+
+        if not hotkey_image:
+            return
+
+        async with get_db_context() as db:
+            stmt = select(Validator).where(Validator.hotkey.in_(list(hotkey_image.keys())))
+            result = await db.execute(stmt)
+            updated = 0
+            for v in result.scalars().all():
+                url = hotkey_image.get(v.hotkey)
+                if url and v.image_url != url:
+                    v.image_url = url
+                    updated += 1
+            await db.commit()
+            if updated:
+                logger.info("Updated validator images", count=updated)
 
     async def _upsert_validator(self, db: AsyncSession, val_data: Dict) -> Validator:
         """Insert or update validator record from yield endpoint data."""

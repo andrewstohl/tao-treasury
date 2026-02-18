@@ -195,10 +195,10 @@ Each field is written by exactly ONE service. No overrides.
 
 ### Key Design Decisions
 
-- **Targeted FIFO on position changes**: When `sync_positions()` detects alpha_balance decreased >0.5%, `sync_all()` immediately calls `cost_basis_service.compute_cost_basis_from_accounting(netuids=changed)` before the decomposition step. This adds 1 API call per changed position to any sync tier. If the accounting API hasn't indexed the transaction yet, the FIFO returns the same stale values (matching TaoStats), and the decomposition uses effective values locally. On new stakes (increase >2%), interim cost_basis is set at current price (FIFO can't fill the gap until the buy is indexed).
-- **FIFO authority principle**: FIFO-owned fields (`cost_basis_tao`, `alpha_purchased`, `entry_price_tao`, `realized_*`) are ONLY written by `cost_basis_service`. Exception: initial values on first-entry/re-entry/new-stake in `_upsert_position()` (overwritten by FIFO on next run). No other code modifies these fields.
-- **`compute_unrealized_decomposition()`** is a pure math function (zero API calls) that recomputes `unrealized_pnl`, `unrealized_yield`, and `unrealized_alpha_pnl` from cached Position fields. Handles stale FIFO gracefully: when `alpha_purchased > alpha_balance` (API lag after unstake), uses `total_yield_alpha` to estimate emission alpha held, computes `effective_purchased = alpha_balance - emission_estimate` (excludes emission from alpha_pnl), and `effective_cost = cost_basis * (effective_purchased / alpha_purchased)`. Yield is floored at 0 (emission income can never be negative). FIFO-owned DB fields are never modified. This is what makes Tier 1 fast.
-- **`total_yield_alpha`** (from `daily_income` API) is written by yield_tracker in Tier 2 but is **not used by KPI cards or frontend**. KPI yield uses `unrealized_yield_tao` (the residual from ledger identity).
+- **Targeted recomputation on position changes**: When `sync_positions()` detects alpha_balance decreased >0.5%, `sync_all()` immediately calls `cost_basis_service.compute_cost_basis_from_accounting(netuids=changed)` before the decomposition step. This adds 1 API call per changed position to any sync tier. On new stakes (increase >2%), interim cost_basis is set at current price until the accounting API indexes the buy.
+- **Net-invested accounting (TaoStats-style)**: `cost_basis_tao = total_staked - total_unstaked`. Realized P&L uses average cost method (not FIFO lots). `entry_price_tao = total_staked / total_alpha_purchased` (all-time average). These fields are ONLY written by `cost_basis_service`. Exception: initial values on first-entry/re-entry/new-stake in `_upsert_position()` (overwritten on next sync).
+- **`compute_unrealized_decomposition()`** is a pure math function (zero API calls): `unrealized_pnl = tao_value_mid - cost_basis_tao`. Yield decomposition: `unrealized_yield = min(total_yield_alpha, alpha_balance) × current_price`. Alpha P&L is the residual: `alpha_pnl = unrealized_pnl - unrealized_yield`. This is what makes Tier 1 fast.
+- **`total_yield_alpha`** (from `daily_income` API) is written by yield_tracker in Tier 2. Used by decomposition to compute unrealized_yield_tao.
 - **Slippage** is 60-70% of all API calls but only feeds executable NAV, which is not shown on KPI cards.
 
 ### API Endpoint
@@ -222,9 +222,10 @@ Default mode is `refresh`. Frontend: click = refresh, shift+click = full.
 ## KNOWN LIMITATIONS
 
 - **dtao/trade endpoint** misses batch extrinsics (cross-subnet rebalances). Cost basis uses accounting/tax API instead.
-- **Unrealized/realized split differs from TaoStats**: We use FIFO book cost (cost of remaining lots) for unrealized; TaoStats uses net invested (total_staked - total_unstaked). Both produce the same total P&L (unrealized + realized), just split differently. Our FIFO gives a more precise per-position view (better for tax); TaoStats gives a simpler aggregate. Yield matches closely (<1% gap).
-- Positions without accounting data fall back to dtao/trade-based FIFO (may be incomplete).
-- **API lag after position changes**: Between a position change and the accounting/tax API indexing it (typically minutes), the decomposition uses effective values that approximate the yield/alpha split. For unindexed buys (FIFO shows 0 lots but position is active), interim cost_basis is set from current price. TaoStats match is preserved during this window because both systems use the same stale data. The FIFO catches up on the next sync after the API indexes the transaction.
+- Positions without accounting data fall back to dtao/trade-based cost basis (may be incomplete).
+- **API lag after position changes**: Between a position change and the accounting/tax API indexing it (typically minutes), interim cost_basis is set at current price in `_upsert_position()`. The next full sync overwrites with authoritative values from the API.
+- **SN0 (root subnet)**: Accounting API returns 404 for token="SN0". Cost basis relies on dtao/trade fallback or interim values.
+- **Dead positions (e.g., SN28)**: When alpha goes to zero without an unstake event (subnet deregistered), the 10τ loss is captured via cost_basis but no realized P&L from the accounting API.
 
 ---
 
@@ -276,6 +277,37 @@ Default mode is `refresh`. Frontend: click = refresh, shift+click = full.
 - **Fix 1** (`yield_tracker.py`): In stale FIFO case, use `total_yield_alpha` to estimate emission alpha held: `effective_purchased = max(alpha_balance - min(total_yield_alpha, alpha_balance), 0)`. This correctly excludes emission from alpha_pnl calculation. Added yield floor at 0 (emission income cannot be negative).
 - **Fix 2** (`cost_basis.py`): After FIFO processing, when all lots consumed but position active with alpha exceeding emission estimate, set interim cost_basis from current price. `unindexed_alpha = alpha_balance - emission_estimate`, `cost_basis = unindexed_alpha * current_price`. Overwritten when API indexes the buy.
 - **Results after fix**: Chutes yield = +0.95τ (was -0.000). DSperse cost_basis = 9.79τ (was 0), unrealized = +0.11τ. Total yield = 7.60τ (TaoStats: 7.53τ, <1% gap). P&L gap reduced from 1.17τ to 0.13τ (89% reduction). Zero negative yields. Zero ledger identity violations.
+
+### 2026-02-10: Fix yield inflation from unindexed buys (partial FIFO case)
+- **Problem**: Adding ~13τ to Chutes (SN64) caused yield to jump from ~4τ to +14.18τ. The new stake's alpha was in `alpha_balance` (1019α) but the accounting API hadn't indexed the buy, so FIFO reported `alpha_purchased=867.64α`, `cost_basis=79.39τ` (stale). The ~140α / ~13τ addition flowed entirely into yield via the residual calculation (`pnl = 95.44 - 79.39 = 16.05`, most attributed as yield).
+- **Root cause**: `compute_unrealized_decomposition()` handled stale FIFO after unstakes (`alpha_purchased > alpha_balance`) but had no detection for the opposite: unindexed buys where `alpha_balance - alpha_purchased` exceeds `total_yield_alpha`. The `cost_basis.py` unindexed buy handling only triggered when `total_remaining_alpha == 0` (complete lot consumption), not the partial case where FIFO has lots but missed a recent buy.
+- **Fix 1** (`yield_tracker.py`): Added unindexed buy detection in decomposition: `unexplained_alpha = alpha_balance - alpha_purchased - total_yield_alpha`. When >0.5% of balance, adds `unexplained_alpha * current_price` to `effective_cost` (zero P&L contribution). Keeps `effective_purchased = alpha_purchased` so alpha P&L only covers indexed alpha. Also moved `total_yield_alpha` assignment before decomposition call so it uses fresh API value.
+- **Fix 2** (`cost_basis.py`): Unified unindexed buy detection for both complete and partial FIFO cases: `unindexed_alpha = max(alpha_balance - fifo_remaining - emission_estimate, 0)`. Adds interim cost at current price. Replaces the previous `total_remaining_alpha == 0` check.
+- **Key changes**:
+  - `yield_tracker.py`: `compute_unrealized_decomposition()` has three cases: stale FIFO (unstake), unindexed buy, normal. `_compute_position_yield()` sets `total_yield_alpha` before calling decomposition.
+  - `cost_basis.py`: Unified unindexed buy handler covers both `total_remaining_alpha == 0` and `total_remaining_alpha > 0` with same formula.
+
+### 2026-02-10: Switch from FIFO to net-invested accounting (TaoStats-style)
+- **Problem**: FIFO lot tracking was the root cause of nearly every P&L bug (stale lots, unindexed buys, date_start failures, lot consumption edge cases). Realized/unrealized split diverged from TaoStats by ~4τ even after all bug fixes. No tax reporting use case to justify FIFO complexity.
+- **Fix**: Replaced FIFO with net-invested accounting:
+  - `cost_basis_tao = total_staked - total_unstaked` (net invested, matches TaoStats)
+  - Realized P&L via average cost method (not per-lot FIFO matching)
+  - `entry_price_tao = total_staked / total_alpha_purchased` (all-time average)
+  - `compute_unrealized_decomposition()`: single code path, yield = `emission_remaining × current_price`, alpha_pnl = residual. No stale-FIFO detection needed.
+- **Key changes**:
+  - `cost_basis.py`: Deleted FIFO lot queue, consumption loop, unindexed buy detection. Replaced with simple accumulators + average cost realized P&L. Net deletion ~80 lines.
+  - `yield_tracker.py`: `compute_unrealized_decomposition()` reduced from 90 lines (3 stale cases) to 30 lines (single path).
+  - `data_sync.py`: Updated comments only (interim cost basis logic unchanged).
+- **Results**: Realized gap: 4.24τ → **0.06τ**. Unrealized gap: 3.79τ → **0.09τ**. Total P&L gap: 0.44τ → **0.15τ** (price drift). Zero negative yields. Zero errors.
+
+### 2026-02-10: Fix date_start causing Pass 2 (accounting API) to silently fail
+- **Problem**: P&L discrepancy with TaoStats (our 3.72τ vs TaoStats 1.05τ, gap=2.67τ). Multiple positions had stale FIFO data with wrong alpha amounts and missing unstakes. SN4 and SN8 showed 0 unstakes but the accounting API had Feb 7 debits of ~357 alpha each. Only 25/48 positions had authoritative accounting data.
+- **Root cause (two bugs)**:
+  1. When `entry_date` and `created_at` are within 5 minutes (common for newly synced wallets), `date_start_str` stayed `None`. The TaoStats accounting/tax API **requires** `date_start` — sending None returns HTTP 400. Pass 2 silently failed for 23 positions.
+  2. Even after fixing bug 1, the fallback of `(now - 365 days)` produced a 366-day span, and the API rejects ranges > 12 calendar months (400 error).
+- **Fix**: Simplified date_start logic: always use `entry_date - 1 day` when entry_date is available, else `(now - 335 days)` as safe fallback. Removed the 5-minute threshold check between entry_date and created_at — entry_date always reflects the true first stake time regardless of when the DB row was created.
+- **Results**: 47/48 positions now have authoritative accounting data (was 25). Total P&L gap reduced from 2.67τ to 0.87τ (67% reduction). SN4/SN8 now correctly show the Feb 7 unstakes. Remaining gap is from FIFO vs net-invested method differences and SN0 (root subnet has no accounting API data).
+- **Key changes**: `cost_basis.py` `compute_cost_basis_from_accounting()` date_start logic simplified to ~4 lines.
 
 ### 2026-02-09: FX Exposure card rewrite (per-position decomposition)
 - **Problem**: `_compute_conversion_exposure()` had 4 bugs: inactive positions invisible (query found nothing after position model changes), active positions missed realized FX, aggregated entry price lost per-position accuracy, root yield misattributed.

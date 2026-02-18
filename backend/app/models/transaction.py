@@ -153,7 +153,7 @@ class PositionCostBasis(Base):
     usd_cost_basis: Mapped[Decimal] = mapped_column(
         Numeric(20, 2), nullable=False, default=Decimal("0"),
         server_default="0",
-    )  # Sum of USD values for remaining FIFO lots
+    )  # Net invested USD (total_staked_usd - total_unstaked_usd)
     weighted_avg_entry_price_usd: Mapped[Decimal] = mapped_column(
         Numeric(20, 6), nullable=False, default=Decimal("0"),
         server_default="0",

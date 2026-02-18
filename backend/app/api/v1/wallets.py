@@ -44,19 +44,33 @@ async def add_wallet(
     # Check if wallet already exists
     existing = await db.get(Wallet, request.address)
     if existing:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Wallet {request.address} already exists",
+        if not existing.is_active:
+            # Re-activate a previously deactivated wallet
+            existing.is_active = True
+            if request.label is not None:
+                existing.label = request.label
+            await db.flush()
+            await db.refresh(existing)
+            wallet = existing
+        else:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Wallet {request.address} already exists",
+            )
+    else:
+        wallet = Wallet(
+            address=request.address,
+            label=request.label,
+            is_active=True,
         )
+        db.add(wallet)
+        await db.flush()
+        await db.refresh(wallet)
 
-    wallet = Wallet(
-        address=request.address,
-        label=request.label,
-        is_active=True,
-    )
-    db.add(wallet)
-    await db.flush()
-    await db.refresh(wallet)
+    # Note: the frontend triggers a sync (POST /tasks/refresh) after adding
+    # a wallet so that positions and snapshots are ready before queries fire.
+    # A background sync here would be unreliable because the DB transaction
+    # hasn't been committed yet when asyncio.create_task runs.
 
     return WalletResponse.model_validate(wallet)
 
@@ -103,10 +117,12 @@ async def delete_wallet(
 ) -> None:
     """Remove a wallet from tracking.
 
-    Note: This does not delete historical position data for the wallet.
+    Soft-deletes the wallet by setting is_active=False.
+    Position and transaction history is preserved.
+    The wallet can be re-added later to restore tracking.
     """
     wallet = await db.get(Wallet, address)
     if not wallet:
         raise HTTPException(status_code=404, detail="Wallet not found")
 
-    await db.delete(wallet)
+    wallet.is_active = False

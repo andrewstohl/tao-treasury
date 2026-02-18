@@ -7,7 +7,7 @@ from typing import Dict, List, Optional
 
 import structlog
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -16,6 +16,7 @@ from app.models.position import Position
 from app.models.wallet import Wallet
 from app.models.transaction import PositionCostBasis, PositionYieldHistory
 from app.models.subnet import Subnet
+from app.models.validator import Validator
 from app.models.alert import Alert
 from app.models.trade import TradeRecommendation
 from app.schemas.portfolio import (
@@ -77,13 +78,14 @@ async def _get_active_wallets(db: AsyncSession) -> List[str]:
 async def _resolve_wallet(db: AsyncSession, wallet: Optional[str] = None) -> Optional[str]:
     """Resolve which wallet to use.
 
-    If wallet is specified, use it. Otherwise get first active wallet from DB.
+    Returns None for "all wallets" aggregate mode (wallet not specified or "all").
+    Returns specific wallet address when a valid address is provided.
     Returns None if no wallets configured.
     """
-    if wallet:
+    if wallet and wallet != "all":
         return wallet
-    wallets = await _get_active_wallets(db)
-    return wallets[0] if wallets else None
+    # No wallet or "all" → aggregate mode (None signals callers to query all)
+    return None
 
 
 @router.get("", response_model=PortfolioSummary)
@@ -93,7 +95,8 @@ async def get_portfolio(
 ) -> PortfolioSummary:
     """Get current portfolio summary."""
     wallet = await _resolve_wallet(db, wallet)
-    if not wallet:
+    all_wallets = await _get_active_wallets(db)
+    if not all_wallets:
         # Return empty summary if no wallets configured
         return PortfolioSummary(
             wallet_address="",
@@ -115,96 +118,9 @@ async def get_portfolio(
             weekly_turnover_pct=Decimal("0"),
             as_of=datetime.now(timezone.utc),
         )
-
-    # Get latest portfolio snapshot
-    stmt = (
-        select(PortfolioSnapshot)
-        .where(PortfolioSnapshot.wallet_address == wallet)
-        .order_by(PortfolioSnapshot.timestamp.desc())
-        .limit(1)
-    )
-    result = await db.execute(stmt)
-    snapshot = result.scalar_one_or_none()
-
-    # Get position count
-    pos_stmt = select(func.count()).select_from(Position).where(Position.wallet_address == wallet)
-    pos_result = await db.execute(pos_stmt)
-    position_count = pos_result.scalar() or 0
-
-    if snapshot is None:
-        # Return empty summary if no data
-        return PortfolioSummary(
-            wallet_address=wallet,
-            nav_mid=Decimal("0"),
-            nav_exec_50pct=Decimal("0"),
-            nav_exec_100pct=Decimal("0"),
-            tao_price_usd=Decimal("0"),
-            nav_usd=Decimal("0"),
-            allocation=AllocationBreakdown(),
-            yield_summary=YieldSummary(),
-            pnl_summary=PnLSummary(),
-            executable_drawdown_pct=Decimal("0"),
-            drawdown_from_ath_pct=Decimal("0"),
-            nav_ath=Decimal("0"),
-            active_positions=0,
-            eligible_subnets=0,
-            overall_regime="neutral",
-            daily_turnover_pct=Decimal("0"),
-            weekly_turnover_pct=Decimal("0"),
-            as_of=datetime.now(timezone.utc),
-        )
-
-    # Calculate allocation percentages
-    total = snapshot.nav_mid or Decimal("1")
-    allocation = AllocationBreakdown(
-        root_tao=snapshot.root_allocation_tao,
-        root_pct=(snapshot.root_allocation_tao / total * 100) if total else Decimal("0"),
-        dtao_tao=snapshot.dtao_allocation_tao,
-        dtao_pct=(snapshot.dtao_allocation_tao / total * 100) if total else Decimal("0"),
-        unstaked_tao=snapshot.unstaked_buffer_tao,
-        unstaked_pct=(snapshot.unstaked_buffer_tao / total * 100) if total else Decimal("0"),
-    )
-
-    # Build yield summary
-    yield_summary = YieldSummary(
-        portfolio_apy=getattr(snapshot, 'portfolio_apy', Decimal("0")) or Decimal("0"),
-        daily_yield_tao=getattr(snapshot, 'daily_yield_tao', Decimal("0")) or Decimal("0"),
-        weekly_yield_tao=getattr(snapshot, 'weekly_yield_tao', Decimal("0")) or Decimal("0"),
-        monthly_yield_tao=getattr(snapshot, 'monthly_yield_tao', Decimal("0")) or Decimal("0"),
-    )
-
-    # Build P&L summary
-    total_unrealized = getattr(snapshot, 'total_unrealized_pnl_tao', Decimal("0")) or Decimal("0")
-    total_cost_basis = getattr(snapshot, 'total_cost_basis_tao', Decimal("0")) or Decimal("0")
-    unrealized_pct = (total_unrealized / total_cost_basis * 100) if total_cost_basis else Decimal("0")
-
-    pnl_summary = PnLSummary(
-        total_unrealized_pnl_tao=total_unrealized,
-        total_realized_pnl_tao=getattr(snapshot, 'total_realized_pnl_tao', Decimal("0")) or Decimal("0"),
-        total_cost_basis_tao=total_cost_basis,
-        unrealized_pnl_pct=unrealized_pct,
-    )
-
-    return PortfolioSummary(
-        wallet_address=wallet,
-        nav_mid=snapshot.nav_mid,
-        nav_exec_50pct=snapshot.nav_exec_50pct,
-        nav_exec_100pct=snapshot.nav_exec_100pct,
-        tao_price_usd=snapshot.tao_price_usd,
-        nav_usd=snapshot.nav_usd,
-        allocation=allocation,
-        yield_summary=yield_summary,
-        pnl_summary=pnl_summary,
-        executable_drawdown_pct=snapshot.executable_drawdown * 100,
-        drawdown_from_ath_pct=snapshot.drawdown_from_ath * 100,
-        nav_ath=Decimal("0"),  # TODO: compute from NAVHistory
-        active_positions=position_count,
-        eligible_subnets=snapshot.eligible_subnets,
-        overall_regime=snapshot.overall_regime,
-        daily_turnover_pct=snapshot.daily_turnover * 100,
-        weekly_turnover_pct=snapshot.weekly_turnover * 100,
-        as_of=snapshot.timestamp,
-    )
+    # Aggregate mode or specific wallet
+    target_wallets = [wallet] if wallet else all_wallets
+    return await _build_aggregate_portfolio(db, target_wallets, datetime.now(timezone.utc))
 
 
 @router.get("/history", response_model=PortfolioHistoryResponse)
@@ -265,14 +181,24 @@ async def get_portfolio_history(
     )
 
 
-async def _get_top_positions(db: AsyncSession, wallet: str, limit: int = 10) -> list[PositionSummary]:
-    """Helper to get active positions (alpha_balance > 0) by TAO value."""
+async def _get_top_positions(db: AsyncSession, wallet: Optional[str] = None, limit: int = 10) -> list[PositionSummary]:
+    """Helper to get active positions (alpha_balance > 0) by TAO value.
+
+    When wallet is None, returns positions from all active wallets only.
+    Positions from deactivated wallets are excluded.
+    """
+    conditions = [Position.alpha_balance > 0]
+    if wallet:
+        conditions.append(Position.wallet_address == wallet)
+    else:
+        # Aggregate mode: restrict to active wallets only
+        active_wallets = await _get_active_wallets(db)
+        if not active_wallets:
+            return []
+        conditions.append(Position.wallet_address.in_(active_wallets))
     stmt = (
         select(Position)
-        .where(
-            Position.wallet_address == wallet,
-            Position.alpha_balance > 0,
-        )
+        .where(*conditions)
         .order_by(Position.tao_value_mid.desc())
         .limit(limit)
     )
@@ -288,6 +214,14 @@ async def _get_top_positions(db: AsyncSession, wallet: str, limit: int = 10) -> 
         for s in subnet_result.scalars().all():
             subnet_lookup[s.netuid] = s
 
+    # Batch-load validators for name and image display
+    validator_lookup: Dict[tuple, Validator] = {}
+    if any(p.validator_hotkey for p in positions):
+        val_stmt = select(Validator).where(Validator.netuid.in_(netuids))
+        val_result = await db.execute(val_stmt)
+        for v in val_result.scalars().all():
+            validator_lookup[(v.hotkey, v.netuid)] = v
+
     total_value = sum(p.tao_value_mid for p in positions)
 
     summaries = []
@@ -296,6 +230,7 @@ async def _get_top_positions(db: AsyncSession, wallet: str, limit: int = 10) -> 
         subnet = subnet_lookup.get(p.netuid)
 
         summaries.append(PositionSummary(
+            wallet_address=p.wallet_address,
             netuid=p.netuid,
             subnet_name=p.subnet_name or f"Subnet {p.netuid}",
             tao_value_mid=p.tao_value_mid,
@@ -319,6 +254,8 @@ async def _get_top_positions(db: AsyncSession, wallet: str, limit: int = 10) -> 
             exit_slippage_50pct=p.exit_slippage_50pct,
             exit_slippage_100pct=p.exit_slippage_100pct,
             validator_hotkey=p.validator_hotkey,
+            validator_name=validator_lookup[(p.validator_hotkey, p.netuid)].name if p.validator_hotkey and (p.validator_hotkey, p.netuid) in validator_lookup else None,
+            validator_image_url=validator_lookup[(p.validator_hotkey, p.netuid)].image_url if p.validator_hotkey and (p.validator_hotkey, p.netuid) in validator_lookup else None,
             recommended_action=p.recommended_action,
             action_reason=p.action_reason,
             flow_regime=subnet.flow_regime if subnet else None,
@@ -336,8 +273,6 @@ async def get_positions(
 ) -> list[PositionSummary]:
     """Get all positions sorted by TAO value."""
     wallet = await _resolve_wallet(db, wallet)
-    if not wallet:
-        return []
     return await _get_top_positions(db, wallet, limit)
 
 
@@ -555,20 +490,152 @@ async def _compute_market_pulse(
     )
 
 
+async def _build_aggregate_portfolio(
+    db: AsyncSession, wallets: List[str], now: datetime
+) -> PortfolioSummary:
+    """Build an aggregated PortfolioSummary from latest snapshots across wallets.
+
+    Sums NAV, yields, and P&L from the most recent snapshot of each wallet.
+    """
+    # Get the latest snapshot per wallet using a subquery
+    snapshots = []
+    for w in wallets:
+        snap_stmt = (
+            select(PortfolioSnapshot)
+            .where(PortfolioSnapshot.wallet_address == w)
+            .order_by(PortfolioSnapshot.timestamp.desc())
+            .limit(1)
+        )
+        snap_result = await db.execute(snap_stmt)
+        snap = snap_result.scalar_one_or_none()
+        if snap:
+            snapshots.append(snap)
+
+    if not snapshots:
+        return PortfolioSummary(
+            wallet_address="all" if len(wallets) > 1 else (wallets[0] if wallets else ""),
+            nav_mid=Decimal("0"),
+            nav_exec_50pct=Decimal("0"),
+            nav_exec_100pct=Decimal("0"),
+            tao_price_usd=Decimal("0"),
+            nav_usd=Decimal("0"),
+            allocation=AllocationBreakdown(),
+            yield_summary=YieldSummary(),
+            pnl_summary=PnLSummary(),
+            executable_drawdown_pct=Decimal("0"),
+            drawdown_from_ath_pct=Decimal("0"),
+            nav_ath=Decimal("0"),
+            active_positions=0,
+            eligible_subnets=0,
+            overall_regime="neutral",
+            daily_turnover_pct=Decimal("0"),
+            weekly_turnover_pct=Decimal("0"),
+            as_of=now,
+        )
+
+    # Sum across all wallet snapshots
+    nav_mid = sum(s.nav_mid or Decimal("0") for s in snapshots)
+    nav_exec_50 = sum(s.nav_exec_50pct or Decimal("0") for s in snapshots)
+    nav_exec_100 = sum(s.nav_exec_100pct or Decimal("0") for s in snapshots)
+    tao_price_usd = snapshots[0].tao_price_usd or Decimal("0")  # same for all
+    nav_usd = sum(s.nav_usd or Decimal("0") for s in snapshots)
+
+    root_tao = sum(s.root_allocation_tao or Decimal("0") for s in snapshots)
+    dtao_tao = sum(s.dtao_allocation_tao or Decimal("0") for s in snapshots)
+    unstaked_tao = sum(s.unstaked_buffer_tao or Decimal("0") for s in snapshots)
+    total = nav_mid or Decimal("1")
+
+    allocation = AllocationBreakdown(
+        root_tao=root_tao,
+        root_pct=(root_tao / total * 100) if total else Decimal("0"),
+        dtao_tao=dtao_tao,
+        dtao_pct=(dtao_tao / total * 100) if total else Decimal("0"),
+        unstaked_tao=unstaked_tao,
+        unstaked_pct=(unstaked_tao / total * 100) if total else Decimal("0"),
+    )
+
+    daily_yield = sum(s.daily_yield_tao or Decimal("0") for s in snapshots)
+    weekly_yield = sum(s.weekly_yield_tao or Decimal("0") for s in snapshots)
+    monthly_yield = sum(s.monthly_yield_tao or Decimal("0") for s in snapshots)
+
+    # Weighted average APY
+    active_value = sum(
+        (s.nav_mid or Decimal("0")) - (s.unstaked_buffer_tao or Decimal("0"))
+        for s in snapshots
+    )
+    if active_value > 0:
+        weighted_apy = sum(
+            ((s.nav_mid or Decimal("0")) - (s.unstaked_buffer_tao or Decimal("0")))
+            * (s.portfolio_apy or Decimal("0"))
+            for s in snapshots
+        ) / active_value
+    else:
+        weighted_apy = Decimal("0")
+
+    yield_summary = YieldSummary(
+        portfolio_apy=weighted_apy,
+        daily_yield_tao=daily_yield,
+        weekly_yield_tao=weekly_yield,
+        monthly_yield_tao=monthly_yield,
+    )
+
+    total_unrealized = sum(s.total_unrealized_pnl_tao or Decimal("0") for s in snapshots)
+    total_realized = sum(s.total_realized_pnl_tao or Decimal("0") for s in snapshots)
+    total_cost = sum(s.total_cost_basis_tao or Decimal("0") for s in snapshots)
+    unrealized_pct = (total_unrealized / total_cost * 100) if total_cost else Decimal("0")
+
+    pnl_summary = PnLSummary(
+        total_unrealized_pnl_tao=total_unrealized,
+        total_realized_pnl_tao=total_realized,
+        total_cost_basis_tao=total_cost,
+        unrealized_pnl_pct=unrealized_pct,
+    )
+
+    active_positions = sum(s.active_positions or 0 for s in snapshots)
+    eligible_subnets = max((s.eligible_subnets or 0) for s in snapshots)
+
+    wallet_label = wallets[0] if len(wallets) == 1 else "all"
+
+    return PortfolioSummary(
+        wallet_address=wallet_label,
+        nav_mid=nav_mid,
+        nav_exec_50pct=nav_exec_50,
+        nav_exec_100pct=nav_exec_100,
+        tao_price_usd=tao_price_usd,
+        nav_usd=nav_usd,
+        allocation=allocation,
+        yield_summary=yield_summary,
+        pnl_summary=pnl_summary,
+        executable_drawdown_pct=Decimal("0"),
+        drawdown_from_ath_pct=Decimal("0"),
+        nav_ath=Decimal("0"),
+        active_positions=active_positions,
+        eligible_subnets=eligible_subnets,
+        overall_regime=snapshots[0].overall_regime or "neutral",
+        daily_turnover_pct=Decimal("0"),
+        weekly_turnover_pct=Decimal("0"),
+        as_of=max(s.timestamp for s in snapshots),
+    )
+
+
 @router.get("/dashboard", response_model=DashboardResponse)
 async def get_dashboard(
     wallet: Optional[str] = Query(default=None, description="Wallet address to query"),
     db: AsyncSession = Depends(get_db),
 ) -> DashboardResponse:
-    """Get complete dashboard data."""
+    """Get complete dashboard data.
+
+    When wallet is not specified or "all", aggregates across all active wallets.
+    When a specific wallet is provided, filters to that wallet only.
+    """
     now = datetime.now(timezone.utc)
     wallet = await _resolve_wallet(db, wallet)
 
     # Get all active wallets for the response
     all_wallets = await _get_active_wallets(db)
 
-    # Handle case when no wallets are configured
-    if not wallet:
+    # Handle case when no wallets are configured at all
+    if not all_wallets:
         empty_portfolio = PortfolioSummary(
             wallet_address="",
             nav_mid=Decimal("0"),
@@ -605,8 +672,9 @@ async def get_dashboard(
             generated_at=now,
         )
 
-    # Get portfolio summary
-    portfolio = await get_portfolio(wallet=wallet, db=db)
+    # Build portfolio summary — aggregate across target wallets
+    target_wallets = [wallet] if wallet else all_wallets
+    portfolio = await _build_aggregate_portfolio(db, target_wallets, now)
 
     # Count alerts by severity
     alert_stmt = (
@@ -623,14 +691,17 @@ async def get_dashboard(
         info=alert_counts.get("info", 0),
     )
 
-    # Count pending recommendations
+    # Count pending recommendations (across target wallets)
+    rec_conditions = [TradeRecommendation.status == "pending"]
+    if wallet:
+        rec_conditions.append(TradeRecommendation.wallet_address == wallet)
+    else:
+        rec_conditions.append(TradeRecommendation.wallet_address.in_(all_wallets))
+
     rec_stmt = (
         select(func.count())
         .select_from(TradeRecommendation)
-        .where(
-            TradeRecommendation.wallet_address == wallet,
-            TradeRecommendation.status == "pending",
-        )
+        .where(*rec_conditions)
     )
     rec_result = await db.execute(rec_stmt)
     pending_count = rec_result.scalar() or 0
@@ -638,11 +709,7 @@ async def get_dashboard(
     urgent_stmt = (
         select(func.count())
         .select_from(TradeRecommendation)
-        .where(
-            TradeRecommendation.wallet_address == wallet,
-            TradeRecommendation.status == "pending",
-            TradeRecommendation.is_urgent == True,
-        )
+        .where(*rec_conditions, TradeRecommendation.is_urgent == True)
     )
     urgent_result = await db.execute(urgent_stmt)
     urgent_count = urgent_result.scalar() or 0
@@ -654,33 +721,41 @@ async def get_dashboard(
     market_pulse = await _compute_market_pulse(top_positions)
 
     # --- Inactive positions (alpha_balance = 0, realized values preserved) ---
+    inactive_conditions = [Position.alpha_balance <= 0]
+    if wallet:
+        inactive_conditions.append(Position.wallet_address == wallet)
+    else:
+        # Aggregate mode: restrict to active wallets only
+        inactive_conditions.append(Position.wallet_address.in_(all_wallets))
     inactive_stmt = (
         select(Position)
-        .where(
-            Position.wallet_address == wallet,
-            Position.alpha_balance <= 0,
-        )
+        .where(*inactive_conditions)
         .order_by(Position.netuid)
     )
     inactive_result = await db.execute(inactive_stmt)
     inactive_positions = inactive_result.scalars().all()
 
     # Enrich with PositionCostBasis data (staked/unstaked totals, dates)
-    inactive_netuids = [p.netuid for p in inactive_positions]
-    cb_lookup: Dict[int, PositionCostBasis] = {}
-    if inactive_netuids:
-        cb_stmt = select(PositionCostBasis).where(
-            PositionCostBasis.wallet_address == wallet,
-            PositionCostBasis.netuid.in_(inactive_netuids),
-        )
+    # Use (wallet_address, netuid) as key for multi-wallet support
+    cb_lookup: Dict[tuple, PositionCostBasis] = {}
+    if inactive_positions:
+        cb_conditions = []
+        for p in inactive_positions:
+            cb_conditions.append(
+                (PositionCostBasis.wallet_address == p.wallet_address) &
+                (PositionCostBasis.netuid == p.netuid)
+            )
+        # Build OR query for all (wallet, netuid) pairs
+        cb_stmt = select(PositionCostBasis).where(or_(*cb_conditions))
         cb_result = await db.execute(cb_stmt)
         for cb in cb_result.scalars().all():
-            cb_lookup[cb.netuid] = cb
+            cb_lookup[(cb.wallet_address, cb.netuid)] = cb
 
     closed_positions = []
     for p in inactive_positions:
-        cb = cb_lookup.get(p.netuid)
+        cb = cb_lookup.get((p.wallet_address, p.netuid))
         closed_positions.append(ClosedPositionSummary(
+            wallet_address=p.wallet_address,
             netuid=p.netuid,
             subnet_name=p.subnet_name or f"Subnet {p.netuid}",
             total_staked_tao=cb.total_staked_tao if cb else Decimal("0"),
@@ -884,7 +959,7 @@ async def _get_tao_price_context() -> TaoPriceContext:
 
 async def _compute_conversion_exposure(
     db: AsyncSession,
-    wallet: str,
+    wallets: List[str],
     all_positions: List[Position],
     current_tao_price_usd: float,
 ) -> ConversionExposure:
@@ -902,15 +977,16 @@ async def _compute_conversion_exposure(
     Identity: α/τ + τ/$ = total_usd_pnl (enforced by residual construction).
     """
     current_usd = Decimal(str(current_tao_price_usd))
-    pos_by_netuid = {p.netuid: p for p in all_positions}
+    # Use (wallet_address, netuid) as key for multi-wallet support
+    pos_by_key = {(p.wallet_address, p.netuid): p for p in all_positions}
 
-    # Fetch ALL PositionCostBasis records with USD data (one query)
+    # Fetch ALL PositionCostBasis records with USD data across all wallets
     cb_stmt = select(PositionCostBasis).where(
-        PositionCostBasis.wallet_address == wallet,
+        PositionCostBasis.wallet_address.in_(wallets),
         PositionCostBasis.total_staked_usd > 0,
     )
     cb_result = await db.execute(cb_stmt)
-    cb_by_netuid = {cb.netuid: cb for cb in cb_result.scalars().all()}
+    cb_by_key = {(cb.wallet_address, cb.netuid): cb for cb in cb_result.scalars().all()}
 
     # Accumulators
     total_alpha_tao_effect = Decimal("0")
@@ -924,14 +1000,14 @@ async def _compute_conversion_exposure(
     positions_excluded = []
 
     # Per-position decomposition: iterate PositionCostBasis (has USD data)
-    for netuid, cb in cb_by_netuid.items():
+    for (cb_wallet, netuid), cb in cb_by_key.items():
         if not cb.total_staked_tao or cb.total_staked_tao <= 0:
             continue
         if not cb.total_staked_usd or cb.total_staked_usd <= 0:
             continue
 
         positions_with_usd += 1
-        position = pos_by_netuid.get(netuid)
+        position = pos_by_key.get((cb_wallet, netuid))
 
         # Position values (default 0 for inactive or missing Position records)
         tao_value = Decimal("0")
@@ -991,7 +1067,7 @@ async def _compute_conversion_exposure(
 
     # P&L percentage based on total USD ever invested
     total_input_usd = sum(
-        cb.total_staked_usd for cb in cb_by_netuid.values()
+        cb.total_staked_usd for cb in cb_by_key.values()
         if cb.total_staked_usd and cb.total_staked_usd > 0
     )
     total_pnl_pct = (
@@ -1026,36 +1102,51 @@ async def get_portfolio_overview(
 ) -> PortfolioOverviewResponse:
     """Enhanced portfolio overview with dual-currency metrics, rolling returns,
     and compounding projections.
+
+    When wallet is not specified or "all", aggregates across all active wallets.
     """
     now = datetime.now(timezone.utc)
     wallet = await _resolve_wallet(db, wallet)
-    if not wallet:
+    all_wallets = await _get_active_wallets(db)
+    if not all_wallets:
         return PortfolioOverviewResponse(as_of=now)
 
-    # 1. Get latest portfolio snapshot for current values
-    snap_stmt = (
-        select(PortfolioSnapshot)
-        .where(PortfolioSnapshot.wallet_address == wallet)
-        .order_by(PortfolioSnapshot.timestamp.desc())
-        .limit(1)
-    )
-    snap_result = await db.execute(snap_stmt)
-    snapshot = snap_result.scalar_one_or_none()
+    # 1. Get latest portfolio snapshots — aggregate across target wallets
+    target_wallets = [wallet] if wallet else all_wallets
+    snapshots = []
+    for w in target_wallets:
+        snap_stmt = (
+            select(PortfolioSnapshot)
+            .where(PortfolioSnapshot.wallet_address == w)
+            .order_by(PortfolioSnapshot.timestamp.desc())
+            .limit(1)
+        )
+        snap_result = await db.execute(snap_stmt)
+        snap = snap_result.scalar_one_or_none()
+        if snap:
+            snapshots.append(snap)
 
-    if snapshot is None:
+    if not snapshots:
         return PortfolioOverviewResponse(as_of=now)
+
+    # Use first snapshot as reference (single wallet) or aggregate (multi-wallet)
+    snapshot = snapshots[0]
 
     # 2. Fetch TAO price context (spot + changes) concurrently with rolling returns
     tao_price_ctx = await _get_tao_price_context()
     tao_usd = float(tao_price_ctx.price_usd) if tao_price_ctx.price_usd else 0.0
 
-    # 3. Compute rolling returns for both mid and exec NAV
-    returns_mid = await _compute_rolling_returns(db, wallet, "nav_mid_close")
-    returns_exec = await _compute_rolling_returns(db, wallet, "nav_exec_close")
+    # 3. Compute rolling returns (use first wallet for now; aggregate mode skips)
+    if wallet:
+        returns_mid = await _compute_rolling_returns(db, wallet, "nav_mid_close")
+        returns_exec = await _compute_rolling_returns(db, wallet, "nav_exec_close")
+    else:
+        returns_mid = []
+        returns_exec = []
 
-    # 4. Build dual-currency NAV
-    nav_mid_tao = snapshot.nav_mid or Decimal("0")
-    nav_exec_tao = snapshot.nav_exec_100pct or Decimal("0")
+    # 4. Build dual-currency NAV (sum across all target wallet snapshots)
+    nav_mid_tao = sum(s.nav_mid or Decimal("0") for s in snapshots)
+    nav_exec_tao = sum(s.nav_exec_100pct or Decimal("0") for s in snapshots)
 
     nav_mid = DualCurrencyValue(
         tao=nav_mid_tao,
@@ -1066,20 +1157,20 @@ async def get_portfolio_overview(
         usd=Decimal(str(round(float(nav_exec_tao) * tao_usd, 2))),
     )
 
-    # 5. Build dual-currency P&L
-    # Get decomposed yield and alpha P&L from snapshot (pre-computed ledger aggregation)
-    unrealized_yield_tao_val = snapshot.total_unrealized_yield_tao or Decimal("0")
-    realized_yield_tao_val = snapshot.total_realized_yield_tao or Decimal("0")
-    unrealized_alpha_pnl_tao = snapshot.total_unrealized_alpha_pnl_tao or Decimal("0")
-    realized_alpha_pnl_tao = snapshot.total_realized_alpha_pnl_tao or Decimal("0")
+    # 5. Build dual-currency P&L (sum across all target wallet snapshots)
+    # Get decomposed yield and alpha P&L from snapshots (pre-computed ledger aggregation)
+    unrealized_yield_tao_val = sum(s.total_unrealized_yield_tao or Decimal("0") for s in snapshots)
+    realized_yield_tao_val = sum(s.total_realized_yield_tao or Decimal("0") for s in snapshots)
+    unrealized_alpha_pnl_tao = sum(s.total_unrealized_alpha_pnl_tao or Decimal("0") for s in snapshots)
+    realized_alpha_pnl_tao = sum(s.total_realized_alpha_pnl_tao or Decimal("0") for s in snapshots)
 
     # Unrealized = total unrealized P&L (yield + alpha), so the Current Value
     # card's "Realized + Unrealized = Total" identity holds.
     # The Yield and Alpha cards show the decomposed components separately.
-    unrealized_tao = snapshot.total_unrealized_pnl_tao or Decimal("0")
-    realized_tao = snapshot.total_realized_pnl_tao or Decimal("0")
+    unrealized_tao = sum(s.total_unrealized_pnl_tao or Decimal("0") for s in snapshots)
+    realized_tao = sum(s.total_realized_pnl_tao or Decimal("0") for s in snapshots)
     total_pnl_tao = unrealized_tao + realized_tao
-    cost_basis_tao = snapshot.total_cost_basis_tao or Decimal("0")
+    cost_basis_tao = sum(s.total_cost_basis_tao or Decimal("0") for s in snapshots)
     total_pnl_pct = (
         (total_pnl_tao / cost_basis_tao * 100) if cost_basis_tao else Decimal("0")
     )
@@ -1121,12 +1212,24 @@ async def get_portfolio_overview(
         ),
     )
 
-    # 6. Build dual-currency yield
-    daily_yield = snapshot.daily_yield_tao or Decimal("0")
-    weekly_yield = snapshot.weekly_yield_tao or Decimal("0")
-    monthly_yield = snapshot.monthly_yield_tao or Decimal("0")
+    # 6. Build dual-currency yield (sum across all target wallet snapshots)
+    daily_yield = sum(s.daily_yield_tao or Decimal("0") for s in snapshots)
+    weekly_yield = sum(s.weekly_yield_tao or Decimal("0") for s in snapshots)
+    monthly_yield = sum(s.monthly_yield_tao or Decimal("0") for s in snapshots)
     annualized_yield = daily_yield * 365
-    portfolio_apy = snapshot.portfolio_apy or Decimal("0")
+    # Weighted average APY across wallets
+    active_value = sum(
+        (s.nav_mid or Decimal("0")) - (s.unstaked_buffer_tao or Decimal("0"))
+        for s in snapshots
+    )
+    if active_value > 0:
+        portfolio_apy = sum(
+            ((s.nav_mid or Decimal("0")) - (s.unstaked_buffer_tao or Decimal("0")))
+            * (s.portfolio_apy or Decimal("0"))
+            for s in snapshots
+        ) / active_value
+    else:
+        portfolio_apy = Decimal("0")
 
     # 6a. Use pre-computed yield values from snapshot (single source of truth)
     #     These are computed by PositionMetricsService and aggregated in the snapshot.
@@ -1177,28 +1280,36 @@ async def get_portfolio_overview(
     compounding = _compute_compounding(nav_mid_tao, portfolio_apy, daily_yield)
 
     # 8. ATH and drawdown
-    ath_stmt = (
-        select(func.max(NAVHistory.nav_exec_ath))
-        .where(NAVHistory.wallet_address == wallet)
-    )
+    ath_conditions = []
+    if wallet:
+        ath_conditions.append(NAVHistory.wallet_address == wallet)
+    else:
+        ath_conditions.append(NAVHistory.wallet_address.in_(target_wallets))
+    ath_stmt = select(func.max(NAVHistory.nav_exec_ath)).where(*ath_conditions)
     ath_result = await db.execute(ath_stmt)
     nav_ath = ath_result.scalar() or Decimal("0")
     drawdown_pct = (
         ((nav_ath - nav_exec_tao) / nav_ath * 100) if nav_ath > 0 else Decimal("0")
     )
 
-    # 9. Position count
-    pos_count = snapshot.active_positions or 0
-    eligible = snapshot.eligible_subnets or 0
+    # 9. Position count (sum across snapshots)
+    pos_count = sum(s.active_positions or 0 for s in snapshots)
+    eligible = max((s.eligible_subnets or 0) for s in snapshots)
 
     # 10. Get open positions for conversion exposure calculation
-    pos_stmt = select(Position).where(Position.wallet_address == wallet)
+    pos_conditions = []
+    if wallet:
+        pos_conditions.append(Position.wallet_address == wallet)
+    else:
+        # Aggregate mode: restrict to active wallets only
+        pos_conditions.append(Position.wallet_address.in_(target_wallets))
+    pos_stmt = select(Position).where(*pos_conditions)
     pos_result = await db.execute(pos_stmt)
     open_positions = pos_result.scalars().all()
 
-    # 11. Compute conversion exposure (FX risk)
+    # 11. Compute conversion exposure (FX risk) across all target wallets
     conversion_exposure = await _compute_conversion_exposure(
-        db, wallet, open_positions, tao_usd
+        db, target_wallets, open_positions, tao_usd
     )
 
     return PortfolioOverviewResponse(
@@ -1216,7 +1327,7 @@ async def get_portfolio_overview(
         eligible_subnets=eligible,
         overall_regime=snapshot.overall_regime or "neutral",
         conversion_exposure=conversion_exposure,
-        as_of=snapshot.timestamp,
+        as_of=max(s.timestamp for s in snapshots),
     )
 
 
